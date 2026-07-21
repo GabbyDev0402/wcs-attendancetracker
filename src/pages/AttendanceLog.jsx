@@ -164,7 +164,7 @@ export default function AttendanceLog() {
   };
 
   const handleMarkAll = (status) => {
-    const activeRoster = students.filter(s => (s.enrollmentDate || "2026-07-01") <= date);
+    const activeRoster = students;
     
     setAttendance(prev => {
       const newState = { ...prev };
@@ -210,8 +210,8 @@ export default function AttendanceLog() {
     }
   };
 
-  // Enforce enrollment date filtering
-  const activeRoster = students.filter(s => (s.enrollmentDate || "2026-07-01") <= date);
+  // Full roster displayed for valid past/current dates
+  const activeRoster = students;
 
   // Search filter
   const filteredStudents = activeRoster.filter(s => {
@@ -222,7 +222,7 @@ export default function AttendanceLog() {
   const isFutureDate = date > today;
   const isRosterEmpty = activeRoster.length === 0;
 
-  // Stats for the active session (counts only enrolled students)
+  // Stats for the active session
   const stats = {
     present: 0,
     late: 0,
@@ -339,9 +339,9 @@ export default function AttendanceLog() {
       ) : isRosterEmpty ? (
         <div className="bg-white border border-slate-100 rounded-2xl p-12 text-center text-slate-400 shadow-sm flex flex-col items-center justify-center space-y-3">
           <AlertCircle className="h-8 w-8 text-slate-300" />
-          <span className="font-bold text-slate-800 font-heading">No Enrolled Students</span>
+          <span className="font-bold text-slate-800 font-heading">No Students Enrolled</span>
           <span className="text-xs text-slate-400 max-w-xs">
-            No students were enrolled in this class on this date. Try adding students or picking another date.
+            There are currently no students assigned to this class. Add students from the Student Roster menu.
           </span>
         </div>
       ) : (
