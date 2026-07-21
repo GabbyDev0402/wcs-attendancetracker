@@ -1,0 +1,238 @@
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { auth, db } from "../firebase/config";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { collection, query, where, getDocs, doc, setDoc } from "firebase/firestore";
+import { Shield, KeyRound, Mail, AlertCircle, ArrowRight, Sparkles } from "lucide-react";
+
+export default function Login() {
+  const { login, loading } = useAuth();
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [seedingText, setSeedingText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Seed default admin and teacher accounts if they don't exist in Firestore
+  useEffect(() => {
+    const seedDefaultAccounts = async () => {
+      try {
+        const usersRef = collection(db, "users");
+
+        // 1. Seed Admin
+        const adminQuery = query(usersRef, where("email", "==", "admin@school.edu"));
+        const adminSnap = await getDocs(adminQuery);
+        if (adminSnap.empty) {
+          setSeedingText("Seeding Super Admin account...");
+          try {
+            const credential = await createUserWithEmailAndPassword(auth, "admin@school.edu", "admin123");
+            const uid = credential.user.uid;
+            await setDoc(doc(db, "users", uid), {
+              id: uid,
+              name: "System Admin",
+              email: "admin@school.edu",
+              role: "admin",
+              avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Admin"
+            });
+            // Immediately sign out since createUserWithEmailAndPassword logs the client in
+            await auth.signOut();
+          } catch (err) {
+            if (err.code !== "auth/email-already-in-use") {
+              console.error("Failed to seed admin in auth", err);
+            }
+          }
+        }
+
+        // 2. Seed default Teacher (Sarah Jenkins)
+        const teacherQuery = query(usersRef, where("email", "==", "sarah.jenkins@schooldistrict.org"));
+        const teacherSnap = await getDocs(teacherQuery);
+        if (teacherSnap.empty) {
+          setSeedingText("Seeding Sarah Jenkins (Teacher) account...");
+          try {
+            const credential = await createUserWithEmailAndPassword(auth, "sarah.jenkins@schooldistrict.org", "password123");
+            const uid = credential.user.uid;
+            await setDoc(doc(db, "users", uid), {
+              id: uid,
+              name: "Sarah Jenkins",
+              email: "sarah.jenkins@schooldistrict.org",
+              role: "teacher",
+              avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Sarah",
+              assignments: [
+                { grade: "Grade 1", subject: "Homeroom A" },
+                { grade: "Grade 5", subject: "Mathematics" },
+                { grade: "Grade 8", subject: "General Science" },
+                { grade: "Grade 11", subject: "English Literature" }
+              ]
+            });
+            
+            // Seed a few default students for Sarah's first class (Grade 1 - Homeroom A)
+            // classId: grade-1-homeroom-a
+            const defaultStudents = [
+              { id: "s101", name: "Alexander Wright", internationalName: "Alex", nationalName: "Wright", communityCenter: "Northside Community Center", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" },
+              { id: "s102", name: "Benjamin Cooper", internationalName: "Ben", nationalName: "Cooper", communityCenter: "Westside Hub", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" },
+              { id: "s103", name: "Charlotte Hayes", internationalName: "Charlotte", nationalName: "Han Sol-ji", communityCenter: "Chinatown Youth Center", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" },
+              { id: "s104", name: "Daniel Martinez", internationalName: "Danny", nationalName: "Daniel Martinez", communityCenter: "Centro Hispano", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" },
+              { id: "s105", name: "Emma Watson", internationalName: "Emma", nationalName: "Emi Tanaka", communityCenter: "Little Tokyo Hub", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" }
+            ];
+
+            for (const s of defaultStudents) {
+              await setDoc(doc(db, "users", s.id), s);
+            }
+
+            await auth.signOut();
+          } catch (err) {
+            if (err.code !== "auth/email-already-in-use") {
+              console.error("Failed to seed teacher in auth", err);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Error during automatic seeding", e);
+      } finally {
+        setSeedingText("");
+      }
+    };
+
+    seedDefaultAccounts();
+  }, []);
+
+  const handleLoginSuccess = (userData) => {
+    if (userData.role === "admin") {
+      navigate("/admin");
+    } else {
+      navigate("/teacher");
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setIsSubmitting(true);
+    try {
+      const loggedUser = await login(email, password);
+      // Wait a brief moment for the auth listener to resolve and populate Firestore profiles
+      const checkProfileInterval = setInterval(async () => {
+        const userDoc = await getDocs(query(collection(db, "users"), where("email", "==", email.toLowerCase())));
+        if (!userDoc.empty) {
+          clearInterval(checkProfileInterval);
+          const data = userDoc.docs[0].data();
+          handleLoginSuccess(data);
+        }
+      }, 300);
+    } catch (err) {
+      setIsSubmitting(false);
+      if (
+        err?.code === "auth/invalid-credential" ||
+        err?.code === "auth/user-not-found" ||
+        err?.code === "auth/wrong-password" ||
+        err?.code === "auth/invalid-email"
+      ) {
+        setError("Invalid email or password. Please try again.");
+      } else {
+        setError(err?.message || "Invalid email or password. Please try again.");
+      }
+    }
+  };
+
+  return (
+    <div className="flex min-h-[75vh] flex-col items-center justify-center py-6 sm:py-12">
+      <div className="relative w-full max-w-md px-6 py-12 bg-white border border-slate-100 rounded-3xl shadow-xl shadow-slate-100/50">
+        
+        {/* Seeding banner indicator */}
+        {seedingText && (
+          <div className="mb-6 flex items-center space-x-2 rounded-xl bg-brand-50 p-3.5 text-xs font-semibold text-brand-700 border border-brand-100 animate-pulse">
+            <Sparkles className="h-4 w-4 shrink-0 text-brand-600" />
+            <span>{seedingText}</span>
+          </div>
+        )}
+
+        {/* Logo and header */}
+        <div className="flex flex-col items-center text-center space-y-3.5 mb-8">
+          <img 
+            src="/logo.png" 
+            alt="Washington School Logo" 
+            className="h-16 w-16 object-contain rounded-2xl border border-slate-100 bg-slate-50/50 p-1.5 shadow-sm"
+          />
+          <div>
+            <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
+              Washington School
+            </h1>
+            <p className="text-sm text-slate-450 mt-1 font-medium">
+              Sign in to the Attendance Portal
+            </p>
+          </div>
+        </div>
+
+        {/* Login form */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Error alert right above email input */}
+          {error && (
+            <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-md mb-4 text-sm flex items-start space-x-2.5 font-medium">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+              Email Address
+            </label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                <Mail className="h-4 w-4" />
+              </span>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (error) setError("");
+                }}
+                placeholder="teacher@school.org"
+                className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                Password
+              </label>
+            </div>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                <KeyRound className="h-4 w-4" />
+              </span>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (error) setError("");
+                }}
+                placeholder="••••••••"
+                className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting || seedingText}
+            className="w-full mt-2 inline-flex items-center justify-center space-x-2 rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white transition-all hover:bg-slate-800 focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] disabled:opacity-50"
+          >
+            {isSubmitting ? "Signing in..." : "Sign In"}
+            {!isSubmitting && <ArrowRight className="h-4 w-4" />}
+          </button>
+        </form>
+
+
+      </div>
+    </div>
+  );
+}
