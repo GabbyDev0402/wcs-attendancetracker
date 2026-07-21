@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { auth, db } from "../firebase/config";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  setPersistence, 
+  browserLocalPersistence, 
+  browserSessionPersistence 
+} from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
 const AuthContext = createContext(null);
@@ -52,7 +59,9 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email, password, rememberMe = true) => {
+    const persistenceType = rememberMe ? browserLocalPersistence : browserSessionPersistence;
+    await setPersistence(auth, persistenceType);
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     // Profile fetch is handled by the onAuthStateChanged listener
     return userCredential.user;

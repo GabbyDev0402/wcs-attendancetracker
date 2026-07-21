@@ -11,6 +11,7 @@ export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
   const [seedingText, setSeedingText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -111,7 +112,7 @@ export default function Login() {
     setError("");
     setIsSubmitting(true);
     try {
-      const loggedUser = await login(email, password);
+      const loggedUser = await login(email, password, rememberMe);
       // Wait a brief moment for the auth listener to resolve and populate Firestore profiles
       const checkProfileInterval = setInterval(async () => {
         const userDoc = await getDocs(query(collection(db, "users"), where("email", "==", email.toLowerCase())));
@@ -219,6 +220,19 @@ export default function Login() {
                 className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
               />
             </div>
+          </div>
+
+          {/* Stay Signed In Checkbox */}
+          <div className="flex items-center justify-between text-xs pt-1">
+            <label className="flex items-center space-x-2 text-slate-600 font-medium cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/20 cursor-pointer accent-brand-600"
+              />
+              <span>Stay signed in on this device</span>
+            </label>
           </div>
 
           <button
