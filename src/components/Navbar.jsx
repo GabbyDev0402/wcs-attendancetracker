@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, Shield, Users } from "lucide-react";
+import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, School, Users } from "lucide-react";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -23,7 +23,7 @@ export default function Navbar() {
       ]
     : user?.role === "admin"
     ? [
-        { name: "Admin Console", path: "/admin", icon: Shield }
+        { name: "Admin Console", path: "/admin", icon: School }
       ]
     : [];
 

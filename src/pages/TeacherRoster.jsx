@@ -121,7 +121,8 @@ export default function TeacherRoster() {
         communityCenter: communityCenter.trim() || null,
         enrollmentDate: new Date().toLocaleDateString("en-CA"), // YYYY-MM-DD
         role: "student",
-        classId: modalClassId
+        classId: modalClassId,
+        teacherId: user.id
       };
 
       await setDoc(studentRef, newStudent);

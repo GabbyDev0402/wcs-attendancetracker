@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { auth, db } from "../firebase/config";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { collection, query, where, getDocs, doc, setDoc } from "firebase/firestore";
-import { Shield, KeyRound, Mail, AlertCircle, ArrowRight, Sparkles } from "lucide-react";
+import { KeyRound, Mail, AlertCircle, ArrowRight, Sparkles } from "lucide-react";
 
 export default function Login() {
   const { login, loading } = useAuth();
@@ -70,11 +70,11 @@ export default function Login() {
             // Seed a few default students for Sarah's first class (Grade 1 - Homeroom A)
             // classId: grade-1-homeroom-a
             const defaultStudents = [
-              { id: "s101", name: "Alexander Wright", internationalName: "Alex", nationalName: "Wright", communityCenter: "Northside Community Center", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" },
-              { id: "s102", name: "Benjamin Cooper", internationalName: "Ben", nationalName: "Cooper", communityCenter: "Westside Hub", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" },
-              { id: "s103", name: "Charlotte Hayes", internationalName: "Charlotte", nationalName: "Han Sol-ji", communityCenter: "Chinatown Youth Center", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" },
-              { id: "s104", name: "Daniel Martinez", internationalName: "Danny", nationalName: "Daniel Martinez", communityCenter: "Centro Hispano", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" },
-              { id: "s105", name: "Emma Watson", internationalName: "Emma", nationalName: "Emi Tanaka", communityCenter: "Little Tokyo Hub", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a" }
+              { id: "s101", name: "Alexander Wright", internationalName: "Alex", nationalName: "Wright", communityCenter: "Northside Community Center", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
+              { id: "s102", name: "Benjamin Cooper", internationalName: "Ben", nationalName: "Cooper", communityCenter: "Westside Hub", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
+              { id: "s103", name: "Charlotte Hayes", internationalName: "Charlotte", nationalName: "Han Sol-ji", communityCenter: "Chinatown Youth Center", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
+              { id: "s104", name: "Daniel Martinez", internationalName: "Danny", nationalName: "Daniel Martinez", communityCenter: "Centro Hispano", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
+              { id: "s105", name: "Emma Watson", internationalName: "Emma", nationalName: "Emi Tanaka", communityCenter: "Little Tokyo Hub", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid }
             ];
 
             for (const s of defaultStudents) {
