@@ -61,10 +61,10 @@ export default function Login() {
               role: "teacher",
               avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Sarah",
               assignments: [
-                { grade: "Grade 1", subject: "Homeroom A" },
-                { grade: "Grade 5", subject: "Mathematics" },
-                { grade: "Grade 8", subject: "General Science" },
-                { grade: "Grade 11", subject: "English Literature" }
+                { grade: "Grade 1", gradeLevel: "Grade 1", subject: "Homeroom A", startTime: "08:30", endTime: "09:30", daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] },
+                { grade: "Grade 5", gradeLevel: "Grade 5", subject: "Mathematics", startTime: "09:45", endTime: "10:45", daysOfWeek: ["Monday", "Wednesday", "Friday"] },
+                { grade: "Grade 8", gradeLevel: "Grade 8", subject: "General Science", startTime: "11:00", endTime: "12:00", daysOfWeek: ["Tuesday", "Thursday"] },
+                { grade: "Grade 11", gradeLevel: "Grade 11", subject: "English Literature", startTime: "13:30", endTime: "14:30", daysOfWeek: ["Monday", "Wednesday", "Friday"] }
               ]
             });
             

@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
-import { formatStudentName } from "../utils/helpers";
+import { formatStudentName, formatScheduleString } from "../utils/helpers";
 import { 
   ArrowLeft, 
   Search, 
@@ -41,9 +41,10 @@ export default function AttendanceLog() {
     if (!user) return;
     
     const teacherClasses = (user.assignments || []).map((asg) => {
-      const classSlug = `${asg.grade.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+      const gradeVal = asg.grade || asg.gradeLevel || "Grade 1";
+      const classSlug = `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
       
-      const gradeNum = parseInt(asg.grade.replace(/\D/g, ""), 10);
+      const gradeNum = parseInt(gradeVal.replace(/\D/g, ""), 10);
       let section = "Elementary";
       if (!isNaN(gradeNum)) {
         if (gradeNum > 8) section = "High School";
@@ -52,9 +53,12 @@ export default function AttendanceLog() {
 
       return {
         id: classSlug,
-        name: `${asg.grade} - ${asg.subject}`,
-        grade: asg.grade,
+        name: `${gradeVal} - ${asg.subject}`,
+        grade: gradeVal,
         subject: asg.subject,
+        startTime: asg.startTime || "",
+        endTime: asg.endTime || "",
+        daysOfWeek: asg.daysOfWeek || [],
         section
       };
     });
@@ -288,7 +292,9 @@ export default function AttendanceLog() {
             className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
           >
             {classList.map(c => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>
+                {c.name} {formatScheduleString(c)}
+              </option>
             ))}
           </select>
         </div>

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
-import { formatStudentName } from "../utils/helpers";
+import { formatStudentName, formatTime12Hour, formatScheduleString } from "../utils/helpers";
 import { 
   Users, 
   Calendar, 
@@ -30,15 +30,17 @@ export default function TeacherDashboard() {
   
   const [todayLogs, setTodayLogs] = useState({});
   const todayStr = new Date().toLocaleDateString("en-CA");
+  const todayWeekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
 
   // Parse classes from teacher assignments
   useEffect(() => {
     if (!user) return;
     
-    const teacherClasses = (user.assignments || []).map((asg) => {
-      const classSlug = `${asg.grade.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+    const parsedClasses = (user.assignments || []).map((asg) => {
+      const gradeVal = asg.grade || asg.gradeLevel || "Grade 1";
+      const classSlug = `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
       
-      const gradeNum = parseInt(asg.grade.replace(/\D/g, ""), 10);
+      const gradeNum = parseInt(gradeVal.replace(/\D/g, ""), 10);
       let section = "Elementary";
       if (!isNaN(gradeNum)) {
         if (gradeNum > 8) section = "High School";
@@ -47,15 +49,17 @@ export default function TeacherDashboard() {
 
       return {
         id: classSlug,
-        name: `${asg.grade} - ${asg.subject}`,
-        grade: asg.grade,
+        name: `${gradeVal} - ${asg.subject}`,
+        grade: gradeVal,
         subject: asg.subject,
-        schedule: "Mon - Fri, 8:30 AM - 3:00 PM", // Mock display schedule
+        startTime: asg.startTime || "",
+        endTime: asg.endTime || "",
+        daysOfWeek: asg.daysOfWeek || [],
         section
       };
     });
 
-    setTeacherClasses(teacherClasses);
+    setTeacherClasses(parsedClasses);
   }, [user]);
 
   // Load students and sessions from Firestore to compute dashboard states
@@ -113,7 +117,6 @@ export default function TeacherDashboard() {
 
         allSessions.forEach(session => {
           (session.records || []).forEach(record => {
-            // Tally only if the student belongs to the active roster query
             if (allStudents.some(s => s.id === record.studentId)) {
               if (record.status === "present" || record.status === "excused" || record.status === "late") {
                 totalPresentExcused++;
@@ -125,7 +128,7 @@ export default function TeacherDashboard() {
 
         const averageRate = totalRosterSize > 0
           ? Math.round((totalPresentExcused / totalRosterSize) * 100)
-          : 95; // default fallback if no records are registered yet
+          : 95;
 
         setStats({
           totalClasses: teacherClasses.length,
@@ -145,7 +148,6 @@ export default function TeacherDashboard() {
           let maxConsecutiveAbsences = 0;
           const joinDate = student.enrollmentDate || "2026-07-01";
 
-          // Filter sessions for this student's class
           const studentSessions = sortedSessions.filter(s => s.classId === student.classId);
 
           studentSessions.forEach(session => {
@@ -206,6 +208,20 @@ export default function TeacherDashboard() {
     fetchDashboardState();
   }, [teacherClasses, todayStr]);
 
+  // Today's Timetable: Filter classes for today's weekday & sort chronologically by startTime
+  const todaysTimetable = teacherClasses
+    .filter(c => c.daysOfWeek && c.daysOfWeek.includes(todayWeekday))
+    .sort((a, b) => {
+      if (!a.startTime) return 1;
+      if (!b.startTime) return -1;
+      return a.startTime.localeCompare(b.startTime);
+    });
+
+  // Other / Unscheduled classes fallback
+  const unscheduledOrOtherClasses = teacherClasses.filter(c => 
+    !c.daysOfWeek || c.daysOfWeek.length === 0 || !c.daysOfWeek.includes(todayWeekday)
+  );
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Header section */}
@@ -215,7 +231,7 @@ export default function TeacherDashboard() {
             Good day, {user?.name || "Teacher"}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Here is the attendance overview for your classes today.
+            Here is your daily master schedule and attendance overview.
           </p>
         </div>
         <div className="text-xs font-semibold bg-white border border-slate-100 text-slate-500 rounded-xl px-4 py-2 shadow-sm flex items-center space-x-2">
@@ -271,10 +287,15 @@ export default function TeacherDashboard() {
 
       {/* Main Roster Split Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        {/* Left Side: Schedule (2/3 width) */}
-        <div className="lg:col-span-2 space-y-5">
+        {/* Left Side: Today's Timetable & Master Schedule (2/3 width) */}
+        <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-800 font-heading">Today's Class Schedule</h2>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 font-heading">
+                📅 Today's Timetable ({todayWeekday})
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">Classes scheduled chronologically for today.</p>
+            </div>
             {stats.pendingToday > 0 && (
               <div className="flex items-center space-x-1.5 text-xs text-amber-600 font-semibold bg-amber-50 px-2.5 py-1 rounded-lg">
                 <AlertTriangle className="h-3.5 w-3.5" />
@@ -285,17 +306,22 @@ export default function TeacherDashboard() {
 
           {isDataLoading ? (
             <div className="py-12 text-center text-slate-450 text-xs bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
-              Loading active classroom configurations from Firestore...
+              Loading active master schedule from Firestore...
             </div>
-          ) : teacherClasses.length > 0 ? (
+          ) : todaysTimetable.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {teacherClasses.map((classItem) => {
+              {todaysTimetable.map((classItem) => {
                 const isLogged = todayLogs[classItem.id];
+                const startTimeStr = formatTime12Hour(classItem.startTime);
+                const endTimeStr = formatTime12Hour(classItem.endTime);
+                const timeSpan = startTimeStr && endTimeStr ? `${startTimeStr} - ${endTimeStr}` : startTimeStr || "Scheduled Today";
+
                 return (
                   <div 
                     key={classItem.id} 
-                    className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-all duration-200 group text-left"
+                    className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-all duration-200 group text-left relative overflow-hidden"
                   >
+                    <div className="absolute top-0 left-0 h-1 w-full bg-brand-500" />
                     <div>
                       <div className="flex items-center justify-between mb-4">
                         <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 text-slate-600">
@@ -318,9 +344,9 @@ export default function TeacherDashboard() {
                         {classItem.name}
                       </h3>
                       
-                      <div className="flex items-center space-x-2 text-xs text-slate-400 mt-3 font-medium">
-                        <Clock className="h-3.5 w-3.5 text-slate-300" />
-                        <span>{classItem.schedule}</span>
+                      <div className="flex items-center space-x-2 text-xs text-brand-600 font-bold mt-3 bg-brand-50/60 border border-brand-100/50 px-3 py-1.5 rounded-xl w-fit">
+                        <Clock className="h-3.5 w-3.5 text-brand-500 shrink-0" />
+                        <span>{timeSpan}</span>
                       </div>
                     </div>
 
@@ -349,8 +375,46 @@ export default function TeacherDashboard() {
               })}
             </div>
           ) : (
-            <div className="py-12 text-center text-slate-400 text-xs bg-white border border-slate-100 rounded-2xl p-6 shadow-sm">
-              No classes assigned. Instructors must have assignments provisioned by an admin first.
+            <div className="py-12 text-center text-slate-400 text-xs bg-white border border-slate-100 rounded-2xl p-6 shadow-sm flex flex-col items-center space-y-2">
+              <Calendar className="h-8 w-8 text-slate-300" />
+              <span className="font-bold text-slate-700">No classes scheduled for today ({todayWeekday}).</span>
+              <span className="text-slate-400 max-w-sm">Check your other master schedule classes below to log attendance.</span>
+            </div>
+          )}
+
+          {/* Unscheduled or Other Weekday Classes Section */}
+          {unscheduledOrOtherClasses.length > 0 && (
+            <div className="pt-4 space-y-4">
+              <h3 className="text-sm font-bold text-slate-600 uppercase tracking-wider font-heading">
+                All Assigned Classes & Master Schedule
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {unscheduledOrOtherClasses.map((classItem) => {
+                  const isLogged = todayLogs[classItem.id];
+                  return (
+                    <div 
+                      key={classItem.id}
+                      className="bg-slate-50/60 border border-slate-200/60 rounded-xl p-4 flex items-center justify-between text-left hover:bg-white transition-all"
+                    >
+                      <div>
+                        <span className="font-bold text-xs text-slate-800 block">{classItem.name}</span>
+                        <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
+                          {formatScheduleString(classItem)}
+                        </span>
+                      </div>
+
+                      <Link
+                        to={`/teacher/log?classId=${classItem.id}`}
+                        className="inline-flex items-center space-x-1 text-xs font-bold text-brand-600 hover:text-brand-700 px-3 py-1.5 bg-white border border-slate-200 rounded-lg shadow-2xs hover:shadow-xs transition-all"
+                      >
+                        <span>{isLogged ? "Edit" : "Log"}</span>
+                        <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

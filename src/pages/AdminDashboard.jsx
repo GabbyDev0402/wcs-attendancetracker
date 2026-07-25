@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { auth, db, provisionUserSecondary } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
-import { formatStudentName } from "../utils/helpers";
+import { formatStudentName, formatScheduleString } from "../utils/helpers";
 import { 
   Users, 
   BookOpen, 
@@ -20,7 +20,9 @@ import {
   AlertCircle,
   Search,
   UserCheck,
-  Building2
+  Building2,
+  Clock,
+  Calendar
 } from "lucide-react";
 
 // Categorized options for Grade levels (Standard & ESL)
@@ -55,6 +57,17 @@ const GRADE_CATEGORIES = [
   }
 ];
 
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+const createDefaultAssignment = () => ({
+  grade: "Grade 1",
+  gradeLevel: "Grade 1",
+  subject: "",
+  startTime: "09:00",
+  endTime: "10:00",
+  daysOfWeek: ["Monday", "Wednesday", "Friday"]
+});
+
 export default function AdminDashboard() {
   const [teachers, setTeachers] = useState([]);
   const [students, setStudents] = useState([]);
@@ -67,7 +80,7 @@ export default function AdminDashboard() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [assignments, setAssignments] = useState([{ grade: "Grade 1", subject: "" }]);
+  const [assignments, setAssignments] = useState([createDefaultAssignment()]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
@@ -129,7 +142,7 @@ export default function AdminDashboard() {
 
   // Add/Remove assignment helper (Provision Modal)
   const handleAddAssignmentField = () => {
-    setAssignments([...assignments, { grade: "Grade 1", subject: "" }]);
+    setAssignments([...assignments, createDefaultAssignment()]);
   };
 
   const handleRemoveAssignmentField = (index) => {
@@ -140,12 +153,27 @@ export default function AdminDashboard() {
   const handleAssignmentChange = (index, field, value) => {
     const updated = [...assignments];
     updated[index][field] = value;
+    if (field === "grade") {
+      updated[index].gradeLevel = value;
+    }
     setAssignments(updated);
+  };
+
+  const handleToggleDay = (assignmentList, setAssignmentList, index, day) => {
+    const updated = [...assignmentList];
+    const currentDays = updated[index].daysOfWeek || [];
+    if (currentDays.includes(day)) {
+      updated[index].daysOfWeek = currentDays.filter(d => d !== day);
+    } else {
+      const newDays = [...currentDays, day];
+      updated[index].daysOfWeek = WEEKDAYS.filter(d => newDays.includes(d));
+    }
+    setAssignmentList(updated);
   };
 
   // Add/Remove assignment helper (Edit Modal)
   const handleAddEditAssignmentField = () => {
-    setEditAssignments([...editAssignments, { grade: "Grade 1", subject: "" }]);
+    setEditAssignments([...editAssignments, createDefaultAssignment()]);
   };
 
   const handleRemoveEditAssignmentField = (index) => {
@@ -156,6 +184,9 @@ export default function AdminDashboard() {
   const handleEditAssignmentChange = (index, field, value) => {
     const updated = [...editAssignments];
     updated[index][field] = value;
+    if (field === "grade") {
+      updated[index].gradeLevel = value;
+    }
     setEditAssignments(updated);
   };
 
@@ -188,7 +219,14 @@ export default function AdminDashboard() {
         name,
         role: "teacher",
         avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name)}`,
-        assignments: assignments.map(a => ({ grade: a.grade, subject: a.subject.trim() }))
+        assignments: assignments.map(a => ({ 
+          grade: a.grade || a.gradeLevel || "Grade 1",
+          gradeLevel: a.grade || a.gradeLevel || "Grade 1",
+          subject: a.subject.trim(),
+          startTime: a.startTime || "09:00",
+          endTime: a.endTime || "10:00",
+          daysOfWeek: a.daysOfWeek || ["Monday", "Wednesday", "Friday"]
+        }))
       };
 
       await provisionUserSecondary(email, password, profileData);
@@ -199,7 +237,7 @@ export default function AdminDashboard() {
         setName("");
         setEmail("");
         setPassword("");
-        setAssignments([{ grade: "Grade 1", subject: "" }]);
+        setAssignments([createDefaultAssignment()]);
         setSuccess(false);
         setIsLoading(false);
         loadData();
@@ -214,7 +252,15 @@ export default function AdminDashboard() {
   // Open edit assignments modal
   const handleOpenEditModal = (teacher) => {
     setEditingTeacher(teacher);
-    setEditAssignments(teacher.assignments ? [...teacher.assignments] : [{ grade: "Grade 1", subject: "" }]);
+    const existing = (teacher.assignments || []).map(a => ({
+      grade: a.grade || a.gradeLevel || "Grade 1",
+      gradeLevel: a.grade || a.gradeLevel || "Grade 1",
+      subject: a.subject || "",
+      startTime: a.startTime || "09:00",
+      endTime: a.endTime || "10:00",
+      daysOfWeek: a.daysOfWeek || ["Monday", "Wednesday", "Friday"]
+    }));
+    setEditAssignments(existing.length > 0 ? existing : [createDefaultAssignment()]);
     setEditError("");
     setEditSuccess(false);
     setIsEditModalOpen(true);
@@ -236,7 +282,14 @@ export default function AdminDashboard() {
     try {
       const teacherRef = doc(db, "users", editingTeacher.id);
       await updateDoc(teacherRef, {
-        assignments: editAssignments.map(a => ({ grade: a.grade, subject: a.subject.trim() }))
+        assignments: editAssignments.map(a => ({ 
+          grade: a.grade || a.gradeLevel || "Grade 1",
+          gradeLevel: a.grade || a.gradeLevel || "Grade 1",
+          subject: a.subject.trim(),
+          startTime: a.startTime || "09:00",
+          endTime: a.endTime || "10:00",
+          daysOfWeek: a.daysOfWeek || ["Monday", "Wednesday", "Friday"]
+        }))
       });
 
       setEditSuccess(true);
@@ -266,9 +319,10 @@ export default function AdminDashboard() {
       const allStudentsList = snap.docs.map(d => d.data());
 
       const teacherToDel = teachers.find(t => t.id === teacherId);
-      const teacherClassSlugs = (teacherToDel?.assignments || []).map(a => 
-        `${a.grade.replace(/\s+/g, '-').toLowerCase()}-${a.subject.replace(/\s+/g, '-').toLowerCase()}`
-      );
+      const teacherClassSlugs = (teacherToDel?.assignments || []).map(a => {
+        const g = a.grade || a.gradeLevel || "Grade 1";
+        return `${g.replace(/\s+/g, '-').toLowerCase()}-${a.subject.replace(/\s+/g, '-').toLowerCase()}`;
+      });
 
       const affectedStudents = allStudentsList.filter(s => 
         s.teacherId === teacherId || (s.classId && teacherClassSlugs.includes(s.classId))
@@ -301,8 +355,9 @@ export default function AdminDashboard() {
     // Set default class slug for selected teacher
     const targetTeacherObj = teachers.find(t => t.id === defaultTeacherId);
     const firstAsg = targetTeacherObj?.assignments?.[0];
+    const firstGrade = firstAsg ? (firstAsg.grade || firstAsg.gradeLevel || "Grade 1") : "Grade 1";
     const defaultClassSlug = firstAsg 
-      ? `${firstAsg.grade.replace(/\s+/g, '-').toLowerCase()}-${firstAsg.subject.replace(/\s+/g, '-').toLowerCase()}`
+      ? `${firstGrade.replace(/\s+/g, '-').toLowerCase()}-${firstAsg.subject.replace(/\s+/g, '-').toLowerCase()}`
       : student.classId;
 
     setReassignClassId(defaultClassSlug);
@@ -316,7 +371,8 @@ export default function AdminDashboard() {
     const targetTeacherObj = teachers.find(t => t.id === newTeacherId);
     const firstAsg = targetTeacherObj?.assignments?.[0];
     if (firstAsg) {
-      const classSlug = `${firstAsg.grade.replace(/\s+/g, '-').toLowerCase()}-${firstAsg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+      const g = firstAsg.grade || firstAsg.gradeLevel || "Grade 1";
+      const classSlug = `${g.replace(/\s+/g, '-').toLowerCase()}-${firstAsg.subject.replace(/\s+/g, '-').toLowerCase()}`;
       setReassignClassId(classSlug);
     }
   };
@@ -394,7 +450,7 @@ export default function AdminDashboard() {
             Admin Console
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Manage academic staff profiles, assignments, and global student reassignments.
+            Manage academic staff profiles, master schedules, and global student reassignments.
           </p>
         </div>
         <button
@@ -465,7 +521,7 @@ export default function AdminDashboard() {
                 <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   <th className="px-6 py-3">Teacher</th>
                   <th className="px-6 py-3">Email Address</th>
-                  <th className="px-6 py-3">Classroom Assignments</th>
+                  <th className="px-6 py-3">Classroom Master Schedule</th>
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -491,8 +547,8 @@ export default function AdminDashboard() {
                               key={idx}
                               className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 text-[10px] font-bold border border-brand-100/50"
                             >
-                              <GraduationCap className="h-3 w-3 shrink-0" />
-                              <span>{asg.grade} - {asg.subject}</span>
+                              <GraduationCap className="h-3 w-3 shrink-0 text-brand-600" />
+                              <span>{asg.grade || asg.gradeLevel} - {asg.subject} {formatScheduleString(asg)}</span>
                             </span>
                           ))
                         ) : (
@@ -514,7 +570,7 @@ export default function AdminDashboard() {
                         {/* Edit Assignments Button */}
                         <button
                           onClick={() => handleOpenEditModal(teacher)}
-                          title="Edit Class Assignments"
+                          title="Edit Class Assignments & Schedule"
                           className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-brand-650 hover:border-brand-100 transition-colors cursor-pointer"
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -641,7 +697,7 @@ export default function AdminDashboard() {
       {/* Provision Teacher Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="relative w-full max-w-xl bg-white border border-slate-100 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-2xl bg-white border border-slate-100 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
@@ -655,7 +711,7 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <h3 className="text-xl font-bold text-slate-950 font-heading">Provision New Teacher</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Register new login credentials and assign grades.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Register login credentials and configure master schedule.</p>
               </div>
             </div>
 
@@ -665,7 +721,7 @@ export default function AdminDashboard() {
                   <CheckCircle className="h-7 w-7" />
                 </div>
                 <h4 className="text-sm font-bold text-slate-800">Teacher Account Activated!</h4>
-                <p className="text-xs text-slate-400">Classes created and teacher registered dynamically.</p>
+                <p className="text-xs text-slate-400">Master schedule and teacher profile stored successfully.</p>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
@@ -719,57 +775,114 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
+                {/* Master Schedule Assignments */}
                 <div className="space-y-3.5">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Classroom Assignments</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Classroom Master Schedule</label>
                     <button
                       type="button"
                       onClick={handleAddAssignmentField}
                       className="text-[10px] font-bold text-brand-600 hover:text-brand-700 flex items-center space-x-1"
                     >
                       <Plus className="h-3 w-3" />
-                      <span>Add Assignment</span>
+                      <span>Add Class Assignment</span>
                     </button>
                   </div>
 
-                  <div className="space-y-3 max-h-[180px] overflow-y-auto pr-1">
+                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
                     {assignments.map((assignment, index) => (
-                      <div key={index} className="flex items-center space-x-3 bg-slate-50/50 p-2.5 rounded-xl border border-slate-200/50">
-                        <div className="w-1/2">
-                          <select
-                            value={assignment.grade}
-                            onChange={(e) => handleAssignmentChange(index, "grade", e.target.value)}
-                            className="w-full text-xs font-bold text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-brand-500"
+                      <div key={index} className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200/60 space-y-3">
+                        {/* Row 1: Grade & Subject & Delete */}
+                        <div className="flex items-center space-x-3">
+                          <div className="w-1/2">
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Grade Level</label>
+                            <select
+                              value={assignment.grade || assignment.gradeLevel || "Grade 1"}
+                              onChange={(e) => handleAssignmentChange(index, "grade", e.target.value)}
+                              className="w-full text-xs font-bold text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-brand-500"
+                            >
+                              {GRADE_CATEGORIES.map((cat) => (
+                                <optgroup key={cat.label} label={cat.label}>
+                                  {cat.options.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Subject</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. Mathematics, Science"
+                              value={assignment.subject}
+                              onChange={(e) => handleAssignmentChange(index, "subject", e.target.value)}
+                              className="w-full text-xs rounded-lg border border-slate-200 px-3 py-1.5 outline-none bg-white focus:border-brand-500"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAssignmentField(index)}
+                            disabled={assignments.length === 1}
+                            className="p-1.5 mt-4 rounded bg-white border border-slate-200 text-slate-400 hover:text-red-500 disabled:opacity-30 hover:border-red-100 transition-colors cursor-pointer"
                           >
-                            {GRADE_CATEGORIES.map((cat) => (
-                              <optgroup key={cat.label} label={cat.label}>
-                                {cat.options.map(opt => (
-                                  <option key={opt} value={opt}>{opt}</option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
 
-                        <div className="flex-1">
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g. Chemistry, Reading"
-                            value={assignment.subject}
-                            onChange={(e) => handleAssignmentChange(index, "subject", e.target.value)}
-                            className="w-full text-xs rounded-lg border border-slate-200 px-3 py-1.5 outline-none bg-white focus:border-brand-500"
-                          />
+                        {/* Row 2: Start Time & End Time */}
+                        <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/40">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Time</label>
+                            <input
+                              type="time"
+                              value={assignment.startTime || "09:00"}
+                              onChange={(e) => handleAssignmentChange(index, "startTime", e.target.value)}
+                              className="w-full text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-brand-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">End Time</label>
+                            <input
+                              type="time"
+                              value={assignment.endTime || "10:00"}
+                              onChange={(e) => handleAssignmentChange(index, "endTime", e.target.value)}
+                              className="w-full text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-brand-500"
+                            />
+                          </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveAssignmentField(index)}
-                          disabled={assignments.length === 1}
-                          className="p-1.5 rounded bg-white border border-slate-200 text-slate-400 hover:text-red-500 disabled:opacity-30 hover:border-red-100 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {/* Row 3: Weekdays Checkboxes */}
+                        <div className="pt-1">
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Schedule Days</label>
+                          <div className="flex flex-wrap gap-2">
+                            {WEEKDAYS.map((day) => {
+                              const isChecked = (assignment.daysOfWeek || []).includes(day);
+                              return (
+                                <label 
+                                  key={day} 
+                                  className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer border transition-all select-none ${
+                                    isChecked 
+                                      ? "bg-brand-50 text-brand-700 border-brand-200 font-bold" 
+                                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100/50"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => handleToggleDay(assignments, setAssignments, index, day)}
+                                    className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500/20 accent-brand-600 cursor-pointer"
+                                  />
+                                  <span>{day.substring(0, 3)}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -800,7 +913,7 @@ export default function AdminDashboard() {
       {/* Edit Teacher Assignments Modal */}
       {isEditModalOpen && editingTeacher && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="relative w-full max-w-xl bg-white border border-slate-100 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-2xl bg-white border border-slate-100 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setIsEditModalOpen(false)}
               className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
@@ -813,8 +926,8 @@ export default function AdminDashboard() {
                 <Pencil className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-950 font-heading">Edit Class Assignments</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Modify allocation details for {editingTeacher.name}</p>
+                <h3 className="text-xl font-bold text-slate-950 font-heading">Edit Master Schedule</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Modify allocation details and times for {editingTeacher.name}</p>
               </div>
             </div>
 
@@ -823,7 +936,7 @@ export default function AdminDashboard() {
                 <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-inner">
                   <CheckCircle className="h-7 w-7" />
                 </div>
-                <h4 className="text-sm font-bold text-slate-800">Assignments Updated!</h4>
+                <h4 className="text-sm font-bold text-slate-800">Master Schedule Updated!</h4>
                 <p className="text-xs text-slate-400">Teacher profile has been synchronized successfully.</p>
               </div>
             ) : (
@@ -848,55 +961,111 @@ export default function AdminDashboard() {
 
                 <div className="space-y-3.5">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Classroom Assignments</label>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Classroom Master Schedule</label>
                     <button
                       type="button"
                       onClick={handleAddEditAssignmentField}
                       className="text-[10px] font-bold text-brand-600 hover:text-brand-700 flex items-center space-x-1"
                     >
                       <Plus className="h-3 w-3" />
-                      <span>Add Assignment</span>
+                      <span>Add Class Assignment</span>
                     </button>
                   </div>
 
-                  <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
                     {editAssignments.map((assignment, index) => (
-                      <div key={index} className="flex items-center space-x-3 bg-slate-50/50 p-2.5 rounded-xl border border-slate-200/50">
-                        <div className="w-1/2">
-                          <select
-                            value={assignment.grade}
-                            onChange={(e) => handleEditAssignmentChange(index, "grade", e.target.value)}
-                            className="w-full text-xs font-bold text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-brand-500"
+                      <div key={index} className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200/60 space-y-3">
+                        {/* Row 1: Grade & Subject & Delete */}
+                        <div className="flex items-center space-x-3">
+                          <div className="w-1/2">
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Grade Level</label>
+                            <select
+                              value={assignment.grade || assignment.gradeLevel || "Grade 1"}
+                              onChange={(e) => handleEditAssignmentChange(index, "grade", e.target.value)}
+                              className="w-full text-xs font-bold text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-brand-500"
+                            >
+                              {GRADE_CATEGORIES.map((cat) => (
+                                <optgroup key={cat.label} label={cat.label}>
+                                  {cat.options.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="flex-1">
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Subject</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. Mathematics, Science"
+                              value={assignment.subject}
+                              onChange={(e) => handleEditAssignmentChange(index, "subject", e.target.value)}
+                              className="w-full text-xs rounded-lg border border-slate-200 px-3 py-1.5 outline-none bg-white focus:border-brand-500"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEditAssignmentField(index)}
+                            disabled={editAssignments.length === 1}
+                            className="p-1.5 mt-4 rounded bg-white border border-slate-200 text-slate-400 hover:text-red-500 disabled:opacity-30 hover:border-red-100 transition-colors cursor-pointer"
                           >
-                            {GRADE_CATEGORIES.map((cat) => (
-                              <optgroup key={cat.label} label={cat.label}>
-                                {cat.options.map(opt => (
-                                  <option key={opt} value={opt}>{opt}</option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
 
-                        <div className="flex-1">
-                          <input
-                            type="text"
-                            required
-                            placeholder="e.g. Chemistry, Reading"
-                            value={assignment.subject}
-                            onChange={(e) => handleEditAssignmentChange(index, "subject", e.target.value)}
-                            className="w-full text-xs rounded-lg border border-slate-200 px-3 py-1.5 outline-none bg-white focus:border-brand-500"
-                          />
+                        {/* Row 2: Start Time & End Time */}
+                        <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/40">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Time</label>
+                            <input
+                              type="time"
+                              value={assignment.startTime || "09:00"}
+                              onChange={(e) => handleEditAssignmentChange(index, "startTime", e.target.value)}
+                              className="w-full text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-brand-500"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">End Time</label>
+                            <input
+                              type="time"
+                              value={assignment.endTime || "10:00"}
+                              onChange={(e) => handleEditAssignmentChange(index, "endTime", e.target.value)}
+                              className="w-full text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-brand-500"
+                            />
+                          </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveEditAssignmentField(index)}
-                          disabled={editAssignments.length === 1}
-                          className="p-1.5 rounded bg-white border border-slate-200 text-slate-400 hover:text-red-500 disabled:opacity-30 hover:border-red-100 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {/* Row 3: Weekdays Checkboxes */}
+                        <div className="pt-1">
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Schedule Days</label>
+                          <div className="flex flex-wrap gap-2">
+                            {WEEKDAYS.map((day) => {
+                              const isChecked = (assignment.daysOfWeek || []).includes(day);
+                              return (
+                                <label 
+                                  key={day} 
+                                  className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer border transition-all select-none ${
+                                    isChecked 
+                                      ? "bg-brand-50 text-brand-700 border-brand-200 font-bold" 
+                                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100/50"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => handleToggleDay(editAssignments, setEditAssignments, index, day)}
+                                    className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500/20 accent-brand-600 cursor-pointer"
+                                  />
+                                  <span>{day.substring(0, 3)}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -941,7 +1110,7 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <h3 className="text-xl font-bold text-slate-950 font-heading">Reassign Student Profile</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Allocate {formatStudentName(reassigningStudent)} to a active instructor.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Allocate {formatStudentName(reassigningStudent)} to an active instructor.</p>
               </div>
             </div>
 
@@ -988,10 +1157,11 @@ export default function AdminDashboard() {
                       if (asgs.length === 0) return <option value="">No assignments allocated for this teacher</option>;
                       
                       return asgs.map((asg, idx) => {
-                        const slug = `${asg.grade.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+                        const g = asg.grade || asg.gradeLevel || "Grade 1";
+                        const slug = `${g.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
                         return (
                           <option key={idx} value={slug}>
-                            {asg.grade} - {asg.subject}
+                            {g} - {asg.subject} {formatScheduleString(asg)}
                           </option>
                         );
                       });
