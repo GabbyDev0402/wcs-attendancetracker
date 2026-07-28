@@ -8,6 +8,7 @@ import AttendanceLog from './pages/AttendanceLog';
 import MonthlyReports from './pages/MonthlyReports';
 import AdminDashboard from './pages/AdminDashboard';
 import TeacherRoster from './pages/TeacherRoster';
+import WeeklyLessonReport from './pages/WeeklyLessonReport';
 
 // Route guard with optional role authorization
 function ProtectedRoute({ children, allowedRoles }) {
@@ -77,6 +78,9 @@ function App() {
             
             {/* Log attendance roster */}
             <Route path="log" element={<AttendanceLog />} />
+            
+            {/* Weekly lesson reports */}
+            <Route path="lesson-reports" element={<WeeklyLessonReport />} />
             
             {/* Monthly reports */}
             <Route path="reports" element={<MonthlyReports />} />
@@ -152,6 +156,9 @@ function AppWithWildcard() {
             
             {/* Log attendance roster */}
             <Route path="log" element={<AttendanceLog />} />
+            
+            {/* Weekly lesson reports */}
+            <Route path="lesson-reports" element={<WeeklyLessonReport />} />
             
             {/* Monthly reports */}
             <Route path="reports" element={<MonthlyReports />} />

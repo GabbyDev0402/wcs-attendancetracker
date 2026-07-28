@@ -13,7 +13,8 @@ import {
   AlertCircle, 
   Save, 
   Clock,
-  Sparkles
+  Sparkles,
+  BookOpen
 } from "lucide-react";
 
 export default function AttendanceLog() {
@@ -28,6 +29,11 @@ export default function AttendanceLog() {
   const [attendance, setAttendance] = useState({});
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(false);
+
+  // Lesson Details State
+  const [topic, setTopic] = useState("");
+  const [pages, setPages] = useState("");
+  const [vocabularyWords, setVocabularyWords] = useState("");
   
   const [classList, setClassList] = useState([]);
   const [activeClass, setActiveClass] = useState(null);
@@ -123,6 +129,9 @@ export default function AttendanceLog() {
           });
           
           setAttendance(parsedRecords);
+          setTopic(data.topic || "");
+          setPages(data.pages || data.page || "");
+          setVocabularyWords(data.vocabularyWords || "");
         } else {
           // Default all to "present"
           const defaultState = {};
@@ -130,6 +139,9 @@ export default function AttendanceLog() {
             defaultState[s.id] = "present";
           });
           setAttendance(defaultState);
+          setTopic("");
+          setPages("");
+          setVocabularyWords("");
         }
       } catch (err) {
         console.error("Error loading session attendance from Firestore:", err);
@@ -202,6 +214,10 @@ export default function AttendanceLog() {
         teacherId: user.id,
         gradeLevel: activeClass.grade,
         subject: activeClass.subject,
+        topic: topic.trim(),
+        page: pages.trim(),
+        pages: pages.trim(),
+        vocabularyWords: vocabularyWords.trim(),
         records: recordsArray
       });
 
@@ -328,6 +344,71 @@ export default function AttendanceLog() {
           </div>
         </div>
       </div>
+
+      {/* Daily Lesson Details Card */}
+      {!isFutureDate && !isDataLoading && (
+        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex items-center space-x-2 border-b border-slate-100 pb-3">
+            <div className="p-2 bg-brand-50 text-brand-600 rounded-xl">
+              <BookOpen className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 font-heading">Daily Lesson Details</h3>
+              <p className="text-[11px] text-slate-400">Record lesson topics, pages covered, and key vocabulary for weekly reporting.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">
+                Topic / Lesson Title
+              </label>
+              <input
+                type="text"
+                value={topic}
+                onChange={(e) => {
+                  setTopic(e.target.value);
+                  if (saveSuccess) setSaveSuccess(false);
+                }}
+                placeholder="e.g. Mapping the Earth"
+                className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">
+                Page(s) Covered
+              </label>
+              <input
+                type="text"
+                value={pages}
+                onChange={(e) => {
+                  setPages(e.target.value);
+                  if (saveSuccess) setSaveSuccess(false);
+                }}
+                placeholder="e.g. 11-17"
+                className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">
+                Vocabulary Words
+              </label>
+              <input
+                type="text"
+                value={vocabularyWords}
+                onChange={(e) => {
+                  setVocabularyWords(e.target.value);
+                  if (saveSuccess) setSaveSuccess(false);
+                }}
+                placeholder="e.g. Wander, Ache, Growl"
+                className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Constraints States */}
       {isDataLoading ? (

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, School, Users } from "lucide-react";
+import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, School, Users, BookOpen } from "lucide-react";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -18,6 +18,7 @@ export default function Navbar() {
     ? [
         { name: "Dashboard", path: "/teacher", icon: CalendarCheck },
         { name: "Take Attendance", path: "/teacher/log", icon: ClipboardCheck },
+        { name: "Lesson Reports", path: "/teacher/lesson-reports", icon: BookOpen },
         { name: "Monthly Reports", path: "/teacher/reports", icon: BarChart3 },
         { name: "Student Roster", path: "/teacher/roster", icon: Users }
       ]
