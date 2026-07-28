@@ -166,10 +166,10 @@ export default function TeacherRoster() {
       {/* Header and Add Student Action */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 font-heading">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-heading transition-colors">
             Student Roster Manager
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 transition-colors">
             Manage enrollment profiles and class rosters in Firestore.
           </p>
         </div>
@@ -189,14 +189,14 @@ export default function TeacherRoster() {
       </div>
 
       {/* Roster Config Bar */}
-      <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center">
+      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center transition-colors">
         {/* Class Filter */}
         <div className="flex-1 min-w-[200px]">
-          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">Filter by Class</label>
+          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">Filter by Class</label>
           <select
             value={selectedClassId}
             onChange={(e) => setSelectedClassId(e.target.value)}
-            className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+            className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
           >
             <option value="all">All Assigned Classes ({classList.length})</option>
             {classList.map(c => (
@@ -207,38 +207,38 @@ export default function TeacherRoster() {
 
         {/* Search */}
         <div className="flex-1 min-w-[250px]">
-          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">Search Student</label>
+          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">Search Student</label>
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500 transition-colors" />
             <input
               type="text"
               placeholder="Search name or translation..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-sm border border-slate-200 rounded-xl pl-9 pr-4 py-2 outline-none focus:border-brand-500"
+              className="w-full text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl pl-9 pr-4 py-2 outline-none focus:border-brand-500 transition-colors"
             />
           </div>
         </div>
       </div>
 
       {/* Roster Table */}
-      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/20">
-          <h2 className="text-base font-bold text-slate-800 font-heading">Active Students Enrollment</h2>
-          <span className="text-xs text-slate-400 font-bold bg-white px-2.5 py-1 rounded-lg border border-slate-100 shadow-sm">
+      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/20 dark:bg-slate-800/20 transition-colors">
+          <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Active Students Enrollment</h2>
+          <span className="text-xs text-slate-400 dark:text-slate-500 font-bold bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
             Total Roster: {filteredRoster.length} Students
           </span>
         </div>
 
         {isDataLoading ? (
-          <div className="py-16 text-center text-slate-450 text-xs">
+          <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-xs transition-colors">
             Querying Firestore database records...
           </div>
         ) : filteredRoster.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
                   <th className="px-6 py-3">Student Name</th>
                   <th className="px-6 py-3">Student ID</th>
                   <th className="px-6 py-3">Class/Grade Scope</th>
@@ -247,42 +247,42 @@ export default function TeacherRoster() {
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
                 {filteredRoster.map((student) => {
                   const targetClass = classList.find(c => c.id === student.classId);
                   return (
-                    <tr key={student.id} className="hover:bg-slate-50/10 transition-colors">
+                    <tr key={student.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center space-x-3">
-                          <div className="h-8 w-8 rounded-full bg-brand-50 border border-brand-100/50 flex items-center justify-center font-bold text-xs text-brand-600 uppercase">
+                          <div className="h-8 w-8 rounded-full bg-brand-50 dark:bg-brand-900/30 border border-brand-100/50 dark:border-brand-800/50 flex items-center justify-center font-bold text-xs text-brand-600 dark:text-brand-400 uppercase transition-colors">
                             {(student.internationalName || student.name).split(" ").map(n => n[0]).join("").substring(0, 2)}
                           </div>
                           <div className="flex flex-col text-left">
-                            <span className="font-bold text-slate-800">{formatStudentName(student)}</span>
+                            <span className="font-bold text-slate-800 dark:text-slate-200 transition-colors">{formatStudentName(student)}</span>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-slate-400 font-mono">{student.id}</td>
-                      <td className="px-6 py-4 text-slate-700">{targetClass ? targetClass.name : "Unallocated"}</td>
+                      <td className="px-6 py-4 text-slate-400 dark:text-slate-500 font-mono transition-colors">{student.id}</td>
+                      <td className="px-6 py-4 text-slate-700 dark:text-slate-300 transition-colors">{targetClass ? targetClass.name : "Unallocated"}</td>
                       <td className="px-6 py-4">
-                        <span className="inline-flex px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">
+                        <span className="inline-flex px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold transition-colors">
                           {targetClass ? targetClass.section : "General"}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-slate-500 font-medium">
+                      <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-medium transition-colors">
                         {student.communityCenter ? (
-                          <span className="inline-flex items-center space-x-1.5 text-slate-600">
-                            <Building2 className="h-3 w-3 text-slate-400" />
+                          <span className="inline-flex items-center space-x-1.5 text-slate-600 dark:text-slate-300 transition-colors">
+                            <Building2 className="h-3 w-3 text-slate-400 dark:text-slate-500 transition-colors" />
                             <span>{student.communityCenter}</span>
                           </span>
                         ) : (
-                          <span className="text-slate-300 italic font-normal">Unassigned</span>
+                          <span className="text-slate-300 dark:text-slate-600 italic font-normal transition-colors">Unassigned</span>
                         )}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button
                           onClick={() => handleDeleteStudent(student.id)}
-                          className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -294,10 +294,10 @@ export default function TeacherRoster() {
             </table>
           </div>
         ) : (
-          <div className="py-16 text-center text-slate-400 text-sm flex flex-col items-center justify-center space-y-2">
-            <Users className="h-8 w-8 text-slate-300" />
+          <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm flex flex-col items-center justify-center space-y-2 transition-colors">
+            <Users className="h-8 w-8 text-slate-300 dark:text-slate-600 transition-colors" />
             <span>No students registered.</span>
-            <span className="text-xs text-slate-400">Click "Add New Student" above to add names to your rosters.</span>
+            <span className="text-xs text-slate-400 dark:text-slate-500 transition-colors">Click "Add New Student" above to add names to your rosters.</span>
           </div>
         )}
       </div>
@@ -305,102 +305,102 @@ export default function TeacherRoster() {
       {/* Add Student Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="relative w-full max-w-lg bg-white border border-slate-100 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up transition-colors">
             {/* Modal Close Button */}
             <button
               onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
 
             {/* Modal Header */}
             <div className="flex items-center space-x-3 mb-6">
-              <div className="p-2.5 bg-brand-50 text-brand-600 rounded-xl">
+              <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
                 <UserPlus className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-950 font-heading">Add Student to Roster</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Enroll a student with optional ESL translation tracking.</p>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading transition-colors">Add Student to Roster</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Enroll a student with optional ESL translation tracking.</p>
               </div>
             </div>
 
             {success ? (
               <div className="py-12 flex flex-col items-center justify-center space-y-4">
-                <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-inner">
+                <div className="h-12 w-12 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-inner transition-colors">
                   <CheckCircle className="h-7 w-7" />
                 </div>
-                <h4 className="text-sm font-bold text-slate-800">Student Registered!</h4>
-                <p className="text-xs text-slate-400">Added to roster successfully.</p>
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 transition-colors">Student Registered!</h4>
+                <p className="text-xs text-slate-400 dark:text-slate-500 transition-colors">Added to roster successfully.</p>
               </div>
             ) : (
               <form onSubmit={handleAddStudent} className="space-y-4.5">
                 {error && (
-                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 p-3.5 text-xs font-semibold text-red-600 border border-red-100">
+                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 dark:bg-red-900/30 p-3.5 text-xs font-semibold text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800/50 transition-colors">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>{error}</span>
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Official Registry Name (English / Fallback)</label>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Official Registry Name (English / Fallback)</label>
                   <input
                     type="text"
                     required
                     value={studentName}
                     onChange={(e) => setStudentName(e.target.value)}
                     placeholder="e.g. Alice Smith"
-                    className="w-full text-sm rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-brand-500"
+                    className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 outline-none focus:border-brand-500 transition-colors"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">International Name (Preferred)</label>
+                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">International Name (Preferred)</label>
                     <div className="relative">
-                      <Globe className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                      <Globe className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500 transition-colors" />
                       <input
                         type="text"
                         value={internationalName}
                         onChange={(e) => setInternationalName(e.target.value)}
                         placeholder="e.g. Alice"
-                        className="w-full text-sm rounded-xl border border-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500"
+                        className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500 transition-colors"
                       />
                     </div>
                   </div>
                   
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">National / Home Language Name</label>
+                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">National / Home Language Name</label>
                     <input
                       type="text"
                       value={nationalName}
                       onChange={(e) => setNationalName(e.target.value)}
                       placeholder="e.g. Kim Ji-woo"
-                      className="w-full text-sm rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-brand-500"
+                      className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 outline-none focus:border-brand-500 transition-colors"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Community Center Association</label>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Community Center Association</label>
                   <div className="relative">
-                    <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500 transition-colors" />
                     <input
                       type="text"
                       value={communityCenter}
                       onChange={(e) => setCommunityCenter(e.target.value)}
                       placeholder="e.g. East Bay Community Center"
-                      className="w-full text-sm rounded-xl border border-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500"
+                      className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500 transition-colors"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Assign to Class</label>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Assign to Class</label>
                   <select
                     value={modalClassId}
                     onChange={(e) => setModalClassId(e.target.value)}
-                    className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+                    className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                   >
                     {classList.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
@@ -409,17 +409,17 @@ export default function TeacherRoster() {
                 </div>
 
                 {/* Actions */}
-                <div className="mt-8 pt-4 border-t border-slate-100 flex items-center justify-end space-x-3">
+                <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3 transition-colors">
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+                    className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-bold transition-colors cursor-pointer"
+                    className="rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500 text-white px-5 py-2 text-xs font-bold transition-colors cursor-pointer"
                   >
                     Enroll Student
                   </button>

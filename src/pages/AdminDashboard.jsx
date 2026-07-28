@@ -437,8 +437,8 @@ export default function AdminDashboard() {
     <div className="space-y-8 animate-fade-in relative">
       {/* Reset Email Magic Link Toast Alert */}
       {resetToastEmail && (
-        <div className="fixed top-4 right-4 z-50 flex items-center space-x-2 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-4 py-2.5 rounded-xl shadow-lg animate-pulse">
-          <Sparkles className="h-4 w-4 text-emerald-600 shrink-0" />
+        <div className="fixed top-4 right-4 z-50 flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800/50 px-4 py-2.5 rounded-xl shadow-lg animate-pulse transition-colors">
+          <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-500 shrink-0" />
           <span>Password reset email sent to {resetToastEmail}!</span>
         </div>
       )}
@@ -446,10 +446,10 @@ export default function AdminDashboard() {
       {/* Header Panel */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 font-heading">
+          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-heading transition-colors">
             Admin Console
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 transition-colors">
             Manage academic staff profiles, master schedules, and global student reassignments.
           </p>
         </div>
@@ -464,52 +464,52 @@ export default function AdminDashboard() {
 
       {/* Metric overview cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center space-x-4">
-          <div className="p-3 bg-brand-50 text-brand-600 rounded-xl">
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
+          <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
             <Users className="h-5 w-5" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Teachers</span>
-            <h3 className="text-xl font-bold text-slate-800 mt-0.5">{stats.totalTeachers}</h3>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Active Teachers</span>
+            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.totalTeachers}</h3>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center space-x-4">
-          <div className="p-3 bg-teal-50 text-teal-600 rounded-xl">
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
+          <div className="p-3 bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 rounded-xl transition-colors">
             <BookOpen className="h-5 w-5" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Managed Classes</span>
-            <h3 className="text-xl font-bold text-slate-800 mt-0.5">{stats.totalClasses}</h3>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Managed Classes</span>
+            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.totalClasses}</h3>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center space-x-4">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl transition-colors">
             <UserCheck className="h-5 w-5" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Enrolled Students</span>
-            <h3 className="text-xl font-bold text-slate-800 mt-0.5">{stats.totalStudents}</h3>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Enrolled Students</span>
+            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.totalStudents}</h3>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center space-x-4">
-          <div className="p-3 bg-red-50 text-red-600 rounded-xl">
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
+          <div className="p-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl transition-colors">
             <AlertCircle className="h-5 w-5" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Unassigned Students</span>
-            <h3 className="text-xl font-bold text-slate-800 mt-0.5">{stats.unassignedStudents}</h3>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Unassigned Students</span>
+            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.unassignedStudents}</h3>
           </div>
         </div>
       </div>
 
       {/* Teachers Roster Table */}
-      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/20 flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-800 font-heading">Provisioned Academic Staff</h2>
-          <span className="text-xs text-slate-400 font-semibold bg-white px-2.5 py-1 rounded-lg border border-slate-100">
+      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex items-center justify-between transition-colors">
+          <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Provisioned Academic Staff</h2>
+          <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700 transition-colors">
             {teachers.length} Active Instructors
           </span>
         </div>
@@ -518,41 +518,41 @@ export default function AdminDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
                   <th className="px-6 py-3">Teacher</th>
                   <th className="px-6 py-3">Email Address</th>
                   <th className="px-6 py-3">Classroom Master Schedule</th>
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
                 {teachers.map((teacher) => (
-                  <tr key={teacher.id} className="hover:bg-slate-50/10 transition-colors">
+                  <tr key={teacher.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
                         <img 
                           src={teacher.avatar} 
                           alt={teacher.name} 
-                          className="h-9 w-9 rounded-full border border-slate-100 bg-slate-50"
+                          className="h-9 w-9 rounded-full border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 transition-colors"
                         />
-                        <span className="font-bold text-slate-800">{teacher.name}</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200 transition-colors">{teacher.name}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-500">{teacher.email}</td>
+                    <td className="px-6 py-4 text-slate-500 dark:text-slate-400 transition-colors">{teacher.email}</td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-1.5">
                         {teacher.assignments && teacher.assignments.length > 0 ? (
                           teacher.assignments.map((asg, idx) => (
                             <span 
                               key={idx}
-                              className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-brand-50 text-brand-700 text-[10px] font-bold border border-brand-100/50"
+                              className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 text-[10px] font-bold border border-brand-100/50 dark:border-brand-800/50 transition-colors"
                             >
-                              <GraduationCap className="h-3 w-3 shrink-0 text-brand-600" />
+                              <GraduationCap className="h-3 w-3 shrink-0 text-brand-600 dark:text-brand-500" />
                               <span>{asg.grade || asg.gradeLevel} - {asg.subject} {formatScheduleString(asg)}</span>
                             </span>
                           ))
                         ) : (
-                          <span className="text-slate-400 italic">No Assignments</span>
+                          <span className="text-slate-400 dark:text-slate-500 italic transition-colors">No Assignments</span>
                         )}
                       </div>
                     </td>
@@ -562,7 +562,7 @@ export default function AdminDashboard() {
                         <button
                           onClick={() => handleSendResetEmail(teacher.email)}
                           title="Send Password Reset Magic Link"
-                          className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-amber-600 hover:border-amber-100 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:border-amber-100 dark:hover:border-amber-800/50 transition-colors cursor-pointer"
                         >
                           <Key className="h-3.5 w-3.5" />
                         </button>
@@ -571,7 +571,7 @@ export default function AdminDashboard() {
                         <button
                           onClick={() => handleOpenEditModal(teacher)}
                           title="Edit Class Assignments & Schedule"
-                          className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-brand-650 hover:border-brand-100 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-100 dark:hover:border-brand-800/50 transition-colors cursor-pointer"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
@@ -580,7 +580,7 @@ export default function AdminDashboard() {
                         <button
                           onClick={() => handleDeleteTeacher(teacher.id, teacher.name)}
                           title="Delete Teacher Account"
-                          className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-100 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -592,28 +592,28 @@ export default function AdminDashboard() {
             </table>
           </div>
         ) : (
-          <div className="py-16 text-center text-slate-400 text-sm">
+          <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm transition-colors">
             No instructors provisioned yet.
           </div>
         )}
       </div>
 
       {/* Global Student Directory */}
-      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition-colors">
           <div>
-            <h2 className="text-base font-bold text-slate-800 font-heading">Global Student Directory</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Audit student allocations and reassign unassigned profiles.</p>
+            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Global Student Directory</h2>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Audit student allocations and reassign unassigned profiles.</p>
           </div>
 
           <div className="relative min-w-[240px]">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
             <input
               type="text"
               placeholder="Search student directory..."
               value={searchStudentQuery}
               onChange={(e) => setSearchStudentQuery(e.target.value)}
-              className="w-full text-xs rounded-xl border border-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500 bg-white"
+              className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-700 pl-9 pr-3 py-2 outline-none focus:border-brand-500 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors"
             />
           </div>
         </div>
@@ -622,7 +622,7 @@ export default function AdminDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
                   <th className="px-6 py-3">Student Name</th>
                   <th className="px-6 py-3">Student ID</th>
                   <th className="px-6 py-3">Class/Grade Scope</th>
@@ -630,33 +630,33 @@ export default function AdminDashboard() {
                   <th className="px-6 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
                 {filteredStudents.map((student) => {
                   const assignedTeacher = teachers.find(t => t.id === student.teacherId);
                   const isUnassigned = !student.teacherId || student.teacherId === "unassigned" || !assignedTeacher;
 
                   return (
-                    <tr key={student.id} className="hover:bg-slate-50/10 transition-colors">
+                    <tr key={student.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex flex-col">
-                          <span className="font-bold text-slate-800">{formatStudentName(student)}</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-200 transition-colors">{formatStudentName(student)}</span>
                           {student.communityCenter && (
-                            <span className="text-[9px] text-slate-400 font-medium inline-flex items-center space-x-1 mt-0.5">
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium inline-flex items-center space-x-1 mt-0.5 transition-colors">
                               <Building2 className="h-2.5 w-2.5 shrink-0" />
                               <span>{student.communityCenter}</span>
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-slate-400 font-mono">{student.id}</td>
-                      <td className="px-6 py-4 text-slate-600">
-                        <span className="uppercase font-bold text-[10px] bg-slate-100 px-2 py-0.5 rounded">
+                      <td className="px-6 py-4 text-slate-400 dark:text-slate-500 font-mono transition-colors">{student.id}</td>
+                      <td className="px-6 py-4 text-slate-600 dark:text-slate-400 transition-colors">
+                        <span className="uppercase font-bold text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded transition-colors">
                           {student.classId || "Unassigned"}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         {isUnassigned ? (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-red-50 text-red-700 text-[10px] font-bold border border-red-100">
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-[10px] font-bold border border-red-100 dark:border-red-800/50 transition-colors">
                             <AlertCircle className="h-3 w-3 shrink-0" />
                             <span>Unassigned</span>
                           </span>
@@ -665,9 +665,9 @@ export default function AdminDashboard() {
                             <img 
                               src={assignedTeacher.avatar} 
                               alt={assignedTeacher.name}
-                              className="h-6 w-6 rounded-full border border-slate-100"
+                              className="h-6 w-6 rounded-full border border-slate-100 dark:border-slate-700 transition-colors"
                             />
-                            <span className="font-bold text-slate-700">{assignedTeacher.name}</span>
+                            <span className="font-bold text-slate-700 dark:text-slate-200 transition-colors">{assignedTeacher.name}</span>
                           </div>
                         )}
                       </td>
@@ -675,9 +675,9 @@ export default function AdminDashboard() {
                         <button
                           onClick={() => handleOpenReassignModal(student)}
                           title="Edit / Reassign Student"
-                          className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-brand-650 hover:border-brand-100 text-xs font-bold transition-colors cursor-pointer"
+                          className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-100 dark:hover:border-brand-800/50 text-xs font-bold transition-colors cursor-pointer"
                         >
-                          <Pencil className="h-3.5 w-3.5 text-slate-400" />
+                          <Pencil className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                           <span>Reassign</span>
                         </button>
                       </td>
@@ -688,7 +688,7 @@ export default function AdminDashboard() {
             </table>
           </div>
         ) : (
-          <div className="py-16 text-center text-slate-400 text-sm">
+          <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm transition-colors">
             No students registered in the global directory.
           </div>
         )}
@@ -697,36 +697,36 @@ export default function AdminDashboard() {
       {/* Provision Teacher Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="relative w-full max-w-2xl bg-white border border-slate-100 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[90vh] overflow-y-auto transition-colors">
             <button
               onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
 
             <div className="flex items-center space-x-3 mb-6">
-              <div className="p-2.5 bg-brand-50 text-brand-600 rounded-xl">
+              <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
                 <UserPlus className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-950 font-heading">Provision New Teacher</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Register login credentials and configure master schedule.</p>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading transition-colors">Provision New Teacher</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Register login credentials and configure master schedule.</p>
               </div>
             </div>
 
             {success ? (
               <div className="py-12 flex flex-col items-center justify-center space-y-4">
-                <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-inner">
+                <div className="h-12 w-12 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-inner transition-colors">
                   <CheckCircle className="h-7 w-7" />
                 </div>
-                <h4 className="text-sm font-bold text-slate-800">Teacher Account Activated!</h4>
-                <p className="text-xs text-slate-400">Master schedule and teacher profile stored successfully.</p>
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 transition-colors">Teacher Account Activated!</h4>
+                <p className="text-xs text-slate-400 dark:text-slate-500 transition-colors">Master schedule and teacher profile stored successfully.</p>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
                 {error && (
-                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 p-3.5 text-xs font-semibold text-red-600 border border-red-100">
+                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 dark:bg-red-900/30 p-3.5 text-xs font-semibold text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800/50 transition-colors">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>{error}</span>
                   </div>
@@ -734,55 +734,55 @@ export default function AdminDashboard() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Teacher Name</label>
+                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 transition-colors">Teacher Name</label>
                     <input
                       type="text"
                       required
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="e.g. Alex Rivera"
-                      className="w-full text-sm rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-brand-500"
+                      className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 outline-none focus:border-brand-500 transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Email Address</label>
+                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 transition-colors">Email Address</label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                      <Mail className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
                       <input
                         type="email"
                         required
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="alex.rivera@school.org"
-                        className="w-full text-sm rounded-xl border border-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500"
+                        className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500 transition-colors"
                       />
                     </div>
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Login Password</label>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 transition-colors">Login Password</label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
                     <input
                       type="password"
                       required
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full text-sm rounded-xl border border-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500"
+                      className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500 transition-colors"
                     />
                   </div>
                 </div>
 
                 {/* Master Schedule Assignments */}
                 <div className="space-y-3.5">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Classroom Master Schedule</label>
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2 transition-colors">
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider transition-colors">Classroom Master Schedule</label>
                     <button
                       type="button"
                       onClick={handleAddAssignmentField}
-                      className="text-[10px] font-bold text-brand-600 hover:text-brand-700 flex items-center space-x-1"
+                      className="text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center space-x-1 transition-colors"
                     >
                       <Plus className="h-3 w-3" />
                       <span>Add Class Assignment</span>
@@ -791,15 +791,15 @@ export default function AdminDashboard() {
 
                   <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
                     {assignments.map((assignment, index) => (
-                      <div key={index} className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200/60 space-y-3">
+                      <div key={index} className="bg-slate-50/70 dark:bg-slate-800/50 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-700/50 space-y-3 transition-colors">
                         {/* Row 1: Grade & Subject & Delete */}
                         <div className="flex items-center space-x-3">
                           <div className="w-1/2">
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Grade Level</label>
+                            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 transition-colors">Grade Level</label>
                             <select
                               value={assignment.grade || assignment.gradeLevel || "Grade 1"}
                               onChange={(e) => handleAssignmentChange(index, "grade", e.target.value)}
-                              className="w-full text-xs font-bold text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-brand-500"
+                              className="w-full text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                             >
                               {GRADE_CATEGORIES.map((cat) => (
                                 <optgroup key={cat.label} label={cat.label}>
@@ -812,14 +812,14 @@ export default function AdminDashboard() {
                           </div>
 
                           <div className="flex-1">
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Subject</label>
+                            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 transition-colors">Subject</label>
                             <input
                               type="text"
                               required
                               placeholder="e.g. Mathematics, Science"
                               value={assignment.subject}
                               onChange={(e) => handleAssignmentChange(index, "subject", e.target.value)}
-                              className="w-full text-xs rounded-lg border border-slate-200 px-3 py-1.5 outline-none bg-white focus:border-brand-500"
+                              className="w-full text-xs rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 outline-none bg-white dark:bg-slate-800 focus:border-brand-500 transition-colors"
                             />
                           </div>
 
@@ -827,38 +827,38 @@ export default function AdminDashboard() {
                             type="button"
                             onClick={() => handleRemoveAssignmentField(index)}
                             disabled={assignments.length === 1}
-                            className="p-1.5 mt-4 rounded bg-white border border-slate-200 text-slate-400 hover:text-red-500 disabled:opacity-30 hover:border-red-100 transition-colors cursor-pointer"
+                            className="p-1.5 mt-4 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-30 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
 
                         {/* Row 2: Start Time & End Time */}
-                        <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/40">
+                        <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/40 dark:border-slate-700/40 transition-colors">
                           <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Time</label>
+                            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 transition-colors">Start Time</label>
                             <input
                               type="time"
                               value={assignment.startTime || "09:00"}
                               onChange={(e) => handleAssignmentChange(index, "startTime", e.target.value)}
-                              className="w-full text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-brand-500"
+                              className="w-full text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">End Time</label>
+                            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 transition-colors">End Time</label>
                             <input
                               type="time"
                               value={assignment.endTime || "10:00"}
                               onChange={(e) => handleAssignmentChange(index, "endTime", e.target.value)}
-                              className="w-full text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-brand-500"
+                              className="w-full text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                             />
                           </div>
                         </div>
 
                         {/* Row 3: Weekdays Checkboxes */}
                         <div className="pt-1">
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Schedule Days</label>
+                          <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Schedule Days</label>
                           <div className="flex flex-wrap gap-2">
                             {WEEKDAYS.map((day) => {
                               const isChecked = (assignment.daysOfWeek || []).includes(day);
@@ -867,15 +867,15 @@ export default function AdminDashboard() {
                                   key={day} 
                                   className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer border transition-all select-none ${
                                     isChecked 
-                                      ? "bg-brand-50 text-brand-700 border-brand-200 font-bold" 
-                                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100/50"
+                                      ? "bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 border-brand-200 dark:border-brand-800/50 font-bold" 
+                                      : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100/50 dark:hover:bg-slate-700/50"
                                   }`}
                                 >
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
                                     onChange={() => handleToggleDay(assignments, setAssignments, index, day)}
-                                    className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500/20 accent-brand-600 cursor-pointer"
+                                    className="h-3.5 w-3.5 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500/20 accent-brand-600 cursor-pointer"
                                   />
                                   <span>{day.substring(0, 3)}</span>
                                 </label>
@@ -888,18 +888,18 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                <div className="mt-8 pt-4 border-t border-slate-100 flex items-center justify-end space-x-3">
+                <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3 transition-colors">
                   <button
                     type="button"
                     onClick={() => setIsModalOpen(false)}
-                    className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+                    className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    className="rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
                     <span>{isLoading ? "Provisioning..." : "Provision Instructor"}</span>
                   </button>
@@ -913,59 +913,59 @@ export default function AdminDashboard() {
       {/* Edit Teacher Assignments Modal */}
       {isEditModalOpen && editingTeacher && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="relative w-full max-w-2xl bg-white border border-slate-100 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[90vh] overflow-y-auto transition-colors">
             <button
               onClick={() => setIsEditModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
 
             <div className="flex items-center space-x-3 mb-6">
-              <div className="p-2.5 bg-brand-50 text-brand-600 rounded-xl">
+              <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
                 <Pencil className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-950 font-heading">Edit Master Schedule</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Modify allocation details and times for {editingTeacher.name}</p>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading transition-colors">Edit Master Schedule</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Modify allocation details and times for {editingTeacher.name}</p>
               </div>
             </div>
 
             {editSuccess ? (
               <div className="py-12 flex flex-col items-center justify-center space-y-4">
-                <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-inner">
+                <div className="h-12 w-12 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-inner transition-colors">
                   <CheckCircle className="h-7 w-7" />
                 </div>
-                <h4 className="text-sm font-bold text-slate-800">Master Schedule Updated!</h4>
-                <p className="text-xs text-slate-400">Teacher profile has been synchronized successfully.</p>
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 transition-colors">Master Schedule Updated!</h4>
+                <p className="text-xs text-slate-400 dark:text-slate-500 transition-colors">Teacher profile has been synchronized successfully.</p>
               </div>
             ) : (
               <form onSubmit={handleEditSubmit} className="space-y-6">
                 {editError && (
-                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 p-3.5 text-xs font-semibold text-red-600 border border-red-100">
+                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 dark:bg-red-900/30 p-3.5 text-xs font-semibold text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800/50 transition-colors">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>{editError}</span>
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 transition-colors">
                   <div>
-                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Teacher</span>
-                    <span className="text-sm font-bold text-slate-700 mt-1.5 block">{editingTeacher.name}</span>
+                    <span className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Teacher</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200 mt-1.5 block transition-colors">{editingTeacher.name}</span>
                   </div>
                   <div>
-                    <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Email Address</span>
-                    <span className="text-sm font-bold text-slate-550 mt-1.5 block">{editingTeacher.email}</span>
+                    <span className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Email Address</span>
+                    <span className="text-sm font-bold text-slate-500 dark:text-slate-400 mt-1.5 block transition-colors">{editingTeacher.email}</span>
                   </div>
                 </div>
 
                 <div className="space-y-3.5">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Classroom Master Schedule</label>
+                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2 transition-colors">
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider transition-colors">Classroom Master Schedule</label>
                     <button
                       type="button"
                       onClick={handleAddEditAssignmentField}
-                      className="text-[10px] font-bold text-brand-600 hover:text-brand-700 flex items-center space-x-1"
+                      className="text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center space-x-1 transition-colors"
                     >
                       <Plus className="h-3 w-3" />
                       <span>Add Class Assignment</span>
@@ -974,15 +974,15 @@ export default function AdminDashboard() {
 
                   <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
                     {editAssignments.map((assignment, index) => (
-                      <div key={index} className="bg-slate-50/70 p-3.5 rounded-2xl border border-slate-200/60 space-y-3">
+                      <div key={index} className="bg-slate-50/70 dark:bg-slate-800/50 p-3.5 rounded-2xl border border-slate-200/60 dark:border-slate-700/50 space-y-3 transition-colors">
                         {/* Row 1: Grade & Subject & Delete */}
                         <div className="flex items-center space-x-3">
                           <div className="w-1/2">
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Grade Level</label>
+                            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 transition-colors">Grade Level</label>
                             <select
                               value={assignment.grade || assignment.gradeLevel || "Grade 1"}
                               onChange={(e) => handleEditAssignmentChange(index, "grade", e.target.value)}
-                              className="w-full text-xs font-bold text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-brand-500"
+                              className="w-full text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                             >
                               {GRADE_CATEGORIES.map((cat) => (
                                 <optgroup key={cat.label} label={cat.label}>
@@ -995,14 +995,14 @@ export default function AdminDashboard() {
                           </div>
 
                           <div className="flex-1">
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Subject</label>
+                            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 transition-colors">Subject</label>
                             <input
                               type="text"
                               required
                               placeholder="e.g. Mathematics, Science"
                               value={assignment.subject}
                               onChange={(e) => handleEditAssignmentChange(index, "subject", e.target.value)}
-                              className="w-full text-xs rounded-lg border border-slate-200 px-3 py-1.5 outline-none bg-white focus:border-brand-500"
+                              className="w-full text-xs rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-3 py-1.5 outline-none bg-white dark:bg-slate-800 focus:border-brand-500 transition-colors"
                             />
                           </div>
 
@@ -1010,38 +1010,38 @@ export default function AdminDashboard() {
                             type="button"
                             onClick={() => handleRemoveEditAssignmentField(index)}
                             disabled={editAssignments.length === 1}
-                            className="p-1.5 mt-4 rounded bg-white border border-slate-200 text-slate-400 hover:text-red-500 disabled:opacity-30 hover:border-red-100 transition-colors cursor-pointer"
+                            className="p-1.5 mt-4 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 disabled:opacity-30 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
 
                         {/* Row 2: Start Time & End Time */}
-                        <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/40">
+                        <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/40 dark:border-slate-700/40 transition-colors">
                           <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Start Time</label>
+                            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 transition-colors">Start Time</label>
                             <input
                               type="time"
                               value={assignment.startTime || "09:00"}
                               onChange={(e) => handleEditAssignmentChange(index, "startTime", e.target.value)}
-                              className="w-full text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-brand-500"
+                              className="w-full text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                             />
                           </div>
 
                           <div>
-                            <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">End Time</label>
+                            <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1 transition-colors">End Time</label>
                             <input
                               type="time"
                               value={assignment.endTime || "10:00"}
                               onChange={(e) => handleEditAssignmentChange(index, "endTime", e.target.value)}
-                              className="w-full text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white outline-none focus:border-brand-500"
+                              className="w-full text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                             />
                           </div>
                         </div>
 
                         {/* Row 3: Weekdays Checkboxes */}
                         <div className="pt-1">
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Schedule Days</label>
+                          <label className="block text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Schedule Days</label>
                           <div className="flex flex-wrap gap-2">
                             {WEEKDAYS.map((day) => {
                               const isChecked = (assignment.daysOfWeek || []).includes(day);
@@ -1050,15 +1050,15 @@ export default function AdminDashboard() {
                                   key={day} 
                                   className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer border transition-all select-none ${
                                     isChecked 
-                                      ? "bg-brand-50 text-brand-700 border-brand-200 font-bold" 
-                                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-100/50"
+                                      ? "bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 border-brand-200 dark:border-brand-800/50 font-bold" 
+                                      : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100/50 dark:hover:bg-slate-700/50"
                                   }`}
                                 >
                                   <input
                                     type="checkbox"
                                     checked={isChecked}
                                     onChange={() => handleToggleDay(editAssignments, setEditAssignments, index, day)}
-                                    className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-500/20 accent-brand-600 cursor-pointer"
+                                    className="h-3.5 w-3.5 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500/20 accent-brand-600 cursor-pointer"
                                   />
                                   <span>{day.substring(0, 3)}</span>
                                 </label>
@@ -1071,18 +1071,18 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                <div className="mt-8 pt-4 border-t border-slate-100 flex items-center justify-end space-x-3">
+                <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3 transition-colors">
                   <button
                     type="button"
                     onClick={() => setIsEditModalOpen(false)}
-                    className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+                    className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isEditLoading}
-                    className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    className="rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
                     <span>{isEditLoading ? "Saving..." : "Save Changes"}</span>
                   </button>
@@ -1096,47 +1096,47 @@ export default function AdminDashboard() {
       {/* Reassign Student Modal */}
       {isReassignModalOpen && reassigningStudent && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="relative w-full max-w-lg bg-white border border-slate-100 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up transition-colors">
             <button
               onClick={() => setIsReassignModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors"
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
 
             <div className="flex items-center space-x-3 mb-6">
-              <div className="p-2.5 bg-brand-50 text-brand-600 rounded-xl">
+              <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
                 <Pencil className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-950 font-heading">Reassign Student Profile</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Allocate {formatStudentName(reassigningStudent)} to an active instructor.</p>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading transition-colors">Reassign Student Profile</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Allocate {formatStudentName(reassigningStudent)} to an active instructor.</p>
               </div>
             </div>
 
             {reassignSuccess ? (
               <div className="py-12 flex flex-col items-center justify-center space-y-4">
-                <div className="h-12 w-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-inner">
+                <div className="h-12 w-12 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-inner transition-colors">
                   <CheckCircle className="h-7 w-7" />
                 </div>
-                <h4 className="text-sm font-bold text-slate-800">Student Reassigned!</h4>
-                <p className="text-xs text-slate-400">Student now appears in the new teacher's active roster.</p>
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 transition-colors">Student Reassigned!</h4>
+                <p className="text-xs text-slate-400 dark:text-slate-500 transition-colors">Student now appears in the new teacher's active roster.</p>
               </div>
             ) : (
               <form onSubmit={handleReassignSubmit} className="space-y-5">
                 {reassignError && (
-                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 p-3.5 text-xs font-semibold text-red-600 border border-red-100">
+                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 dark:bg-red-900/30 p-3.5 text-xs font-semibold text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800/50 transition-colors">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>{reassignError}</span>
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Target Teacher</label>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 transition-colors">Target Teacher</label>
                   <select
                     value={reassignTeacherId}
                     onChange={(e) => handleTeacherSelectChange(e.target.value)}
-                    className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+                    className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                   >
                     {teachers.map(t => (
                       <option key={t.id} value={t.id}>{t.name} ({t.email})</option>
@@ -1145,11 +1145,11 @@ export default function AdminDashboard() {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Target Classroom Assignment</label>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 transition-colors">Target Classroom Assignment</label>
                   <select
                     value={reassignClassId}
                     onChange={(e) => setReassignClassId(e.target.value)}
-                    className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+                    className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                   >
                     {(() => {
                       const targetTeacherObj = teachers.find(t => t.id === reassignTeacherId);
@@ -1169,18 +1169,18 @@ export default function AdminDashboard() {
                   </select>
                 </div>
 
-                <div className="mt-8 pt-4 border-t border-slate-100 flex items-center justify-end space-x-3">
+                <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3 transition-colors">
                   <button
                     type="button"
                     onClick={() => setIsReassignModalOpen(false)}
-                    className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+                    className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isReassignLoading}
-                    className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    className="rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
                     <span>{isReassignLoading ? "Reassigning..." : "Reassign Student"}</span>
                   </button>

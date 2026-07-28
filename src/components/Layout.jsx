@@ -4,9 +4,9 @@ import Navbar from "./Navbar";
 
 export default function Layout() {
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50/50">
+    <div className="min-h-screen flex flex-col bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200">
       {/* Decorative top background elements */}
-      <div className="absolute top-0 left-0 -z-10 h-96 w-full bg-gradient-to-b from-brand-50/30 to-transparent pointer-events-none" />
+      <div className="absolute top-0 left-0 -z-10 h-96 w-full bg-gradient-to-b from-brand-50/30 dark:from-brand-900/10 to-transparent pointer-events-none transition-colors duration-200" />
       
       {/* Navigation */}
       <Navbar />
@@ -17,8 +17,8 @@ export default function Layout() {
       </main>
 
       {/* Modern Minimalist Footer */}
-      <footer className="border-t border-slate-100 bg-white/40 py-6 text-center">
-        <p className="text-xs text-slate-400">
+      <footer className="border-t border-slate-100 dark:border-slate-800 bg-white/40 dark:bg-slate-900/40 py-6 text-center transition-colors duration-200">
+        <p className="text-xs text-slate-400 dark:text-slate-500">
           &copy; {new Date().getFullYear()} Washington School. All rights reserved. Attendance Portal.
         </p>
       </footer>

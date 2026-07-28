@@ -138,13 +138,13 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-[75vh] flex-col items-center justify-center py-6 sm:py-12">
-      <div className="relative w-full max-w-md px-6 py-12 bg-white border border-slate-100 rounded-3xl shadow-xl shadow-slate-100/50">
+    <div className="flex min-h-screen flex-col items-center justify-center py-6 sm:py-12 bg-slate-50 dark:bg-slate-950 transition-colors duration-200">
+      <div className="relative w-full max-w-md px-6 py-12 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-xl shadow-slate-100/50 dark:shadow-none transition-colors">
         
         {/* Seeding banner indicator */}
         {seedingText && (
-          <div className="mb-6 flex items-center space-x-2 rounded-xl bg-brand-50 p-3.5 text-xs font-semibold text-brand-700 border border-brand-100 animate-pulse">
-            <Sparkles className="h-4 w-4 shrink-0 text-brand-600" />
+          <div className="mb-6 flex items-center space-x-2 rounded-xl bg-brand-50 dark:bg-brand-900/20 p-3.5 text-xs font-semibold text-brand-700 dark:text-brand-400 border border-brand-100 dark:border-brand-800/50 animate-pulse transition-colors">
+            <Sparkles className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
             <span>{seedingText}</span>
           </div>
         )}
@@ -154,13 +154,13 @@ export default function Login() {
           <img 
             src="/logo.png" 
             alt="Washington School Logo" 
-            className="h-16 w-16 object-contain rounded-2xl border border-slate-100 bg-slate-50/50 p-1.5 shadow-sm"
+            className="h-16 w-16 object-contain rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-white p-1.5 shadow-sm transition-colors"
           />
           <div>
-            <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900">
+            <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-white transition-colors">
               Washington School
             </h1>
-            <p className="text-sm text-slate-450 mt-1 font-medium">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium transition-colors">
               Sign in to the Attendance Portal
             </p>
           </div>
@@ -170,18 +170,18 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Error alert right above email input */}
           {error && (
-            <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-md mb-4 text-sm flex items-start space-x-2.5 font-medium">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-500" />
+            <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 p-3 rounded-md mb-4 text-sm flex items-start space-x-2.5 font-medium transition-colors">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-500 dark:text-red-400" />
               <span>{error}</span>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 transition-colors">
               Email Address
             </label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-slate-500">
                 <Mail className="h-4 w-4" />
               </span>
               <input
@@ -193,19 +193,19 @@ export default function Login() {
                   if (error) setError("");
                 }}
                 placeholder="teacher@school.org"
-                className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
               />
             </div>
           </div>
 
           <div>
             <div className="flex justify-between items-center mb-2">
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider transition-colors">
                 Password
               </label>
             </div>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-slate-500">
                 <KeyRound className="h-4 w-4" />
               </span>
               <input
@@ -217,19 +217,19 @@ export default function Login() {
                   if (error) setError("");
                 }}
                 placeholder="••••••••"
-                className="w-full rounded-xl border border-slate-200 py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
               />
             </div>
           </div>
 
           {/* Stay Signed In Checkbox */}
           <div className="flex items-center justify-between text-xs pt-1">
-            <label className="flex items-center space-x-2 text-slate-600 font-medium cursor-pointer select-none">
+            <label className="flex items-center space-x-2 text-slate-600 dark:text-slate-400 font-medium cursor-pointer select-none transition-colors">
               <input
                 type="checkbox"
                 checked={rememberMe}
                 onChange={(e) => setRememberMe(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500/20 cursor-pointer accent-brand-600"
+                className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-brand-600 focus:ring-brand-500/20 cursor-pointer accent-brand-600 transition-colors"
               />
               <span>Stay signed in on this device</span>
             </label>
@@ -238,7 +238,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={isSubmitting || seedingText}
-            className="w-full mt-2 inline-flex items-center justify-center space-x-2 rounded-xl bg-slate-900 py-2.5 text-sm font-semibold text-white transition-all hover:bg-slate-800 focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] disabled:opacity-50"
+            className="w-full mt-2 inline-flex items-center justify-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-slate-800 dark:hover:bg-brand-500 focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] disabled:opacity-50"
           >
             {isSubmitting ? "Signing in..." : "Sign In"}
             {!isSubmitting && <ArrowRight className="h-4 w-4" />}

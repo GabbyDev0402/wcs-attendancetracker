@@ -252,15 +252,15 @@ export default function MonthlyReports() {
         <div className="flex items-center space-x-2">
           <Link 
             to="/teacher" 
-            className="p-2 bg-white hover:bg-slate-50 border border-slate-100 rounded-xl text-slate-500 hover:text-slate-700 transition-all shadow-sm"
+            className="p-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-100 dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-all shadow-sm"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 font-heading">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white font-heading transition-colors">
               Monthly Attendance Reports
             </h1>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">
               Review aggregate instruction loss and performance rates.
             </p>
           </div>
@@ -271,7 +271,7 @@ export default function MonthlyReports() {
           <button
             onClick={handleExportCSV}
             disabled={reportData.length === 0}
-            className="inline-flex items-center space-x-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-all disabled:opacity-50 cursor-pointer"
+            className="inline-flex items-center space-x-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-50 cursor-pointer"
           >
             <ArrowDownToLine className="h-4 w-4" />
             <span>Export CSV</span>
@@ -279,7 +279,7 @@ export default function MonthlyReports() {
           <button
             onClick={handlePrint}
             disabled={reportData.length === 0}
-            className="inline-flex items-center space-x-1.5 rounded-xl bg-slate-950 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 transition-all disabled:opacity-50 cursor-pointer"
+            className="inline-flex items-center space-x-1.5 rounded-xl bg-slate-950 dark:bg-brand-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 dark:hover:bg-brand-500 transition-all disabled:opacity-50 cursor-pointer"
           >
             <Printer className="h-4 w-4" />
             <span>Print Report</span>
@@ -288,14 +288,14 @@ export default function MonthlyReports() {
       </div>
 
       {/* Filter controls */}
-      <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center print:hidden">
+      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center print:hidden transition-colors">
         {/* Class Selector */}
         <div className="flex-1 min-w-[200px]">
-          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">Select Class</label>
+          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">Select Class</label>
           <select
             value={selectedClassId}
             onChange={(e) => setSelectedClassId(e.target.value)}
-            className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+            className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
           >
             {classList.map(c => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -305,11 +305,11 @@ export default function MonthlyReports() {
 
         {/* Month Selector */}
         <div className="flex-1 min-w-[150px]">
-          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">Select Month</label>
+          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">Select Month</label>
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
-            className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+            className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
           >
             {months.map(m => (
               <option key={m.val} value={m.val}>{m.name}</option>
@@ -319,11 +319,11 @@ export default function MonthlyReports() {
 
         {/* Year Selector */}
         <div className="flex-1 min-w-[120px]">
-          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">Select Year</label>
+          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">Select Year</label>
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
-            className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
+            className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
           >
             <option value="2026">2026</option>
             <option value="2025">2025</option>
@@ -334,43 +334,43 @@ export default function MonthlyReports() {
       {/* Stats Summary Cards */}
       {activeClass && (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center space-x-4">
-            <div className="p-3 bg-brand-50 text-brand-600 rounded-xl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
+            <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
               <TrendingUp className="h-5 w-5" />
             </div>
             <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Class Attendance</span>
-              <h4 className="text-xl font-bold text-slate-800 mt-0.5">{classStats.avgRate}%</h4>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Class Attendance</span>
+              <h4 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{classStats.avgRate}%</h4>
             </div>
           </div>
 
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center space-x-4">
-            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl transition-colors">
               <UserCheck className="h-5 w-5" />
             </div>
             <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perfect Attendance</span>
-              <h4 className="text-xl font-bold text-slate-800 mt-0.5">{classStats.perfectCount} Students</h4>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Perfect Attendance</span>
+              <h4 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{classStats.perfectCount} Students</h4>
             </div>
           </div>
 
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center space-x-4">
-            <div className="p-3 bg-red-50 text-red-600 rounded-xl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
+            <div className="p-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl transition-colors">
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">At-Risk Students</span>
-              <h4 className="text-xl font-bold text-slate-800 mt-0.5">{classStats.atRiskCount} Flagged</h4>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">At-Risk Students</span>
+              <h4 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{classStats.atRiskCount} Flagged</h4>
             </div>
           </div>
 
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center space-x-4">
-            <div className="p-3 bg-slate-100 text-slate-600 rounded-xl">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
+            <div className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl transition-colors">
               <Calendar className="h-5 w-5" />
             </div>
             <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Days Logged</span>
-              <h4 className="text-xl font-bold text-slate-800 mt-0.5">{classStats.totalLogsCount} Days</h4>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Total Days Logged</span>
+              <h4 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{classStats.totalLogsCount} Days</h4>
             </div>
           </div>
         </div>
@@ -380,19 +380,19 @@ export default function MonthlyReports() {
       {activeClass && (
         <div className="grid grid-cols-1 gap-6">
           {isDataLoading ? (
-            <div className="py-16 text-center text-slate-455 text-xs">
+            <div className="py-16 text-center text-slate-455 dark:text-slate-400 text-xs transition-colors">
               Calculating report statistics from Firestore sessions...
             </div>
           ) : reportData.length > 0 ? (
             <>
               {/* Visual Trend chart */}
-              <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm print:hidden">
-                <h3 className="text-base font-bold text-slate-800 font-heading mb-6">Attendance Distribution Chart</h3>
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm print:hidden transition-colors">
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading mb-6 transition-colors">Attendance Distribution Chart</h3>
                 <div className="flex flex-col space-y-4">
                   {reportData.slice(0, 6).map(student => (
                     <div key={student.id} className="flex items-center space-x-4">
-                      <span className="text-xs font-semibold text-slate-500 w-32 truncate">{formatStudentName(student.studentObj)}</span>
-                      <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 w-32 truncate transition-colors">{formatStudentName(student.studentObj)}</span>
+                      <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-full h-3 overflow-hidden transition-colors">
                         <div 
                           className={`h-full rounded-full transition-all duration-500 ${
                             student.rate >= 90 
@@ -404,11 +404,11 @@ export default function MonthlyReports() {
                           style={{ width: `${student.rate}%` }}
                         />
                       </div>
-                      <span className="text-xs font-bold text-slate-700 w-8 text-right">{student.rate}%</span>
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200 w-8 text-right transition-colors">{student.rate}%</span>
                     </div>
                   ))}
                   {reportData.length > 6 && (
-                    <p className="text-[10px] text-slate-400 font-medium text-center pt-2">
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium text-center pt-2 transition-colors">
                       Showing top 6 students. Export CSV for the full distribution details.
                     </p>
                   )}
@@ -416,12 +416,12 @@ export default function MonthlyReports() {
               </div>
 
               {/* Roster Table */}
-              <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="text-base font-bold text-slate-800 font-heading">
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors">
+                  <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">
                     Roster Monthly Breakdown: {activeClass.name}
                   </h3>
-                  <span className="text-[10px] font-bold bg-slate-100 text-slate-500 rounded px-2 py-0.5">
+                  <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded px-2 py-0.5 transition-colors">
                     {months.find(m => m.val === selectedMonth)?.name} {selectedYear}
                   </span>
                 </div>
@@ -429,7 +429,7 @@ export default function MonthlyReports() {
                 <div className="overflow-x-auto font-sans">
                   <table className="w-full border-collapse text-left">
                     <thead>
-                      <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
                         <th className="px-6 py-3">Student Name</th>
                         <th className="px-6 py-3 text-center">Present</th>
                         <th className="px-6 py-3 text-center">Tardy (Late)</th>
@@ -440,42 +440,42 @@ export default function MonthlyReports() {
                         <th className="px-6 py-3 text-right">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
                       {reportData.map((student) => (
-                        <tr key={student.id} className="hover:bg-slate-50/20 transition-all">
+                        <tr key={student.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/50 transition-all">
                           <td className="px-6 py-3.5 text-slate-800 text-left">
                             <div className="flex flex-col">
-                              <span className="font-bold text-slate-800">{formatStudentName(student.studentObj)}</span>
+                              <span className="font-bold text-slate-800 dark:text-slate-200 transition-colors">{formatStudentName(student.studentObj)}</span>
                               {student.studentObj.communityCenter && (
-                                <span className="text-[9px] text-slate-400 font-medium inline-flex items-center space-x-1 mt-0.5">
+                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium inline-flex items-center space-x-1 mt-0.5 transition-colors">
                                   <Building2 className="h-2.5 w-2.5 shrink-0" />
                                   <span>{student.studentObj.communityCenter}</span>
                                 </span>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-3.5 text-center text-emerald-600">{student.present}</td>
-                          <td className="px-6 py-3.5 text-center text-amber-500">{student.late}</td>
-                          <td className="px-6 py-3.5 text-center text-slate-400">{student.excused}</td>
-                          <td className="px-6 py-3.5 text-center text-red-500">{student.absent}</td>
+                          <td className="px-6 py-3.5 text-center text-emerald-600 dark:text-emerald-400 transition-colors">{student.present}</td>
+                          <td className="px-6 py-3.5 text-center text-amber-500 dark:text-amber-400 transition-colors">{student.late}</td>
+                          <td className="px-6 py-3.5 text-center text-slate-400 dark:text-slate-500 transition-colors">{student.excused}</td>
+                          <td className="px-6 py-3.5 text-center text-red-500 dark:text-red-400 transition-colors">{student.absent}</td>
                           <td className="px-6 py-3.5 text-center">
                             {student.minutesLate > 0 ? (
-                              <span className="inline-flex items-center space-x-1 text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded font-bold text-[10px]">
+                              <span className="inline-flex items-center space-x-1 text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-800/50 px-2 py-0.5 rounded font-bold text-[10px] transition-colors">
                                 <Clock className="h-3 w-3" />
                                 <span>{student.minutesLate} mins</span>
                               </span>
                             ) : (
-                              <span className="text-slate-400 font-normal">None</span>
+                              <span className="text-slate-400 dark:text-slate-500 font-normal transition-colors">None</span>
                             )}
                           </td>
-                          <td className="px-6 py-3.5 text-center font-bold text-slate-900">{student.rate}%</td>
+                          <td className="px-6 py-3.5 text-center font-bold text-slate-900 dark:text-slate-100 transition-colors">{student.rate}%</td>
                           <td className="px-6 py-3.5 text-right">
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${
                               student.status === "Excellent"
-                                ? "bg-emerald-50 text-emerald-700"
+                                ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400"
                                 : student.status === "Good"
-                                ? "bg-brand-50 text-brand-700"
-                                : "bg-red-50 text-red-700 border border-red-100"
+                                ? "bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400"
+                                : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-800/50"
                             }`}>
                               {student.status}
                             </span>
@@ -488,10 +488,10 @@ export default function MonthlyReports() {
               </div>
             </>
           ) : (
-            <div className="py-16 text-center text-slate-400 text-sm flex flex-col items-center justify-center space-y-2">
-              <FileSpreadsheet className="h-8 w-8 text-slate-300" />
+            <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm flex flex-col items-center justify-center space-y-2 transition-colors">
+              <FileSpreadsheet className="h-8 w-8 text-slate-300 dark:text-slate-600 transition-colors" />
               <span>No attendance logs found for this class in {months.find(m => m.val === selectedMonth)?.name} {selectedYear}.</span>
-              <span className="text-xs text-slate-400">Please take attendance first for dates in this month.</span>
+              <span className="text-xs text-slate-400 dark:text-slate-500 transition-colors">Please take attendance first for dates in this month.</span>
             </div>
           )}
         </div>

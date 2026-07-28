@@ -12,8 +12,16 @@ import WeeklyLessonReport from './pages/WeeklyLessonReport';
 
 // Route guard with optional role authorization
 function ProtectedRoute({ children, allowedRoles }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+      </div>
+    );
+  }
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
@@ -28,8 +36,16 @@ function ProtectedRoute({ children, allowedRoles }) {
 
 // Redirect logged-in users away from the login page
 function PublicRoute({ children }) {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+      </div>
+    );
+  }
+
   if (user) {
     return <Navigate to={user.role === 'admin' ? '/admin' : '/teacher'} replace />;
   }
@@ -37,85 +53,23 @@ function PublicRoute({ children }) {
   return children;
 }
 
-function App() {
-  return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public Auth Route */}
-          <Route 
-            path="/login" 
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            } 
-          />
-
-          {/* Protected Admin Routes */}
-          <Route 
-            path="/admin" 
-            element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<AdminDashboard />} />
-          </Route>
-
-          {/* Protected Teacher Dashboard Routes */}
-          <Route 
-            path="/teacher" 
-            element={
-              <ProtectedRoute allowedRoles={['teacher']}>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            {/* Overview dashboard */}
-            <Route index element={<TeacherDashboard />} />
-            
-            {/* Log attendance roster */}
-            <Route path="log" element={<AttendanceLog />} />
-            
-            {/* Weekly lesson reports */}
-            <Route path="lesson-reports" element={<WeeklyLessonReport />} />
-            
-            {/* Monthly reports */}
-            <Route path="reports" element={<MonthlyReports />} />
-
-            {/* Student roster management */}
-            <Route path="roster" element={<TeacherRoster />} />
-          </Route>
-
-          {/* Wildcard Fallback */}
-          <Route 
-            path="*" 
-            element={
-              <useAuth>
-                {({ user }) => {
-                  if (!user) return <Navigate to="/login" replace />;
-                  return <Navigate to={user.role === 'admin' ? '/admin' : '/teacher'} replace />;
-                }}
-              </useAuth>
-            } 
-          />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
-  );
-}
-
-// Custom wrapper helper to evaluate fallback navigation dynamically inside route element
+// Wildcard fallback redirect component
 function WildcardRedirect() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+      </div>
+    );
+  }
+
   if (!user) return <Navigate to="/login" replace />;
   return <Navigate to={user.role === 'admin' ? '/admin' : '/teacher'} replace />;
 }
 
-// Let's use the helper for the wildcard route
-function AppWithWildcard() {
+export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
@@ -157,8 +111,10 @@ function AppWithWildcard() {
             {/* Log attendance roster */}
             <Route path="log" element={<AttendanceLog />} />
             
-            {/* Weekly lesson reports */}
+            {/* Weekly lesson reports (Primary & Aliases) */}
             <Route path="lesson-reports" element={<WeeklyLessonReport />} />
+            <Route path="lessons" element={<WeeklyLessonReport />} />
+            <Route path="lesson-report" element={<WeeklyLessonReport />} />
             
             {/* Monthly reports */}
             <Route path="reports" element={<MonthlyReports />} />
@@ -174,5 +130,3 @@ function AppWithWildcard() {
     </AuthProvider>
   );
 }
-
-export default AppWithWildcard;
