@@ -16,7 +16,7 @@ function ProtectedRoute({ children, allowedRoles }) {
   
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
       </div>
     );
@@ -40,7 +40,7 @@ function PublicRoute({ children }) {
   
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
       </div>
     );
@@ -53,13 +53,87 @@ function PublicRoute({ children }) {
   return children;
 }
 
+<<<<<<< HEAD
+function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Public Auth Route */}
+          <Route 
+            path="/login" 
+            element={
+              <PublicRoute>
+                <Login />
+              </PublicRoute>
+            } 
+          />
+
+          {/* Protected Admin Routes */}
+          <Route 
+            path="/admin" 
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <Layout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<AdminDashboard />} />
+          </Route>
+
+          {/* Protected Teacher Dashboard Routes */}
+          <Route 
+            path="/teacher" 
+            element={
+              <ProtectedRoute allowedRoles={['teacher']}>
+                <Layout />
+              </ProtectedRoute>
+            }
+          >
+            {/* Overview dashboard */}
+            <Route index element={<TeacherDashboard />} />
+            
+            {/* Log attendance roster */}
+            <Route path="log" element={<AttendanceLog />} />
+            
+            {/* Weekly lesson reports */}
+            <Route path="lesson-reports" element={<WeeklyLessonReport />} />
+            
+            {/* Monthly reports */}
+            <Route path="reports" element={<MonthlyReports />} />
+
+            {/* Student roster management */}
+            <Route path="roster" element={<TeacherRoster />} />
+          </Route>
+
+          {/* Wildcard Fallback */}
+          <Route 
+            path="*" 
+            element={
+              <useAuth>
+                {({ user }) => {
+                  if (!user) return <Navigate to="/login" replace />;
+                  return <Navigate to={user.role === 'admin' ? '/admin' : '/teacher'} replace />;
+                }}
+              </useAuth>
+            } 
+          />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}
+
+// Custom wrapper helper to evaluate fallback navigation dynamically inside route element
+=======
 // Wildcard fallback redirect component
+>>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
 function WildcardRedirect() {
   const { user, loading } = useAuth();
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
       </div>
     );
@@ -111,10 +185,15 @@ export default function App() {
             {/* Log attendance roster */}
             <Route path="log" element={<AttendanceLog />} />
             
+<<<<<<< HEAD
+            {/* Weekly lesson reports */}
+            <Route path="lesson-reports" element={<WeeklyLessonReport />} />
+=======
             {/* Weekly lesson reports (Primary & Aliases) */}
             <Route path="lesson-reports" element={<WeeklyLessonReport />} />
             <Route path="lessons" element={<WeeklyLessonReport />} />
             <Route path="lesson-report" element={<WeeklyLessonReport />} />
+>>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
             
             {/* Monthly reports */}
             <Route path="reports" element={<MonthlyReports />} />
