@@ -238,7 +238,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={isSubmitting || seedingText}
-            className="w-full mt-2 inline-flex items-center justify-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-slate-800 dark:hover:bg-brand-500 focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] disabled:opacity-50"
+            className="w-full mt-2 inline-flex items-center justify-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 py-2.5 text-sm font-semibold text-white shadow-md dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 transition-all hover:bg-slate-800 dark:hover:bg-brand-500 focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] disabled:opacity-50"
           >
             {isSubmitting ? "Signing in..." : "Sign In"}
             {!isSubmitting && <ArrowRight className="h-4 w-4" />}

@@ -181,7 +181,7 @@ export default function TeacherRoster() {
             }
             setIsModalOpen(true);
           }}
-          className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
+          className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
         >
           <UserPlus className="h-4 w-4" />
           <span>Add New Student</span>
@@ -419,7 +419,7 @@ export default function TeacherRoster() {
                   </button>
                   <button
                     type="submit"
-                    className="rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500 text-white px-5 py-2 text-xs font-bold transition-colors cursor-pointer"
+                    className="rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500 text-white px-5 py-2 text-xs font-bold dark:shadow-md dark:shadow-blue-500/30 dark:hover:shadow-blue-500/50 transition-all cursor-pointer"
                   >
                     Enroll Student
                   </button>

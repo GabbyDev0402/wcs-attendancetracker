@@ -169,7 +169,7 @@ export default function WeeklyLessonReport() {
 
         <button
           onClick={handlePrint}
-          className="inline-flex items-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-slate-800 dark:hover:bg-brand-500 transition-all cursor-pointer"
+          className="inline-flex items-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 px-4 py-2.5 text-xs font-bold text-white shadow-md dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-slate-800 dark:hover:bg-brand-500 transition-all cursor-pointer"
         >
           <Printer className="h-4 w-4 text-white" />
           <span>Print Report</span>

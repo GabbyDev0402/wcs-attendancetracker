@@ -279,7 +279,7 @@ export default function MonthlyReports() {
           <button
             onClick={handlePrint}
             disabled={reportData.length === 0}
-            className="inline-flex items-center space-x-1.5 rounded-xl bg-slate-950 dark:bg-brand-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-800 dark:hover:bg-brand-500 transition-all disabled:opacity-50 cursor-pointer"
+            className="inline-flex items-center space-x-1.5 rounded-xl bg-slate-950 dark:bg-brand-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm dark:shadow-md dark:shadow-blue-500/30 dark:hover:shadow-blue-500/50 hover:bg-slate-800 dark:hover:bg-brand-500 transition-all disabled:opacity-50 cursor-pointer"
           >
             <Printer className="h-4 w-4" />
             <span>Print Report</span>

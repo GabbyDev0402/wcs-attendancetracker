@@ -136,7 +136,7 @@ export default function Navbar() {
                 </button>
                 <Link
                   to="/login"
-                  className="inline-flex items-center justify-center rounded-xl bg-slate-900 dark:bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:hover:bg-brand-500 transition-all whitespace-nowrap shrink-0"
+                  className="inline-flex items-center justify-center rounded-xl bg-slate-900 dark:bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm dark:shadow-md dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-slate-800 dark:hover:bg-brand-500 transition-all whitespace-nowrap shrink-0"
                 >
                   Sign In
                 </Link>
@@ -227,7 +227,7 @@ export default function Navbar() {
               <Link
                 to="/login"
                 onClick={() => setIsOpen(false)}
-                className="flex w-full items-center justify-center rounded-xl bg-slate-900 dark:bg-brand-600 py-2.5 text-center text-sm font-semibold text-white shadow-sm hover:bg-slate-800 dark:hover:bg-brand-500"
+                className="flex w-full items-center justify-center rounded-xl bg-slate-900 dark:bg-brand-600 py-2.5 text-center text-sm font-semibold text-white shadow-sm dark:shadow-md dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-slate-800 dark:hover:bg-brand-500"
               >
                 Sign In
               </Link>
