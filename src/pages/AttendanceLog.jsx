@@ -347,16 +347,6 @@ export default function AttendanceLog() {
 
       {/* Daily Lesson Details Card */}
       {!isFutureDate && !isDataLoading && (
-<<<<<<< HEAD
-        <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex items-center space-x-2 border-b border-slate-100 pb-3">
-            <div className="p-2 bg-brand-50 text-brand-600 rounded-xl">
-              <BookOpen className="h-4 w-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-800 font-heading">Daily Lesson Details</h3>
-              <p className="text-[11px] text-slate-400">Record lesson topics, pages covered, and key vocabulary for weekly reporting.</p>
-=======
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
           <div className="flex items-center space-x-2 border-b border-slate-100 dark:border-slate-800 pb-3 transition-colors">
             <div className="p-2 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
@@ -365,17 +355,12 @@ export default function AttendanceLog() {
             <div>
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Daily Lesson Details</h3>
               <p className="text-[11px] text-slate-400 dark:text-slate-500 transition-colors">Record lesson topics, pages covered, and key vocabulary for weekly reporting.</p>
->>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-<<<<<<< HEAD
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">
-=======
               <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">
->>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
                 Topic / Lesson Title
               </label>
               <input
@@ -386,20 +371,12 @@ export default function AttendanceLog() {
                   if (saveSuccess) setSaveSuccess(false);
                 }}
                 placeholder="e.g. Mapping the Earth"
-<<<<<<< HEAD
-                className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
-=======
                 className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
->>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
               />
             </div>
 
             <div>
-<<<<<<< HEAD
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">
-=======
               <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">
->>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
                 Page(s) Covered
               </label>
               <input
@@ -410,20 +387,12 @@ export default function AttendanceLog() {
                   if (saveSuccess) setSaveSuccess(false);
                 }}
                 placeholder="e.g. 11-17"
-<<<<<<< HEAD
-                className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
-=======
                 className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
->>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
               />
             </div>
 
             <div>
-<<<<<<< HEAD
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">
-=======
               <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">
->>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
                 Vocabulary Words
               </label>
               <input
@@ -434,11 +403,7 @@ export default function AttendanceLog() {
                   if (saveSuccess) setSaveSuccess(false);
                 }}
                 placeholder="e.g. Wander, Ache, Growl"
-<<<<<<< HEAD
-                className="w-full text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:border-brand-500"
-=======
                 className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
->>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
               />
             </div>
           </div>

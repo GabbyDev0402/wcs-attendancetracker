@@ -1,11 +1,7 @@
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-<<<<<<< HEAD
-import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, School, Users, BookOpen } from "lucide-react";
-=======
 import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, School, Users, BookOpen, Sun, Moon } from "lucide-react";
->>>>>>> 3e29cc5 (feat: Add Weekly Lesson Reports, Daily Lesson details, and Dark Mode theme support)
 
 export default function Navbar() {
   const { user, logout } = useAuth();
