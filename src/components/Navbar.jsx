@@ -1,12 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, School, Users, BookOpen, Sun, Moon } from "lucide-react";
+import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, School, Users, BookOpen, Sun, Moon, ChevronLeft, ChevronRight } from "lucide-react";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  const navContainerRef = useRef(null);
+
   const [theme, setTheme] = useState(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("theme");
@@ -26,6 +28,13 @@ export default function Navbar() {
   }, [theme]);
 
   const toggleTheme = () => setTheme((prev) => (prev === "light" ? "dark" : "light"));
+
+  const scrollNav = (direction) => {
+    if (navContainerRef.current) {
+      const scrollAmount = direction === "left" ? -180 : 180;
+      navContainerRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -50,7 +59,7 @@ export default function Navbar() {
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md transition-colors duration-200">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 justify-between items-center gap-4">
+        <div className="flex h-16 justify-between items-center gap-2">
           {/* Logo and Brand */}
           <div className="flex items-center shrink-0">
             <Link to="/" className="flex items-center space-x-2.5 group text-left">
@@ -65,64 +74,89 @@ export default function Navbar() {
             </Link>
           </div>
 
-          {/* Desktop Navigation Links */}
+          {/* Desktop Navigation Links with Scroll Controls */}
           {user && (
-            <div className="hidden md:flex items-center space-x-1 lg:space-x-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ml-6 lg:ml-10 mr-4 py-1 max-w-full shrink min-w-0">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    end={item.path === "/teacher"}
-                    className={({ isActive }) =>
-                      `flex items-center space-x-1.5 lg:space-x-2 px-3 lg:px-3.5 py-2 rounded-xl text-xs lg:text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
-                        isActive
-                          ? "bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400 font-semibold shadow-2xs dark:shadow-none"
-                          : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200"
-                      }`
-                    }
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span>{item.name}</span>
-                  </NavLink>
-                );
-              })}
+            <div className="hidden md:flex items-center mx-1 lg:mx-3 shrink min-w-0 max-w-full">
+              <button
+                type="button"
+                onClick={() => scrollNav("left")}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 mr-0.5"
+                title="Scroll Left"
+                aria-label="Scroll Left"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div
+                ref={navContainerRef}
+                className="flex items-center space-x-1 lg:space-x-1.5 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden py-1 min-w-0 scroll-smooth"
+              >
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      end={item.path === "/teacher"}
+                      className={({ isActive }) =>
+                        `flex items-center space-x-1.5 lg:space-x-2 px-2.5 lg:px-3 py-1.5 lg:py-2 rounded-xl text-xs lg:text-sm font-medium transition-all whitespace-nowrap shrink-0 ${
+                          isActive
+                            ? "bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-400 font-semibold shadow-2xs dark:shadow-none"
+                            : "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200"
+                        }`
+                      }
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span>{item.name}</span>
+                    </NavLink>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => scrollNav("right")}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:text-slate-500 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 ml-0.5"
+                title="Scroll Right"
+                aria-label="Scroll Right"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
           )}
 
           {/* User Profile / Auth State */}
-          <div className="hidden md:flex md:items-center md:space-x-4 shrink-0 ml-auto">
+          <div className="hidden md:flex md:items-center space-x-2 lg:space-x-3 shrink-0 ml-auto">
             {user ? (
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2 lg:space-x-3">
                 <button
                   onClick={toggleTheme}
                   className="p-1.5 rounded-full text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors"
                   aria-label="Toggle Dark Mode"
                 >
-                  {theme === "light" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+                  {theme === "light" ? <Moon className="h-4 w-4 lg:h-5 lg:w-5" /> : <Sun className="h-4 w-4 lg:h-5 lg:w-5" />}
                 </button>
-                <div className="flex items-center space-x-3 border-r border-slate-100 dark:border-slate-800 pr-4">
+                <div className="flex items-center space-x-2 lg:space-x-2.5 border-r border-slate-100 dark:border-slate-800 pr-2 lg:pr-3">
                   <img
                     src={user.avatar}
                     alt={user.name}
-                    className="h-8 w-8 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 shrink-0"
+                    className="h-7 w-7 lg:h-8 lg:w-8 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 shrink-0"
                   />
-                  <div className="flex flex-col text-left">
+                  <div className="hidden xl:flex flex-col text-left">
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-none whitespace-nowrap transition-colors">
                       {user.name}
                     </span>
-                    <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 capitalize whitespace-nowrap">
+                    <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 capitalize whitespace-nowrap mt-0.5">
                       {user.role} Account
                     </span>
                   </div>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="flex items-center space-x-1.5 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white whitespace-nowrap shrink-0"
+                  className="flex items-center space-x-1 rounded-xl border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white whitespace-nowrap shrink-0"
                 >
                   <LogOut className="h-3.5 w-3.5" />
-                  <span>Sign Out</span>
+                  <span className="hidden sm:inline">Sign Out</span>
                 </button>
               </div>
             ) : (
