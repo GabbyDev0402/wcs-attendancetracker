@@ -1,19 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { db } from "../firebase/config";
-import { collection, query, where, getDocs, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { formatStudentName } from "../utils/helpers";
 import { 
   Users, 
-  Plus, 
-  Trash2, 
+  UserMinus, 
   Search, 
-  UserPlus, 
-  X, 
-  CheckCircle, 
-  AlertCircle,
   Building2,
-  Globe
+  Globe,
+  UserPlus,
+  CheckCircle,
+  AlertCircle,
+  X,
+  Sparkles
 } from "lucide-react";
 
 export default function TeacherRoster() {
@@ -21,18 +21,18 @@ export default function TeacherRoster() {
   const [classList, setClassList] = useState([]);
   const [selectedClassId, setSelectedClassId] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [studentRoster, setStudentRoster] = useState([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
 
-  // Modal Form State
-  const [studentName, setStudentName] = useState("");
-  const [internationalName, setInternationalName] = useState("");
-  const [nationalName, setNationalName] = useState("");
-  const [communityCenter, setCommunityCenter] = useState("");
-  const [modalClassId, setModalClassId] = useState("");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
+  // Enroll Existing Student Modal State
+  const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [allMasterStudents, setAllMasterStudents] = useState([]);
+  const [enrollSearchTerm, setEnrollSearchTerm] = useState("");
+  const [selectedStudentId, setSelectedStudentId] = useState("");
+  const [targetClassId, setTargetClassId] = useState("");
+  const [enrollSuccessMessage, setEnrollSuccessMessage] = useState("");
+  const [enrollError, setEnrollError] = useState("");
+  const [isEnrolling, setIsEnrolling] = useState(false);
 
   // Parse teacher's classes dynamically from assignments
   useEffect(() => {
@@ -41,7 +41,6 @@ export default function TeacherRoster() {
     const teacherClasses = (user.assignments || []).map((asg) => {
       const classSlug = `${asg.grade.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
       
-      // Determine Elementary, Middle, High section
       const gradeNum = parseInt(asg.grade.replace(/\D/g, ""), 10);
       let section = "Elementary";
       if (!isNaN(gradeNum)) {
@@ -59,35 +58,34 @@ export default function TeacherRoster() {
     });
 
     setClassList(teacherClasses);
-    if (teacherClasses.length > 0 && !modalClassId) {
-      setModalClassId(teacherClasses[0].id);
+    if (teacherClasses.length > 0 && !targetClassId) {
+      setTargetClassId(teacherClasses[0].id);
     }
   }, [user]);
 
-  // Load students from Firestore matching assignments class slugs
+  // Load students from Firestore matching assignments or enrolledTeachers
   useEffect(() => {
     loadStudents();
   }, [classList]);
 
   const loadStudents = async () => {
-    if (classList.length === 0) {
-      setStudentRoster([]);
-      return;
-    }
-    
     setIsDataLoading(true);
     try {
-      const classIds = classList.map(c => c.id);
-      
-      // Firestore 'in' queries are capped at 10 items. Teacher assignments are generally small.
       const q = query(
         collection(db, "users"),
-        where("role", "==", "student"),
-        where("classId", "in", classIds)
+        where("role", "==", "student")
       );
 
       const snap = await getDocs(q);
-      const students = snap.docs.map(doc => doc.data());
+      const classIds = classList.map(c => c.id);
+
+      const students = snap.docs
+        .map(d => d.data())
+        .filter(s => 
+          (Array.isArray(s.enrolledTeachers) && s.enrolledTeachers.includes(user.id)) ||
+          s.teacherId === user.id ||
+          (s.classId && classIds.includes(s.classId) && s.teacherId !== "unassigned")
+        );
       
       setStudentRoster(students);
     } catch (e) {
@@ -97,94 +95,128 @@ export default function TeacherRoster() {
     }
   };
 
-  const handleAddStudent = async (e) => {
-    e.preventDefault();
-    setError("");
-
-    if (!studentName.trim()) {
-      setError("Please enter a default name.");
-      return;
-    }
-
-    if (!modalClassId) {
-      setError("Please select a target class.");
-      return;
-    }
-
+  const handleOpenEnrollModal = async () => {
+    setIsEnrollModalOpen(true);
+    setEnrollError("");
+    setEnrollSuccessMessage("");
     try {
-      const studentRef = doc(collection(db, "users"));
-      const newStudent = {
-        id: studentRef.id,
-        name: studentName.trim(),
-        internationalName: internationalName.trim() || null,
-        nationalName: nationalName.trim() || null,
-        communityCenter: communityCenter.trim() || null,
-        enrollmentDate: new Date().toLocaleDateString("en-CA"), // YYYY-MM-DD
-        role: "student",
-        classId: modalClassId,
-        teacherId: user.id
-      };
-
-      await setDoc(studentRef, newStudent);
-      setSuccess(true);
-
-      setTimeout(() => {
-        setIsModalOpen(false);
-        setStudentName("");
-        setInternationalName("");
-        setNationalName("");
-        setCommunityCenter("");
-        setSuccess(false);
-        loadStudents();
-      }, 1200);
+      const q = query(collection(db, "users"), where("role", "==", "student"));
+      const snap = await getDocs(q);
+      const docs = snap.docs.map(d => d.data());
+      setAllMasterStudents(docs);
+      if (docs.length > 0) {
+        setSelectedStudentId(docs[0].id);
+      }
+      if (classList.length > 0) {
+        setTargetClassId(classList[0].id);
+      }
     } catch (err) {
-      setError("Failed to register student record: " + err.message);
+      console.error("Error fetching master student list", err);
     }
   };
 
-  const handleDeleteStudent = async (studentId) => {
-    if (!window.confirm("Are you sure you want to remove this student? This will not erase historical logs but will remove them from the active roster.")) return;
+  const handleEnrollSubmit = async (e) => {
+    e.preventDefault();
+    setEnrollError("");
+
+    if (!selectedStudentId) {
+      setEnrollError("Please select a student to enroll.");
+      return;
+    }
+
+    setIsEnrolling(true);
 
     try {
-      await deleteDoc(doc(db, "users", studentId));
+      const studentRef = doc(db, "users", selectedStudentId);
+      const classTag = targetClassId ? `${user.id}_${targetClassId}` : "";
+      const updatePayload = {
+        enrolledTeachers: arrayUnion(user.id)
+      };
+      if (classTag) {
+        updatePayload.enrolledClasses = arrayUnion(classTag);
+      }
+
+      await updateDoc(studentRef, updatePayload);
+      setEnrollSuccessMessage("Student enrolled successfully!");
+
+      setTimeout(() => {
+        setIsEnrollModalOpen(false);
+        setEnrollSuccessMessage("");
+        setIsEnrolling(false);
+        loadStudents();
+      }, 1200);
+    } catch (err) {
+      setIsEnrolling(false);
+      setEnrollError("Failed to enroll student: " + err.message);
+    }
+  };
+
+  const handleUnenrollStudent = async (studentId, studentName) => {
+    if (!window.confirm(`Are you sure you want to unenroll ${studentName} from your roster? This will remove them from your active view without deleting their account from the Global Master List.`)) return;
+
+    try {
+      const studentRef = doc(db, "users", studentId);
+      const targetStudent = studentRoster.find(s => s.id === studentId);
+      const tagsToRemove = (targetStudent.enrolledClasses || []).filter(tag => tag.startsWith(`${user.id}_`));
+
+      const updatePayload = {
+        enrolledTeachers: arrayRemove(user.id),
+        teacherId: "unassigned",
+        classId: "unassigned"
+      };
+
+      if (tagsToRemove.length > 0) {
+        updatePayload.enrolledClasses = arrayRemove(...tagsToRemove);
+      }
+
+      await updateDoc(studentRef, updatePayload);
+
+      // Synchronize local state immediately
+      setStudentRoster(prev => prev.filter(s => s.id !== studentId));
       loadStudents();
     } catch (err) {
-      alert("Failed to delete student: " + err.message);
+      alert("Failed to unenroll student: " + err.message);
     }
   };
 
   // Filter students based on selection & search
   const filteredRoster = studentRoster.filter(s => {
-    const matchesClass = selectedClassId === "all" || s.classId === selectedClassId;
+    let matchesClass = selectedClassId === "all";
+    if (!matchesClass) {
+      if (Array.isArray(s.enrolledClasses) && s.enrolledClasses.length > 0) {
+        matchesClass = s.enrolledClasses.includes(`${user.id}_${selectedClassId}`);
+      } else {
+        matchesClass = s.classId === selectedClassId;
+      }
+    }
     const combinedNames = `${s.name} ${s.internationalName || ""} ${s.nationalName || ""}`.toLowerCase();
     const matchesSearch = combinedNames.includes(searchQuery.toLowerCase());
     return matchesClass && matchesSearch;
   });
 
+  const availableMasterStudents = allMasterStudents.filter(s => {
+    const term = enrollSearchTerm.toLowerCase();
+    return `${s.name || ''} ${s.internationalName || ''} ${s.studentCode || ''} ${s.gradeLevel || s.grade || ''}`.toLowerCase().includes(term);
+  });
+
   return (
     <div className="space-y-8 animate-fade-in">
-      {/* Header and Add Student Action */}
+      {/* Header and Enroll Existing Student Action */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-heading transition-colors">
             Student Roster Manager
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 transition-colors">
-            Manage enrollment profiles and class rosters in Firestore.
+            Enroll students from the Global Master List into your class rosters.
           </p>
         </div>
         <button
-          onClick={() => {
-            if (classList.length === 0) {
-              alert("You do not have any assigned classes. Please ask an Administrator to provision assignments.");
-              return;
-            }
-            setIsModalOpen(true);
-          }}
+          onClick={handleOpenEnrollModal}
           className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
         >
           <UserPlus className="h-4 w-4" />
-          <span>Add New Student</span>
+          <span>Enroll Existing Student</span>
         </button>
       </div>
 
@@ -240,7 +272,7 @@ export default function TeacherRoster() {
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
                   <th className="px-6 py-3">Student Name</th>
-                  <th className="px-6 py-3">Student ID</th>
+                  <th className="px-6 py-3">Student Code / ID</th>
                   <th className="px-6 py-3">Class/Grade Scope</th>
                   <th className="px-6 py-3">Section</th>
                   <th className="px-6 py-3">Community Center</th>
@@ -249,7 +281,34 @@ export default function TeacherRoster() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
                 {filteredRoster.map((student) => {
-                  const targetClass = classList.find(c => c.id === student.classId);
+                  let enrolledClassNames = [];
+                  let enrolledSections = [];
+
+                  if (Array.isArray(student.enrolledClasses) && student.enrolledClasses.length > 0) {
+                    const teacherClassPrefix = `${user.id}_`;
+                    const studentClassTags = student.enrolledClasses.filter(tag => tag.startsWith(teacherClassPrefix));
+                    
+                    studentClassTags.forEach(tag => {
+                      const classSlug = tag.replace(teacherClassPrefix, "");
+                      const foundClass = classList.find(c => c.id === classSlug);
+                      if (foundClass) {
+                        enrolledClassNames.push(foundClass.name);
+                        if (!enrolledSections.includes(foundClass.section)) {
+                          enrolledSections.push(foundClass.section);
+                        }
+                      }
+                    });
+                  }
+
+                  // Legacy fallback if no enrolledClasses are matched
+                  if (enrolledClassNames.length === 0) {
+                    const targetClass = classList.find(c => c.id === student.classId);
+                    if (targetClass) {
+                      enrolledClassNames.push(targetClass.name);
+                      enrolledSections.push(targetClass.section);
+                    }
+                  }
+
                   return (
                     <tr key={student.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-4">
@@ -262,18 +321,46 @@ export default function TeacherRoster() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-slate-400 dark:text-slate-500 font-mono transition-colors">{student.id}</td>
-                      <td className="px-6 py-4 text-slate-700 dark:text-slate-300 transition-colors">{targetClass ? targetClass.name : "Unallocated"}</td>
+                      <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-mono transition-colors">
+                        {student.studentCode ? (
+                          <span className="font-bold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-2 py-0.5 rounded border border-brand-100 dark:border-brand-800/50">
+                            {student.studentCode}
+                          </span>
+                        ) : (
+                          student.id
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-slate-700 dark:text-slate-300 transition-colors">
+                        {enrolledClassNames.length > 0 ? (
+                          <div className="flex flex-col gap-1">
+                            {enrolledClassNames.map((name, i) => (
+                              <span key={i} className="whitespace-nowrap font-medium">{name}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          "Unallocated"
+                        )}
+                      </td>
                       <td className="px-6 py-4">
-                        <span className="inline-flex px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold transition-colors">
-                          {targetClass ? targetClass.section : "General"}
-                        </span>
+                        {enrolledSections.length > 0 ? (
+                          <div className="flex flex-col gap-1 items-start">
+                            {enrolledSections.map((sec, i) => (
+                              <span key={i} className="inline-flex px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold transition-colors w-fit">
+                                {sec}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="inline-flex px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold transition-colors w-fit">
+                            General
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-medium transition-colors">
-                        {student.communityCenter ? (
+                        {student.communityCenter || student.communityName ? (
                           <span className="inline-flex items-center space-x-1.5 text-slate-600 dark:text-slate-300 transition-colors">
                             <Building2 className="h-3 w-3 text-slate-400 dark:text-slate-500 transition-colors" />
-                            <span>{student.communityCenter}</span>
+                            <span>{student.communityCenter || student.communityName}</span>
                           </span>
                         ) : (
                           <span className="text-slate-300 dark:text-slate-600 italic font-normal transition-colors">Unassigned</span>
@@ -281,10 +368,12 @@ export default function TeacherRoster() {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button
-                          onClick={() => handleDeleteStudent(student.id)}
-                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
+                          onClick={() => handleUnenrollStudent(student.id, formatStudentName(student))}
+                          title="Unenroll student from your class roster"
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:border-amber-200 dark:hover:border-amber-800/50 transition-colors cursor-pointer"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <UserMinus className="h-3.5 w-3.5" />
+                          <span className="text-xs font-bold">Unenroll</span>
                         </button>
                       </td>
                     </tr>
@@ -296,111 +385,86 @@ export default function TeacherRoster() {
         ) : (
           <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm flex flex-col items-center justify-center space-y-2 transition-colors">
             <Users className="h-8 w-8 text-slate-300 dark:text-slate-600 transition-colors" />
-            <span>No students registered.</span>
-            <span className="text-xs text-slate-400 dark:text-slate-500 transition-colors">Click "Add New Student" above to add names to your rosters.</span>
+            <span>No students registered in assigned rosters.</span>
+            <span className="text-xs text-slate-400 dark:text-slate-500">Click "Enroll Existing Student" above to add students from the Global Master List.</span>
           </div>
         )}
       </div>
 
-      {/* Add Student Modal */}
-      {isModalOpen && (
+      {/* Enroll Existing Student Modal */}
+      {isEnrollModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
           <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up transition-colors">
-            {/* Modal Close Button */}
             <button
-              onClick={() => setIsModalOpen(false)}
+              onClick={() => setIsEnrollModalOpen(false)}
               className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
 
-            {/* Modal Header */}
             <div className="flex items-center space-x-3 mb-6">
               <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
                 <UserPlus className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading transition-colors">Add Student to Roster</h3>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Enroll a student with optional ESL translation tracking.</p>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading">Enroll Existing Student</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Select a student from the Global Master List to add to your roster.</p>
               </div>
             </div>
 
-            {success ? (
+            {enrollSuccessMessage ? (
               <div className="py-12 flex flex-col items-center justify-center space-y-4">
                 <div className="h-12 w-12 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-inner transition-colors">
                   <CheckCircle className="h-7 w-7" />
                 </div>
-                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100 transition-colors">Student Registered!</h4>
-                <p className="text-xs text-slate-400 dark:text-slate-500 transition-colors">Added to roster successfully.</p>
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">{enrollSuccessMessage}</h4>
+                <p className="text-xs text-slate-400">Student is now active on your class roster.</p>
               </div>
             ) : (
-              <form onSubmit={handleAddStudent} className="space-y-4.5">
-                {error && (
+              <form onSubmit={handleEnrollSubmit} className="space-y-4">
+                {enrollError && (
                   <div className="flex items-start space-x-2 rounded-xl bg-red-50 dark:bg-red-900/30 p-3.5 text-xs font-semibold text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800/50 transition-colors">
                     <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>{error}</span>
+                    <span>{enrollError}</span>
                   </div>
                 )}
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Official Registry Name (English / Fallback)</label>
-                  <input
-                    type="text"
-                    required
-                    value={studentName}
-                    onChange={(e) => setStudentName(e.target.value)}
-                    placeholder="e.g. Alice Smith"
-                    className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 outline-none focus:border-brand-500 transition-colors"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">International Name (Preferred)</label>
-                    <div className="relative">
-                      <Globe className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500 transition-colors" />
-                      <input
-                        type="text"
-                        value={internationalName}
-                        onChange={(e) => setInternationalName(e.target.value)}
-                        placeholder="e.g. Alice"
-                        className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500 transition-colors"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">National / Home Language Name</label>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Search Global Student Master List</label>
+                  <div className="relative mb-2">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                     <input
                       type="text"
-                      value={nationalName}
-                      onChange={(e) => setNationalName(e.target.value)}
-                      placeholder="e.g. Kim Ji-woo"
-                      className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 outline-none focus:border-brand-500 transition-colors"
+                      placeholder="Filter by name, grade, student code..."
+                      value={enrollSearchTerm}
+                      onChange={(e) => setEnrollSearchTerm(e.target.value)}
+                      className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                     />
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Community Center Association</label>
-                  <div className="relative">
-                    <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500 transition-colors" />
-                    <input
-                      type="text"
-                      value={communityCenter}
-                      onChange={(e) => setCommunityCenter(e.target.value)}
-                      placeholder="e.g. East Bay Community Center"
-                      className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 pl-9 pr-3 py-2 outline-none focus:border-brand-500 transition-colors"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Assign to Class</label>
                   <select
-                    value={modalClassId}
-                    onChange={(e) => setModalClassId(e.target.value)}
-                    className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
+                    value={selectedStudentId}
+                    onChange={(e) => setSelectedStudentId(e.target.value)}
+                    size={5}
+                    className="w-full text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-xl p-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  >
+                    {availableMasterStudents.map((s) => {
+                      const isAlreadyEnrolled = Array.isArray(s.enrolledTeachers) && s.enrolledTeachers.includes(user.id);
+                      return (
+                        <option key={s.id} value={s.id} className="py-1 px-2 rounded hover:bg-brand-50 dark:hover:bg-slate-700">
+                          {formatStudentName(s)} — {s.gradeLevel || s.grade || "No Grade"} ({s.studentCode || "No Code"}) {isAlreadyEnrolled ? "✓ Enrolled" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Assign to Class</label>
+                  <select
+                    value={targetClassId}
+                    onChange={(e) => setTargetClassId(e.target.value)}
+                    className="w-full text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                   >
                     {classList.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
@@ -408,20 +472,20 @@ export default function TeacherRoster() {
                   </select>
                 </div>
 
-                {/* Actions */}
-                <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3 transition-colors">
+                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3">
                   <button
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    onClick={() => setIsEnrollModalOpen(false)}
+                    className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500 text-white px-5 py-2 text-xs font-bold dark:shadow-md dark:shadow-blue-500/30 dark:hover:shadow-blue-500/50 transition-all cursor-pointer"
+                    disabled={isEnrolling || !selectedStudentId}
+                    className="rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 text-xs font-bold shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    Enroll Student
+                    <span>{isEnrolling ? "Enrolling..." : "Enroll Student"}</span>
                   </button>
                 </div>
               </form>

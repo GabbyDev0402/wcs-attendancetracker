@@ -57,3 +57,37 @@ export const provisionUserSecondary = async (email, password, profileData) => {
     throw error;
   }
 };
+
+/**
+ * Register a student account with auto-generated 6-character Student Code (e.g., WCS-9A2B)
+ * and default 4-digit PIN (e.g., 1234), creating hidden auth email and saving to Firestore users collection.
+ */
+export const generateStudentAccount = async (name, internationalName, gradeLevel, communityName) => {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let randomChars = "";
+  for (let i = 0; i < 4; i++) {
+    randomChars += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  const code = `WCS-${randomChars}`;
+  const pin = Math.floor(1000 + Math.random() * 9000).toString();
+  const hiddenEmail = `${code.toLowerCase()}@students.wcs.edu`;
+  const authPin = pin.padEnd(6, '0');
+
+  const profileData = {
+    name: name ? name.trim() : "",
+    internationalName: internationalName ? internationalName.trim() : "",
+    gradeLevel: gradeLevel || "",
+    grade: gradeLevel || "",
+    communityName: communityName ? communityName.trim() : "",
+    communityCenter: communityName ? communityName.trim() : "",
+    role: "student",
+    studentCode: code,
+    defaultPin: pin,
+    enrolledTeachers: [],
+    enrollmentDate: new Date().toLocaleDateString("en-CA")
+  };
+
+  const uid = await provisionUserSecondary(hiddenEmail, authPin, profileData);
+  return { uid, code, pin, email: hiddenEmail, ...profileData };
+};
+

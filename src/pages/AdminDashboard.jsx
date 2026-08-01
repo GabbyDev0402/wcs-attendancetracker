@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { auth, db, provisionUserSecondary } from "../firebase/config";
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { auth, db, provisionUserSecondary, generateStudentAccount } from "../firebase/config";
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { formatStudentName, formatScheduleString } from "../utils/helpers";
 import { 
@@ -22,7 +22,10 @@ import {
   UserCheck,
   Building2,
   Clock,
-  Calendar
+  Calendar,
+  Hash,
+  ShieldCheck,
+  ShieldAlert
 } from "lucide-react";
 
 // Categorized options for Grade levels (Standard & ESL)
@@ -72,17 +75,96 @@ export default function AdminDashboard() {
   const [teachers, setTeachers] = useState([]);
   const [students, setStudents] = useState([]);
   const [stats, setStats] = useState({ totalTeachers: 0, totalClasses: 0, totalStudents: 0, unassignedStudents: 0 });
+  
+  // Dashboard Tab State ("teachers" | "students" | "compliance")
+  const [activeTab, setActiveTab] = useState("teachers");
+
+  // Compliance Real-time Listeners State
+  const [pendingVocabList, setPendingVocabList] = useState([]);
+  const [pendingDiariesList, setPendingDiariesList] = useState([]);
+
+  useEffect(() => {
+    // Real-time listener for pending vocabularies
+    const vocabQ = query(collection(db, "vocab_submissions"), where("status", "==", "pending"));
+    const unsubVocab = onSnapshot(vocabQ, (snap) => {
+      setPendingVocabList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.warn("Real-time vocab listener warning:", err);
+    });
+
+    // Real-time listener for pending diaries
+    const diaryQ = query(collection(db, "diaries"), where("status", "==", "pending"));
+    const unsubDiary = onSnapshot(diaryQ, (snap) => {
+      setPendingDiariesList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.warn("Real-time diary listener warning:", err);
+    });
+
+    return () => {
+      unsubVocab();
+      unsubDiary();
+    };
+  }, []);
+
+  const computeTeacherCompliance = (teacher) => {
+    const assignments = teacher.assignments || [];
+    const isMathTeacher = assignments.some(a => (a.subject || '').toLowerCase().includes('math'));
+
+    const teacherClassSlugs = assignments.map(a => {
+      const g = a.grade || a.gradeLevel || "Grade 1";
+      return `${g.replace(/\s+/g, '-').toLowerCase()}-${a.subject.replace(/\s+/g, '-').toLowerCase()}`;
+    });
+
+    const pendingVocabsCount = pendingVocabList.filter(v => 
+      v.teacherId === teacher.id || (v.classId && teacherClassSlugs.includes(v.classId))
+    ).length;
+
+    const pendingDiariesCount = pendingDiariesList.filter(d => d.mathTeacherId === teacher.id).length;
+    const totalPending = pendingVocabsCount + pendingDiariesCount;
+
+    let badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800";
+    let badgeText = "All Clear";
+
+    if (totalPending > 10) {
+      badgeClass = "bg-red-50 text-red-700 border-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800";
+      badgeText = "Action Required";
+    } else if (totalPending >= 1) {
+      badgeClass = "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800";
+      badgeText = "Review Needed";
+    }
+
+    return {
+      isMathTeacher,
+      pendingVocabsCount,
+      pendingDiariesCount,
+      totalPending,
+      badgeClass,
+      badgeText
+    };
+  };
+
+  // Provision Teacher Modal Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [searchStudentQuery, setSearchStudentQuery] = useState("");
+  const [isUnassignedModalOpen, setIsUnassignedModalOpen] = useState(false);
   
-  // Provisioning Modal Form State
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [assignments, setAssignments] = useState([createDefaultAssignment()]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+
+  // Student Provisioning Modal Form State
+  const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
+  const [studentNameInput, setStudentNameInput] = useState("");
+  const [studentIntlNameInput, setStudentIntlNameInput] = useState("");
+  const [studentGradeInput, setStudentGradeInput] = useState("Grade 1");
+  const [studentCommunityInput, setStudentCommunityInput] = useState("");
+  const [studentProvisioningError, setStudentProvisioningError] = useState("");
+  const [studentProvisioningResult, setStudentProvisioningResult] = useState(null);
+  const [isStudentLoading, setIsStudentLoading] = useState(false);
+  const [studentSearchQuery, setStudentSearchQuery] = useState("");
 
   // Edit Teacher Assignments Modal Form State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -108,6 +190,45 @@ export default function AdminDashboard() {
     loadData();
   }, []);
 
+  const handleProvisionStudent = async (e) => {
+    e.preventDefault();
+    setStudentProvisioningError("");
+
+    if (!studentNameInput.trim()) {
+      setStudentProvisioningError("Please enter student name.");
+      return;
+    }
+
+    setIsStudentLoading(true);
+
+    try {
+      const result = await generateStudentAccount(
+        studentNameInput,
+        studentIntlNameInput,
+        studentGradeInput,
+        studentCommunityInput
+      );
+
+      setStudentProvisioningResult(result);
+      loadData();
+    } catch (err) {
+      setStudentProvisioningError(err.message || "Failed to provision student account.");
+    } finally {
+      setIsStudentLoading(false);
+    }
+  };
+
+  const handleResetStudentModal = () => {
+    setIsStudentModalOpen(false);
+    setStudentNameInput("");
+    setStudentIntlNameInput("");
+    setStudentGradeInput("Grade 1");
+    setStudentCommunityInput("");
+    setStudentProvisioningError("");
+    setStudentProvisioningResult(null);
+  };
+
+
   const loadData = async () => {
     try {
       // 1. Fetch Teachers
@@ -117,14 +238,16 @@ export default function AdminDashboard() {
       
       const totalClasses = activeTeachers.reduce((acc, t) => acc + (t.assignments ? t.assignments.length : 0), 0);
 
-      // 2. Fetch Students for Global Directory
+      // 2. Fetch Students for Macro Enrollment Metrics
       const qStudents = query(collection(db, "users"), where("role", "==", "student"));
       const snapStudents = await getDocs(qStudents);
       const allStudents = snapStudents.docs.map(doc => doc.data());
 
+      const studentCount = allStudents.filter(u => u.role === "student").length;
+
       const unassignedCount = allStudents.filter(s => {
-        const assignedTeacher = activeTeachers.find(t => t.id === s.teacherId);
-        return !s.teacherId || s.teacherId === "unassigned" || !assignedTeacher;
+        if (s.role !== "student") return false;
+        return !s.enrolledClasses || s.enrolledClasses.length === 0;
       }).length;
       
       setTeachers(activeTeachers);
@@ -132,12 +255,36 @@ export default function AdminDashboard() {
       setStats({
         totalTeachers: activeTeachers.length,
         totalClasses,
-        totalStudents: allStudents.length,
+        totalStudents: studentCount,
         unassignedStudents: unassignedCount
       });
     } catch (e) {
       console.error("Error loading admin dashboard data", e);
     }
+  };
+
+  // Calculate exact student count for a specific teacher assignment
+  const getAssignmentStudentCount = (teacherId, asg) => {
+    const grade = asg.grade || asg.gradeLevel || "Grade 1";
+    const classId = `${grade.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+    const classTag = `${teacherId}_${classId}`;
+
+    return students.filter(student => {
+      if (student.role !== "student") return false;
+      const hasClassTag = Array.isArray(student.enrolledClasses) && student.enrolledClasses.includes(classTag);
+      const hasLegacyEnrollment = (Array.isArray(student.enrolledTeachers) && student.enrolledTeachers.includes(teacherId) && student.classId === classId) || (student.teacherId === teacherId && student.classId === classId);
+      return hasClassTag || hasLegacyEnrollment;
+    }).length;
+  };
+
+  // Calculate total active roster size for a teacher across all their classes
+  const getTeacherTotalRosterCount = (teacherId) => {
+    return students.filter(student => {
+      if (student.role !== "student") return false;
+      const hasClassTag = Array.isArray(student.enrolledClasses) && student.enrolledClasses.some(tag => tag.startsWith(`${teacherId}_`));
+      const hasTeacher = (Array.isArray(student.enrolledTeachers) && student.enrolledTeachers.includes(teacherId)) || student.teacherId === teacherId;
+      return hasClassTag || hasTeacher;
+    }).length;
   };
 
   // Add/Remove assignment helper (Provision Modal)
@@ -308,39 +455,92 @@ export default function AdminDashboard() {
     }
   };
 
-  // Graceful Cascade Update Teacher Deletion
+  // Graceful Teacher Deletion with Student Enrollment Cleanup
   const handleDeleteTeacher = async (teacherId, teacherName) => {
-    if (!window.confirm(`Are you sure you want to delete teacher ${teacherName}? All their enrolled students will be unassigned gracefully without deleting student records.`)) return;
+    if (!window.confirm(`Are you sure you want to delete teacher ${teacherName}? This will clean up their class enrollments from student profiles without deleting student accounts.`)) return;
 
     try {
-      // 1. Query students assigned to this teacher
-      const q = query(collection(db, "users"), where("role", "==", "student"));
-      const snap = await getDocs(q);
-      const allStudentsList = snap.docs.map(d => d.data());
+      const qStuds = query(collection(db, "users"), where("role", "==", "student"));
+      const snapStuds = await getDocs(qStuds);
 
-      const teacherToDel = teachers.find(t => t.id === teacherId);
-      const teacherClassSlugs = (teacherToDel?.assignments || []).map(a => {
-        const g = a.grade || a.gradeLevel || "Grade 1";
-        return `${g.replace(/\s+/g, '-').toLowerCase()}-${a.subject.replace(/\s+/g, '-').toLowerCase()}`;
+      const updatePromises = snapStuds.docs.map(async (docSnap) => {
+        const student = docSnap.data();
+        const enrolledClasses = student.enrolledClasses || [];
+        const enrolledTeachers = student.enrolledTeachers || [];
+
+        const hasTeacherTag = enrolledClasses.some(tag => tag.startsWith(`${teacherId}_`));
+        const hasTeacherUid = enrolledTeachers.includes(teacherId);
+
+        if (hasTeacherTag || hasTeacherUid) {
+          const cleanedClasses = enrolledClasses.filter(tag => !tag.startsWith(`${teacherId}_`));
+          const cleanedTeachers = enrolledTeachers.filter(uid => uid !== teacherId);
+
+          await updateDoc(doc(db, "users", student.id), {
+            enrolledClasses: cleanedClasses,
+            enrolledTeachers: cleanedTeachers
+          });
+        }
       });
 
-      const affectedStudents = allStudentsList.filter(s => 
-        s.teacherId === teacherId || (s.classId && teacherClassSlugs.includes(s.classId))
-      );
-
-      // 2. Cascade update affected students to 'unassigned'
-      for (const student of affectedStudents) {
-        await updateDoc(doc(db, "users", student.id), {
-          teacherId: "unassigned"
-        });
-      }
-
-      // 3. Delete the Teacher document
+      await Promise.all(updatePromises);
       await deleteDoc(doc(db, "users", teacherId));
-      
       loadData();
     } catch (err) {
-      alert("Failed to delete teacher document: " + err.message);
+      alert("Failed to delete teacher and clean up student enrollments: " + err.message);
+    }
+  };
+
+  // Admin Permanent Student Deletion (with Cascading Submission Cleanup)
+  const handleDeleteStudent = async (studentId, studentName) => {
+    if (!window.confirm(`Are you sure you want to PERMANENTLY delete student ${studentName || 'this student'}? This will remove their record and all their submissions from the database.`)) return;
+
+    try {
+      await deleteDoc(doc(db, "users", studentId));
+
+      const diarySnap = await getDocs(query(collection(db, "diaries"), where("studentId", "==", studentId)));
+      const diaryDeletes = diarySnap.docs.map(d => deleteDoc(d.ref));
+
+      const vocabSnap = await getDocs(query(collection(db, "vocab_submissions"), where("studentId", "==", studentId)));
+      const vocabDeletes = vocabSnap.docs.map(v => deleteDoc(v.ref));
+
+      await Promise.all([...diaryDeletes, ...vocabDeletes]);
+      loadData();
+    } catch (err) {
+      alert("Failed to delete student document: " + err.message);
+    }
+  };
+
+  // Clean up ghost submissions left over from deleted or unassigned students
+  const handleCleanGhostSubmissions = async () => {
+    if (!window.confirm("Clean up ghost submissions from deleted or unassigned student accounts?")) return;
+
+    try {
+      const activeStudentIds = new Set(students.map(s => s.id));
+
+      const orphanDiaries = pendingDiariesList.filter(d => 
+        !d.studentId || !activeStudentIds.has(d.studentId) || !d.mathTeacherId || d.mathTeacherId === "unassigned" || !teachers.some(t => t.id === d.mathTeacherId)
+      );
+
+      const orphanVocabs = pendingVocabList.filter(v => {
+        const hasTeacher = teachers.some(t => {
+          const slugs = (t.assignments || []).map(a => {
+            const g = a.grade || a.gradeLevel || "Grade 1";
+            return `${g.replace(/\s+/g, '-').toLowerCase()}-${a.subject.replace(/\s+/g, '-').toLowerCase()}`;
+          });
+          return v.teacherId === t.id || (v.classId && slugs.includes(v.classId));
+        });
+        return !v.studentId || !activeStudentIds.has(v.studentId) || !hasTeacher;
+      });
+
+      const purgePromises = [
+        ...orphanDiaries.map(d => deleteDoc(doc(db, "diaries", d.id))),
+        ...orphanVocabs.map(v => deleteDoc(doc(db, "vocab_submissions", v.id)))
+      ];
+
+      await Promise.all(purgePromises);
+      alert(`Cleaned up ${purgePromises.length} ghost submission(s)!`);
+    } catch (err) {
+      alert("Failed to clean up ghost submissions: " + err.message);
     }
   };
 
@@ -381,7 +581,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     setReassignError("");
 
-    if (!reassignTeacherId || reassignTeacherId === "unassigned") {
+    if (!reassignTeacherId) {
       setReassignError("Please select a target active teacher.");
       return;
     }
@@ -394,10 +594,11 @@ export default function AdminDashboard() {
     setIsReassignLoading(true);
 
     try {
+      const classTag = `${reassignTeacherId}_${reassignClassId}`;
       const studentRef = doc(db, "users", reassigningStudent.id);
       await updateDoc(studentRef, {
-        teacherId: reassignTeacherId,
-        classId: reassignClassId
+        enrolledClasses: arrayUnion(classTag),
+        enrolledTeachers: arrayUnion(reassignTeacherId)
       });
 
       setReassignSuccess(true);
@@ -414,6 +615,8 @@ export default function AdminDashboard() {
     }
   };
 
+  const unassignedStudentsList = students.filter(s => s.role === "student" && (!s.enrolledClasses || s.enrolledClasses.length === 0));
+
   // Send password reset magic link email
   const handleSendResetEmail = async (teacherEmail) => {
     try {
@@ -426,12 +629,6 @@ export default function AdminDashboard() {
       alert("Failed to send reset email: " + err.message);
     }
   };
-
-  // Filter global student directory
-  const filteredStudents = students.filter(s => {
-    const nameStr = `${s.name} ${s.internationalName || ""} ${s.nationalName || ""}`.toLowerCase();
-    return nameStr.includes(searchStudentQuery.toLowerCase());
-  });
 
   return (
     <div className="space-y-8 animate-fade-in relative">
@@ -450,16 +647,26 @@ export default function AdminDashboard() {
             Admin Console
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 transition-colors">
-            Manage academic staff profiles, master schedules, and global student reassignments.
+            Manage academic staff profiles, master schedules, and global student master list.
           </p>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
-        >
-          <UserPlus className="h-4 w-4" />
-          <span>Provision New Teacher</span>
-        </button>
+        {activeTab === "teachers" ? (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>Provision New Teacher</span>
+          </button>
+        ) : (
+          <button
+            onClick={() => setIsStudentModalOpen(true)}
+            className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>Provision New Student</span>
+          </button>
+        )}
       </div>
 
       {/* Metric overview cards */}
@@ -489,210 +696,437 @@ export default function AdminDashboard() {
             <UserCheck className="h-5 w-5" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Enrolled Students</span>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Total Student Accounts</span>
             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.totalStudents}</h3>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
-          <div className="p-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl transition-colors">
-            <AlertCircle className="h-5 w-5" />
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center justify-between transition-colors">
+          <div className="flex items-center space-x-4">
+            <div className="p-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl transition-colors">
+              <AlertCircle className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Unassigned Students</span>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.unassignedStudents}</h3>
+            </div>
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Unassigned Students</span>
-            <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.unassignedStudents}</h3>
-          </div>
+          {stats.unassignedStudents > 0 && (
+            <button
+              onClick={() => setIsUnassignedModalOpen(true)}
+              className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-100 dark:border-red-800/50 px-3 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs"
+            >
+              Reassign
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Teachers Roster Table */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex items-center justify-between transition-colors">
-          <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Provisioned Academic Staff</h2>
-          <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700 transition-colors">
-            {teachers.length} Active Instructors
+      {/* Tab Switcher */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 transition-colors">
+        <button
+          onClick={() => setActiveTab("teachers")}
+          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
+            activeTab === "teachers"
+              ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          }`}
+        >
+          <Users className="h-4 w-4" />
+          <span>Faculty Directory</span>
+          <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full text-slate-600 dark:text-slate-300 font-extrabold">
+            {teachers.length}
           </span>
-        </div>
+        </button>
 
-        {teachers.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
-                  <th className="px-6 py-3">Teacher</th>
-                  <th className="px-6 py-3">Email Address</th>
-                  <th className="px-6 py-3">Classroom Master Schedule</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
-                {teachers.map((teacher) => (
-                  <tr key={teacher.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <img 
-                          src={teacher.avatar} 
-                          alt={teacher.name} 
-                          className="h-9 w-9 rounded-full border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 transition-colors"
-                        />
-                        <span className="font-bold text-slate-800 dark:text-slate-200 transition-colors">{teacher.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 dark:text-slate-400 transition-colors">{teacher.email}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        {teacher.assignments && teacher.assignments.length > 0 ? (
-                          teacher.assignments.map((asg, idx) => (
-                            <span 
-                              key={idx}
-                              className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 text-[10px] font-bold border border-brand-100/50 dark:border-brand-800/50 transition-colors"
-                            >
-                              <GraduationCap className="h-3 w-3 shrink-0 text-brand-600 dark:text-brand-500" />
-                              <span>{asg.grade || asg.gradeLevel} - {asg.subject} {formatScheduleString(asg)}</span>
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-slate-400 dark:text-slate-500 italic transition-colors">No Assignments</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        {/* Send Password Reset Magic Link */}
-                        <button
-                          onClick={() => handleSendResetEmail(teacher.email)}
-                          title="Send Password Reset Magic Link"
-                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:border-amber-100 dark:hover:border-amber-800/50 transition-colors cursor-pointer"
-                        >
-                          <Key className="h-3.5 w-3.5" />
-                        </button>
-                        
-                        {/* Edit Assignments Button */}
-                        <button
-                          onClick={() => handleOpenEditModal(teacher)}
-                          title="Edit Class Assignments & Schedule"
-                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-100 dark:hover:border-brand-800/50 transition-colors cursor-pointer"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
+        <button
+          onClick={() => setActiveTab("students")}
+          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
+            activeTab === "students"
+              ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          }`}
+        >
+          <GraduationCap className="h-4 w-4" />
+          <span>Global Student Directory</span>
+          <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full text-slate-600 dark:text-slate-300 font-extrabold">
+            {students.length}
+          </span>
+        </button>
 
-                        {/* Delete Teacher Button */}
-                        <button
-                          onClick={() => handleDeleteTeacher(teacher.id, teacher.name)}
-                          title="Delete Teacher Account"
-                          className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm transition-colors">
-            No instructors provisioned yet.
-          </div>
-        )}
+        <button
+          onClick={() => setActiveTab("compliance")}
+          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
+            activeTab === "compliance"
+              ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          }`}
+        >
+          <ShieldAlert className="h-4 w-4" />
+          <span>Teacher Compliance</span>
+          {teachers.reduce((acc, t) => acc + computeTeacherCompliance(t).totalPending, 0) > 0 && (
+            <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full font-black">
+              {teachers.reduce((acc, t) => acc + computeTeacherCompliance(t).totalPending, 0)}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* Global Student Directory */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
-        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition-colors">
-          <div>
-            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Global Student Directory</h2>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Audit student allocations and reassign unassigned profiles.</p>
+      {/* Tab Content */}
+      {activeTab === "compliance" && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+                Faculty Compliance & Grading Oversight Board
+              </h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                Real-time monitoring of unreviewed student diaries and vocabulary sentence submissions.
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-bold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-3 py-1.5 rounded-xl border border-brand-100 dark:border-brand-800 flex items-center space-x-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Real-time Firestore Sync Active</span>
+              </span>
+            </div>
           </div>
 
-          <div className="relative min-w-[240px]">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
-            <input
-              type="text"
-              placeholder="Search student directory..."
-              value={searchStudentQuery}
-              onChange={(e) => setSearchStudentQuery(e.target.value)}
-              className="w-full text-xs rounded-xl border border-slate-200 dark:border-slate-700 pl-9 pr-3 py-2 outline-none focus:border-brand-500 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors"
-            />
+          {/* Unassigned Pending Submissions Alert Banner if any exist */}
+          {(() => {
+            const unassignedDiaries = pendingDiariesList.filter(d => 
+              !d.mathTeacherId || d.mathTeacherId === "unassigned" || !teachers.some(t => t.id === d.mathTeacherId)
+            ).length;
+            const unassignedVocabs = pendingVocabList.filter(v => {
+              return !teachers.some(t => {
+                const slugs = (t.assignments || []).map(a => {
+                  const g = a.grade || a.gradeLevel || "Grade 1";
+                  return `${g.replace(/\s+/g, '-').toLowerCase()}-${a.subject.replace(/\s+/g, '-').toLowerCase()}`;
+                });
+                return v.teacherId === t.id || (v.classId && slugs.includes(v.classId));
+              });
+            }).length;
+
+            const totalUnassigned = unassignedDiaries + unassignedVocabs;
+            if (totalUnassigned === 0) return null;
+
+            return (
+              <div className="p-4 rounded-2xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/50 flex items-center justify-between gap-4 text-amber-800 dark:text-amber-300 text-xs font-semibold">
+                <div className="flex items-center space-x-3">
+                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0" />
+                  <div>
+                    <span className="font-bold">Notice for Admin: </span>
+                    <span>
+                      There {totalUnassigned === 1 ? 'is' : 'are'} {totalUnassigned} ghost submission{totalUnassigned > 1 ? 's' : ''} ({unassignedDiaries} diary, {unassignedVocabs} vocab) left over from deleted test accounts or unassigned students.
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleCleanGhostSubmissions}
+                  className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shrink-0 shadow-xs transition-colors cursor-pointer"
+                >
+                  Purge Ghost Submissions
+                </button>
+              </div>
+            );
+          })()}
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden transition-colors">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">Faculty Workload Matrix</h3>
+              <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700">
+                {teachers.length} Faculty Members Evaluated
+              </span>
+            </div>
+
+            {teachers.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                      <th className="px-6 py-3">Faculty Name</th>
+                      <th className="px-6 py-3">Pending Vocabs</th>
+                      <th className="px-6 py-3">Pending Diaries</th>
+                      <th className="px-6 py-3 text-right">Compliance Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    {teachers.map((teacher) => {
+                      const comp = computeTeacherCompliance(teacher);
+                      return (
+                        <tr key={teacher.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center space-x-3">
+                              <img 
+                                src={teacher.avatar} 
+                                alt={teacher.name} 
+                                className="h-8 w-8 rounded-full border border-slate-200 dark:border-slate-700"
+                              />
+                              <div>
+                                <div className="font-bold text-slate-800 dark:text-slate-100">{teacher.name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{teacher.email}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-bold border ${
+                              comp.pendingVocabsCount === 0
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/40"
+                                : comp.pendingVocabsCount > 10
+                                ? "bg-red-50 text-red-700 border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+                                : "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                            }`}>
+                              {comp.pendingVocabsCount} Pending
+                            </span>
+                          </td>
+
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-bold border ${
+                              comp.pendingDiariesCount === 0
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/40"
+                                : comp.pendingDiariesCount > 10
+                                ? "bg-red-50 text-red-700 border-red-100 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/40"
+                                : "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/40"
+                            }`}>
+                              {comp.pendingDiariesCount} Pending
+                            </span>
+                          </td>
+
+                          <td className="px-6 py-4 text-right">
+                            <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold border ${comp.badgeClass}`}>
+                              <span>{comp.badgeText}</span>
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-slate-400 text-sm">
+                No faculty members available for compliance evaluation.
+              </div>
+            )}
           </div>
         </div>
+      )}
 
-        {filteredStudents.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
-                  <th className="px-6 py-3">Student Name</th>
-                  <th className="px-6 py-3">Student ID</th>
-                  <th className="px-6 py-3">Class/Grade Scope</th>
-                  <th className="px-6 py-3">Assigned Teacher</th>
-                  <th className="px-6 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
-                {filteredStudents.map((student) => {
-                  const assignedTeacher = teachers.find(t => t.id === student.teacherId);
-                  const isUnassigned = !student.teacherId || student.teacherId === "unassigned" || !assignedTeacher;
+      {/* Tab Content */}
+      {activeTab === "teachers" ? (
+        /* Teachers Roster Table */
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex items-center justify-between transition-colors">
+            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Provisioned Academic Staff</h2>
+            <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700 transition-colors">
+              {teachers.length} Active Instructors
+            </span>
+          </div>
 
-                  return (
-                    <tr key={student.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
+          {teachers.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
+                    <th className="px-6 py-3">Teacher</th>
+                    <th className="px-6 py-3">Email Address</th>
+                    <th className="px-6 py-3">Classroom Master Schedule & Enrollment</th>
+                    <th className="px-6 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
+                  {teachers.map((teacher) => (
+                    <tr key={teacher.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-800 dark:text-slate-200 transition-colors">{formatStudentName(student)}</span>
-                          {student.communityCenter && (
-                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium inline-flex items-center space-x-1 mt-0.5 transition-colors">
-                              <Building2 className="h-2.5 w-2.5 shrink-0" />
-                              <span>{student.communityCenter}</span>
-                            </span>
+                        <div className="flex items-center space-x-3">
+                          <img 
+                            src={teacher.avatar} 
+                            alt={teacher.name} 
+                            className="h-9 w-9 rounded-full border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 transition-colors"
+                          />
+                          <span className="font-bold text-slate-800 dark:text-slate-200 transition-colors">{teacher.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500 dark:text-slate-400 transition-colors">{teacher.email}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-2">
+                          {teacher.assignments && teacher.assignments.length > 0 ? (
+                            teacher.assignments.map((asg, idx) => {
+                              const count = getAssignmentStudentCount(teacher.id, asg);
+                              return (
+                                <div
+                                  key={idx}
+                                  className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 text-xs font-bold border border-brand-100/50 dark:border-brand-800/50 transition-colors shadow-2xs"
+                                >
+                                  <GraduationCap className="h-3.5 w-3.5 shrink-0 text-brand-600 dark:text-brand-500" />
+                                  <span>{asg.grade || asg.gradeLevel} - {asg.subject}</span>
+                                  <span className="inline-flex items-center justify-center bg-brand-600 dark:bg-brand-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full ml-1">
+                                    {count} {count === 1 ? "Student" : "Students"}
+                                  </span>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <span className="text-slate-400 dark:text-slate-500 italic transition-colors">No Assignments</span>
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-slate-400 dark:text-slate-500 font-mono transition-colors">{student.id}</td>
-                      <td className="px-6 py-4 text-slate-600 dark:text-slate-400 transition-colors">
-                        <span className="uppercase font-bold text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded transition-colors">
-                          {student.classId || "Unassigned"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        {isUnassigned ? (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-[10px] font-bold border border-red-100 dark:border-red-800/50 transition-colors">
-                            <AlertCircle className="h-3 w-3 shrink-0" />
-                            <span>Unassigned</span>
-                          </span>
-                        ) : (
-                          <div className="flex items-center space-x-2">
-                            <img 
-                              src={assignedTeacher.avatar} 
-                              alt={assignedTeacher.name}
-                              className="h-6 w-6 rounded-full border border-slate-100 dark:border-slate-700 transition-colors"
-                            />
-                            <span className="font-bold text-slate-700 dark:text-slate-200 transition-colors">{assignedTeacher.name}</span>
-                          </div>
-                        )}
-                      </td>
                       <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleOpenReassignModal(student)}
-                          title="Edit / Reassign Student"
-                          className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-100 dark:hover:border-brand-800/50 text-xs font-bold transition-colors cursor-pointer"
-                        >
-                          <Pencil className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
-                          <span>Reassign</span>
-                        </button>
+                        <div className="flex items-center justify-end space-x-2">
+                          {/* Send Password Reset Magic Link */}
+                          <button
+                            onClick={() => handleSendResetEmail(teacher.email)}
+                            title="Send Password Reset Magic Link"
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:border-amber-100 dark:hover:border-amber-800/50 transition-colors cursor-pointer"
+                          >
+                            <Key className="h-3.5 w-3.5" />
+                          </button>
+                          
+                          {/* Edit Assignments Button */}
+                          <button
+                            onClick={() => handleOpenEditModal(teacher)}
+                            title="Edit Class Assignments & Schedule"
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-100 dark:hover:border-brand-800/50 transition-colors cursor-pointer"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+
+                          {/* Delete Teacher Button */}
+                          <button
+                            onClick={() => handleDeleteTeacher(teacher.id, teacher.name)}
+                            title="Delete Teacher Account"
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm transition-colors">
+              No instructors provisioned yet.
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Global Student Directory Table */
+        <div className="space-y-4">
+          {/* Search bar */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center justify-between transition-colors">
+            <div className="relative w-full max-w-md">
+              <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search students by name, grade, community, code..."
+                value={studentSearchQuery}
+                onChange={(e) => setStudentSearchQuery(e.target.value)}
+                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+              />
+            </div>
+            <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold hidden sm:block">
+              Total Master List: {students.length} Students
+            </span>
           </div>
-        ) : (
-          <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm transition-colors">
-            No students registered in the global directory.
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex items-center justify-between transition-colors">
+              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Global Student Master List</h2>
+              <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700 transition-colors">
+                {students.filter(s => {
+                  const term = studentSearchQuery.toLowerCase();
+                  return `${s.name || ''} ${s.internationalName || ''} ${s.studentCode || ''} ${s.gradeLevel || s.grade || ''} ${s.communityName || s.communityCenter || ''}`.toLowerCase().includes(term);
+                }).length} Displayed
+              </span>
+            </div>
+
+            {students.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
+                      <th className="px-6 py-3">Name</th>
+                      <th className="px-6 py-3">Grade</th>
+                      <th className="px-6 py-3">Community</th>
+                      <th className="px-6 py-3">Student Code</th>
+                      <th className="px-6 py-3">PIN</th>
+                      <th className="px-6 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
+                    {students
+                      .filter(s => {
+                        const term = studentSearchQuery.toLowerCase();
+                        return `${s.name || ''} ${s.internationalName || ''} ${s.studentCode || ''} ${s.gradeLevel || s.grade || ''} ${s.communityName || s.communityCenter || ''}`.toLowerCase().includes(term);
+                      })
+                      .map((student) => (
+                        <tr key={student.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center space-x-3">
+                              <div className="h-8 w-8 rounded-full bg-brand-50 dark:bg-brand-900/30 border border-brand-100/50 dark:border-brand-800/50 flex items-center justify-center font-bold text-xs text-brand-600 dark:text-brand-400 uppercase">
+                                {(student.internationalName || student.name || "ST").substring(0, 2)}
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-800 dark:text-slate-200">{formatStudentName(student)}</div>
+                                {student.email && <div className="text-[10px] text-slate-400 font-mono">{student.email}</div>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
+                            <span className="inline-flex px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200/60 dark:border-slate-700/60">
+                              {student.gradeLevel || student.grade || "Unassigned"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-slate-600 dark:text-slate-400">
+                            {student.communityName || student.communityCenter ? (
+                              <span className="inline-flex items-center space-x-1.5">
+                                <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                                <span>{student.communityName || student.communityCenter}</span>
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-600 italic">Unassigned</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="font-mono font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2.5 py-1 rounded-lg tracking-wider border border-brand-100/50 dark:border-brand-800/50 text-xs">
+                              {student.studentCode || "—"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="font-mono font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-lg tracking-widest border border-amber-200/50 dark:border-amber-800/50 text-xs">
+                              {student.defaultPin || "—"}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={() => handleDeleteStudent(student.id, formatStudentName(student))}
+                              title="Permanently Delete Student Account from Global Master List"
+                              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm transition-colors">
+                No student accounts created yet. Click "Provision New Student" to get started.
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+
+
 
       {/* Provision Teacher Modal */}
       {isModalOpen && (
@@ -1183,6 +1617,201 @@ export default function AdminDashboard() {
                     className="rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 dark:shadow-md dark:shadow-blue-500/30 dark:hover:shadow-blue-500/50 transition-all cursor-pointer disabled:opacity-50"
                   >
                     <span>{isReassignLoading ? "Reassigning..." : "Reassign Student"}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Unassigned Students Selection Modal */}
+      {isUnassignedModalOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[85vh] flex flex-col transition-colors">
+            <button
+              onClick={() => setIsUnassignedModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center space-x-3 mb-5">
+              <div className="p-2.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl transition-colors">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading transition-colors">Unassigned Students</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Select a student to allocate them to an active teacher and class.</p>
+              </div>
+            </div>
+
+            {unassignedStudentsList.length > 0 ? (
+              <div className="overflow-y-auto space-y-2.5 pr-1 my-2 flex-1 divide-y divide-slate-100 dark:divide-slate-800">
+                {unassignedStudentsList.map((student) => (
+                  <div key={student.id} className="pt-2.5 first:pt-0 flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">{formatStudentName(student)}</h4>
+                      <p className="text-[10px] text-slate-400 font-mono">ID: {student.id}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setIsUnassignedModalOpen(false);
+                        handleOpenReassignModal(student);
+                      }}
+                      className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-bold hover:bg-brand-700 transition-colors cursor-pointer"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      <span>Reassign</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-xs text-slate-400">All students are currently assigned to active teachers!</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Provision New Student Modal */}
+      {isStudentModalOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up transition-colors">
+            <button
+              onClick={handleResetStudentModal}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
+                <UserPlus className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading transition-colors">Provision New Student</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Generate student master code, default PIN, and register account.</p>
+              </div>
+            </div>
+
+            {studentProvisioningResult ? (
+              <div className="py-6 flex flex-col items-center text-center space-y-5 animate-fade-in">
+                <div className="h-12 w-12 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-inner">
+                  <CheckCircle className="h-7 w-7" />
+                </div>
+
+                <div>
+                  <h4 className="text-base font-bold text-slate-900 dark:text-white font-heading">
+                    Student Provisioned Successfully!
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Student account is active in the Global Master List. Print or share the credentials below.
+                  </p>
+                </div>
+
+                <div className="w-full bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-4 space-y-3 text-left">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">Student Name</span>
+                    <span className="text-xs font-bold text-slate-900 dark:text-white">{studentProvisioningResult.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-700/50">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">Student Code</span>
+                    <span className="text-sm font-mono font-bold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/40 px-2.5 py-0.5 rounded-lg border border-brand-200/50 dark:border-brand-800/50">
+                      {studentProvisioningResult.code}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">Default PIN</span>
+                    <span className="text-sm font-mono font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/40 px-2.5 py-0.5 rounded-lg border border-amber-200/50 dark:border-amber-800/50 tracking-widest">
+                      {studentProvisioningResult.pin}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleResetStudentModal}
+                  className="w-full py-2.5 rounded-xl bg-slate-900 dark:bg-brand-600 text-white font-bold text-xs hover:bg-slate-800 dark:hover:bg-brand-500 transition-colors cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleProvisionStudent} className="space-y-4">
+                {studentProvisioningError && (
+                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 dark:bg-red-900/30 p-3.5 text-xs font-semibold text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800/50 transition-colors">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{studentProvisioningError}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Student Name (Official)</label>
+                  <input
+                    type="text"
+                    required
+                    value={studentNameInput}
+                    onChange={(e) => setStudentNameInput(e.target.value)}
+                    placeholder="e.g. Alex Rivera"
+                    className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 outline-none focus:border-brand-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">International Name (Optional / English)</label>
+                  <input
+                    type="text"
+                    value={studentIntlNameInput}
+                    onChange={(e) => setStudentIntlNameInput(e.target.value)}
+                    placeholder="e.g. Alex"
+                    className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 outline-none focus:border-brand-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Grade Level</label>
+                  <select
+                    value={studentGradeInput}
+                    onChange={(e) => setStudentGradeInput(e.target.value)}
+                    className="w-full text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 outline-none focus:border-brand-500 transition-colors"
+                  >
+                    {GRADE_CATEGORIES.map((cat, idx) => (
+                      <optgroup key={idx} label={cat.label}>
+                        {cat.options.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 transition-colors">Community Center / Name</label>
+                  <input
+                    type="text"
+                    value={studentCommunityInput}
+                    onChange={(e) => setStudentCommunityInput(e.target.value)}
+                    placeholder="e.g. Northside Community Center"
+                    className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 outline-none focus:border-brand-500 transition-colors"
+                  />
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3 transition-colors">
+                  <button
+                    type="button"
+                    onClick={handleResetStudentModal}
+                    className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isStudentLoading}
+                    className="rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <span>{isStudentLoading ? "Generating Code & PIN..." : "Provision Student"}</span>
                   </button>
                 </div>
               </form>

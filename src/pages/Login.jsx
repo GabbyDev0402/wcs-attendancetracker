@@ -4,13 +4,16 @@ import { useAuth } from "../context/AuthContext";
 import { auth, db } from "../firebase/config";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { collection, query, where, getDocs, doc, setDoc } from "firebase/firestore";
-import { KeyRound, Mail, AlertCircle, ArrowRight, Sparkles } from "lucide-react";
+import { KeyRound, Mail, AlertCircle, ArrowRight, Sparkles, User, GraduationCap, Lock, Hash } from "lucide-react";
 
 export default function Login() {
   const { login, loading } = useAuth();
   const navigate = useNavigate();
+  const [loginType, setLoginType] = useState("faculty"); // "faculty" | "student"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [studentCode, setStudentCode] = useState("");
+  const [pin, setPin] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
   const [seedingText, setSeedingText] = useState("");
@@ -69,7 +72,6 @@ export default function Login() {
             });
             
             // Seed a few default students for Sarah's first class (Grade 1 - Homeroom A)
-            // classId: grade-1-homeroom-a
             const defaultStudents = [
               { id: "s101", name: "Alexander Wright", internationalName: "Alex", nationalName: "Wright", communityCenter: "Northside Community Center", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
               { id: "s102", name: "Benjamin Cooper", internationalName: "Ben", nationalName: "Cooper", communityCenter: "Westside Hub", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
@@ -100,22 +102,44 @@ export default function Login() {
   }, []);
 
   const handleLoginSuccess = (userData) => {
-    if (userData.role === "admin") {
-      navigate("/admin");
-    } else {
-      navigate("/teacher");
-    }
+    if (userData.role === 'admin') navigate('/admin');
+    else if (userData.role === 'teacher') navigate('/teacher');
+    else if (userData.role === 'student') navigate('/student');
+    else throw new Error('Invalid user role');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setIsSubmitting(true);
+    
+    let targetEmail = "";
+    let targetPassword = "";
+
+    if (loginType === "student") {
+      const formattedCode = studentCode.trim().toLowerCase();
+      if (!formattedCode) {
+        setError("Please enter your Student Code.");
+        setIsSubmitting(false);
+        return;
+      }
+      if (!pin.trim()) {
+        setError("Please enter your PIN.");
+        setIsSubmitting(false);
+        return;
+      }
+      targetEmail = `${formattedCode}@students.wcs.edu`;
+      targetPassword = pin.trim().length < 6 ? pin.trim().padEnd(6, '0') : pin.trim();
+    } else {
+      targetEmail = email.trim();
+      targetPassword = password;
+    }
+
     try {
-      const loggedUser = await login(email, password, rememberMe);
+      await login(targetEmail, targetPassword, rememberMe);
       // Wait a brief moment for the auth listener to resolve and populate Firestore profiles
       const checkProfileInterval = setInterval(async () => {
-        const userDoc = await getDocs(query(collection(db, "users"), where("email", "==", email.toLowerCase())));
+        const userDoc = await getDocs(query(collection(db, "users"), where("email", "==", targetEmail.toLowerCase())));
         if (!userDoc.empty) {
           clearInterval(checkProfileInterval);
           const data = userDoc.docs[0].data();
@@ -130,9 +154,9 @@ export default function Login() {
         err?.code === "auth/wrong-password" ||
         err?.code === "auth/invalid-email"
       ) {
-        setError("Invalid email or password. Please try again.");
+        setError(loginType === "student" ? "Invalid Student Code or PIN. Please try again." : "Invalid email or password. Please try again.");
       } else {
-        setError(err?.message || "Invalid email or password. Please try again.");
+        setError(err?.message || "Login failed. Please try again.");
       }
     }
   };
@@ -141,6 +165,40 @@ export default function Login() {
     <div className="flex min-h-screen flex-col items-center justify-center py-6 sm:py-12 bg-slate-50 dark:bg-slate-950 transition-colors duration-200">
       <div className="relative w-full max-w-md px-6 py-12 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-xl shadow-slate-100/50 dark:shadow-none transition-colors">
         
+        {/* Dual Login Toggle at Top */}
+        <div className="flex bg-slate-100 dark:bg-slate-800/60 p-1 rounded-2xl mb-6 border border-slate-200/50 dark:border-slate-700/50 transition-colors">
+          <button
+            type="button"
+            onClick={() => {
+              setLoginType("faculty");
+              setError("");
+            }}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              loginType === "faculty"
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+            }`}
+          >
+            <User className="h-3.5 w-3.5" />
+            <span>Faculty Login</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setLoginType("student");
+              setError("");
+            }}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-2 transition-all cursor-pointer ${
+              loginType === "student"
+                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm"
+                : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+            }`}
+          >
+            <GraduationCap className="h-3.5 w-3.5" />
+            <span>Student Login</span>
+          </button>
+        </div>
+
         {/* Seeding banner indicator */}
         {seedingText && (
           <div className="mb-6 flex items-center space-x-2 rounded-xl bg-brand-50 dark:bg-brand-900/20 p-3.5 text-xs font-semibold text-brand-700 dark:text-brand-400 border border-brand-100 dark:border-brand-800/50 animate-pulse transition-colors">
@@ -161,14 +219,14 @@ export default function Login() {
               Washington School
             </h1>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium transition-colors">
-              Sign in to the Attendance Portal
+              {loginType === "faculty" ? "Faculty & Staff Attendance Portal" : "Student Master Code Portal"}
             </p>
           </div>
         </div>
 
         {/* Login form */}
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Error alert right above email input */}
+          {/* Error alert right above input */}
           {error && (
             <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 p-3 rounded-md mb-4 text-sm flex items-start space-x-2.5 font-medium transition-colors">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-500 dark:text-red-400" />
@@ -176,51 +234,104 @@ export default function Login() {
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 transition-colors">
-              Email Address
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-slate-500">
-                <Mail className="h-4 w-4" />
-              </span>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (error) setError("");
-                }}
-                placeholder="teacher@school.org"
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
-              />
-            </div>
-          </div>
+          {loginType === "faculty" ? (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 transition-colors">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-slate-500">
+                    <Mail className="h-4 w-4" />
+                  </span>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError("");
+                    }}
+                    placeholder="teacher@school.org"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
+                  />
+                </div>
+              </div>
 
-          <div>
-            <div className="flex justify-between items-center mb-2">
-              <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider transition-colors">
-                Password
-              </label>
-            </div>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-slate-500">
-                <KeyRound className="h-4 w-4" />
-              </span>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (error) setError("");
-                }}
-                placeholder="••••••••"
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
-              />
-            </div>
-          </div>
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider transition-colors">
+                    Password
+                  </label>
+                </div>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-slate-500">
+                    <KeyRound className="h-4 w-4" />
+                  </span>
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError("");
+                    }}
+                    placeholder="••••••••"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10"
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 transition-colors">
+                  Student Code
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-slate-500">
+                    <Hash className="h-4 w-4" />
+                  </span>
+                  <input
+                    type="text"
+                    required
+                    value={studentCode}
+                    onChange={(e) => {
+                      setStudentCode(e.target.value);
+                      if (error) setError("");
+                    }}
+                    placeholder="e.g. WCS-9A2B"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 font-mono tracking-wider uppercase"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider transition-colors">
+                    PIN
+                  </label>
+                </div>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 dark:text-slate-500">
+                    <Lock className="h-4 w-4" />
+                  </span>
+                  <input
+                    type="password"
+                    required
+                    maxLength={6}
+                    value={pin}
+                    onChange={(e) => {
+                      setPin(e.target.value);
+                      if (error) setError("");
+                    }}
+                    placeholder="4-digit PIN (e.g. 1234)"
+                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white py-2.5 pl-10 pr-4 text-sm outline-none transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10 font-mono tracking-widest"
+                  />
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Stay Signed In Checkbox */}
           <div className="flex items-center justify-between text-xs pt-1">
@@ -238,15 +349,15 @@ export default function Login() {
           <button
             type="submit"
             disabled={isSubmitting || seedingText}
-            className="w-full mt-2 inline-flex items-center justify-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 py-2.5 text-sm font-semibold text-white shadow-md dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 transition-all hover:bg-slate-800 dark:hover:bg-brand-500 focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] disabled:opacity-50"
+            className="w-full mt-2 inline-flex items-center justify-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 py-2.5 text-sm font-semibold text-white shadow-md dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 transition-all hover:bg-slate-800 dark:hover:bg-brand-500 focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
           >
             {isSubmitting ? "Signing in..." : "Sign In"}
             {!isSubmitting && <ArrowRight className="h-4 w-4" />}
           </button>
         </form>
 
-
       </div>
     </div>
   );
 }
+

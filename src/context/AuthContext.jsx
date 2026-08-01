@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { auth, db } from "../firebase/config";
+import { auth, db, generateStudentAccount } from "../firebase/config";
 import { 
   onAuthStateChanged, 
   signInWithEmailAndPassword, 
@@ -11,6 +11,8 @@ import {
 import { doc, getDoc } from "firebase/firestore";
 
 const AuthContext = createContext(null);
+
+export { generateStudentAccount };
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -38,13 +40,9 @@ export const AuthProvider = ({ children }) => {
               ...data
             });
           } else {
-            console.warn("User authenticated but profile document not found in Firestore.");
-            setUser({
-              id: firebaseUser.uid,
-              email: firebaseUser.email,
-              role: "teacher",
-              assignments: []
-            });
+            console.warn("User authenticated but profile document not found in Firestore. Signing out.");
+            await signOut(auth);
+            setUser(null);
           }
         } catch (error) {
           console.error("Error fetching user profile from Firestore:", error);
@@ -78,7 +76,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, generateStudentAccount }}>
       {!loading && children}
     </AuthContext.Provider>
   );

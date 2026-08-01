@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { db } from "../firebase/config";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { formatStudentName, formatTime12Hour, formatScheduleString } from "../utils/helpers";
 import { 
@@ -13,7 +13,11 @@ import {
   ArrowRight,
   TrendingUp,
   AlertTriangle,
-  GraduationCap
+  GraduationCap,
+  Pencil,
+  X,
+  MessageSquare,
+  FileText
 } from "lucide-react";
 
 export default function TeacherDashboard() {
@@ -31,6 +35,16 @@ export default function TeacherDashboard() {
   const [todayLogs, setTodayLogs] = useState({});
   const todayStr = new Date().toLocaleDateString("en-CA");
   const todayWeekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
+
+  // Math Teacher Detection & Diary Grading State
+  const isMathTeacher = (user?.assignments || []).some(a => (a.subject || '').toLowerCase().includes('math'));
+  const [activeTeacherTab, setActiveTeacherTab] = useState("overview"); // "overview" | "diaries"
+  const [pendingDiaries, setPendingDiaries] = useState([]);
+  const [isPendingDiariesLoading, setIsPendingDiariesLoading] = useState(false);
+  const [selectedDiary, setSelectedDiary] = useState(null);
+  const [diaryFeedbackText, setDiaryFeedbackText] = useState("");
+  const [isDiaryModalOpen, setIsDiaryModalOpen] = useState(false);
+  const [isGradingDiary, setIsGradingDiary] = useState(false);
 
   // Parse classes from teacher assignments
   useEffect(() => {
@@ -62,6 +76,63 @@ export default function TeacherDashboard() {
     setTeacherClasses(parsedClasses);
   }, [user]);
 
+  // Load pending diaries if user is a Math teacher
+  useEffect(() => {
+    if (isMathTeacher) {
+      loadPendingDiaries();
+    }
+  }, [isMathTeacher]);
+
+  const loadPendingDiaries = async () => {
+    if (!user) return;
+    setIsPendingDiariesLoading(true);
+    try {
+      const q = query(
+        collection(db, "diaries"),
+        where("mathTeacherId", "==", user.id),
+        where("status", "==", "pending")
+      );
+      const snap = await getDocs(q);
+      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setPendingDiaries(items);
+    } catch (e) {
+      console.error("Error loading pending diaries:", e);
+    } finally {
+      setIsPendingDiariesLoading(false);
+    }
+  };
+
+  const handleOpenDiaryModal = (diary) => {
+    setSelectedDiary(diary);
+    setDiaryFeedbackText(diary.feedback || "");
+    setIsDiaryModalOpen(true);
+  };
+
+  const handleGradeDiarySubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedDiary) return;
+
+    setIsGradingDiary(true);
+    try {
+      const docId = selectedDiary.id || `${selectedDiary.studentId}-${selectedDiary.date}`;
+      const docRef = doc(db, "diaries", docId);
+      
+      await updateDoc(docRef, {
+        status: "graded",
+        feedback: diaryFeedbackText.trim()
+      });
+
+      setIsDiaryModalOpen(false);
+      setSelectedDiary(null);
+      setDiaryFeedbackText("");
+      loadPendingDiaries();
+    } catch (err) {
+      alert("Failed to grade diary: " + err.message);
+    } finally {
+      setIsGradingDiary(false);
+    }
+  };
+
   // Load students and sessions from Firestore to compute dashboard states
   useEffect(() => {
     const fetchDashboardState = async () => {
@@ -87,11 +158,16 @@ export default function TeacherDashboard() {
         // 1. Fetch Students
         const studentsQuery = query(
           collection(db, "users"),
-          where("role", "==", "student"),
-          where("classId", "in", classIds)
+          where("role", "==", "student")
         );
         const studentsSnap = await getDocs(studentsQuery);
-        const allStudents = studentsSnap.docs.map(doc => doc.data());
+        const rawStudents = studentsSnap.docs.map(doc => doc.data());
+        const allStudents = rawStudents.filter(s => {
+          const hasClassTag = Array.isArray(s.enrolledClasses) && s.enrolledClasses.some(tag => tag.startsWith(`${user.id}_`));
+          const hasTeacher = Array.isArray(s.enrolledTeachers) && s.enrolledTeachers.includes(user.id);
+          const matchesClass = s.classId && classIds.includes(s.classId) && s.teacherId !== "unassigned";
+          return hasClassTag || hasTeacher || s.teacherId === user.id || matchesClass;
+        });
 
         // 2. Fetch Sessions
         const sessionsQuery = query(
@@ -208,7 +284,6 @@ export default function TeacherDashboard() {
     fetchDashboardState();
   }, [teacherClasses, todayStr]);
 
-  // Today's Timetable: Filter classes for today's weekday & sort chronologically by startTime
   const todaysTimetable = teacherClasses
     .filter(c => c.daysOfWeek && c.daysOfWeek.includes(todayWeekday))
     .sort((a, b) => {
@@ -217,7 +292,6 @@ export default function TeacherDashboard() {
       return a.startTime.localeCompare(b.startTime);
     });
 
-  // Other / Unscheduled classes fallback
   const unscheduledOrOtherClasses = teacherClasses.filter(c => 
     !c.daysOfWeek || c.daysOfWeek.length === 0 || !c.daysOfWeek.includes(todayWeekday)
   );
@@ -240,258 +314,424 @@ export default function TeacherDashboard() {
         </div>
       </div>
 
-      {/* KPI Stats Grid */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center space-x-4 transition-colors">
-          <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
-            <BookOpen className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Assigned Classes</p>
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">{stats.totalClasses}</h3>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center space-x-4 transition-colors">
-          <div className="p-3 bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 rounded-xl transition-colors">
-            <Users className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Total Enrolled</p>
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">{stats.totalStudents}</h3>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center space-x-4 transition-colors">
-          <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl transition-colors">
-            <TrendingUp className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Avg Attendance</p>
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">{stats.averageAttendance}%</h3>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center space-x-4 transition-colors">
-          <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl transition-colors">
-            <Clock className="h-6 w-6" />
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Pending Logs</p>
-            <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">
-              {stats.pendingToday === 0 ? "All Clear" : `${stats.pendingToday} Classes`}
-            </h3>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Roster Split Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        {/* Left Side: Today's Timetable & Master Schedule (2/3 width) */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">
-                📅 Today's Timetable ({todayWeekday})
-              </h2>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Classes scheduled chronologically for today.</p>
-            </div>
-            {stats.pendingToday > 0 && (
-              <div className="flex items-center space-x-1.5 text-xs text-amber-600 dark:text-amber-500 font-semibold bg-amber-50 dark:bg-amber-900/30 px-2.5 py-1 rounded-lg transition-colors">
-                <AlertTriangle className="h-3.5 w-3.5" />
-                <span>Log submission required</span>
-              </div>
+      {/* Math Teacher Portal Navigation Bar */}
+      {isMathTeacher && (
+        <div className="flex space-x-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+          <button
+            onClick={() => setActiveTeacherTab("overview")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTeacherTab === "overview"
+                ? "bg-slate-900 dark:bg-brand-600 text-white shadow-sm"
+                : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50"
+            }`}
+          >
+            Master Schedule & Overview
+          </button>
+          <button
+            onClick={() => setActiveTeacherTab("diaries")}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTeacherTab === "diaries"
+                ? "bg-slate-900 dark:bg-brand-600 text-white shadow-sm"
+                : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50"
+            }`}
+          >
+            <BookOpen className="h-4 w-4 text-brand-400" />
+            <span>Diary Review Portal</span>
+            {pendingDiaries.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                {pendingDiaries.length}
+              </span>
             )}
-          </div>
-
-          {isDataLoading ? (
-            <div className="py-12 text-center text-slate-450 dark:text-slate-400 text-xs bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm transition-colors">
-              Loading active master schedule from Firestore...
-            </div>
-          ) : todaysTimetable.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              {todaysTimetable.map((classItem) => {
-                const isLogged = todayLogs[classItem.id];
-                const startTimeStr = formatTime12Hour(classItem.startTime);
-                const endTimeStr = formatTime12Hour(classItem.endTime);
-                const timeSpan = startTimeStr && endTimeStr ? `${startTimeStr} - ${endTimeStr}` : startTimeStr || "Scheduled Today";
-
-                return (
-                  <div 
-                    key={classItem.id} 
-                    className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-all duration-200 group text-left relative overflow-hidden"
-                  >
-                    <div className="absolute top-0 left-0 h-1 w-full bg-brand-500" />
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors">
-                          {classItem.section}
-                        </span>
-                        {isLogged ? (
-                          <span className="flex items-center space-x-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 rounded-lg transition-colors">
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            <span>Attendance Saved</span>
-                          </span>
-                        ) : (
-                          <span className="flex items-center space-x-1 text-xs font-bold text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/30 px-2.5 py-1 rounded-lg transition-colors">
-                            <Clock className="h-3.5 w-3.5" />
-                            <span>Attendance Pending</span>
-                          </span>
-                        )}
-                      </div>
-
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
-                        {classItem.name}
-                      </h3>
-                      
-                      <div className="flex items-center space-x-2 text-xs text-brand-600 dark:text-brand-400 font-bold mt-3 bg-brand-50/60 dark:bg-brand-900/30 border border-brand-100/50 dark:border-brand-800/50 px-3 py-1.5 rounded-xl w-fit transition-colors">
-                        <Clock className="h-3.5 w-3.5 text-brand-500 dark:text-brand-400 shrink-0" />
-                        <span>{timeSpan}</span>
-                      </div>
-                    </div>
-
-                    <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors">
-                      <Link 
-                        to={`/teacher/reports?classId=${classItem.id}`}
-                        className="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all"
-                      >
-                        View History
-                      </Link>
-
-                      <Link
-                        to={`/teacher/log?classId=${classItem.id}`}
-                        className={`inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                          isLogged 
-                            ? "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700" 
-                            : "bg-brand-600 dark:bg-brand-600 text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 hover:translate-x-0.5"
-                        }`}
-                      >
-                        <span>{isLogged ? "Edit Attendance" : "Take Attendance"}</span>
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="py-12 text-center text-slate-400 dark:text-slate-500 text-xs bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col items-center space-y-2 transition-colors">
-              <Calendar className="h-8 w-8 text-slate-300 dark:text-slate-600" />
-              <span className="font-bold text-slate-700 dark:text-slate-300">No classes scheduled for today ({todayWeekday}).</span>
-              <span className="text-slate-400 dark:text-slate-500 max-w-sm">Check your other master schedule classes below to log attendance.</span>
-            </div>
-          )}
-
-          {/* Unscheduled or Other Weekday Classes Section */}
-          {unscheduledOrOtherClasses.length > 0 && (
-            <div className="pt-4 space-y-4">
-              <h3 className="text-sm font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider font-heading transition-colors">
-                All Assigned Classes & Master Schedule
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {unscheduledOrOtherClasses.map((classItem) => {
-                  const isLogged = todayLogs[classItem.id];
-                  return (
-                    <div 
-                      key={classItem.id}
-                      className="bg-slate-50/60 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800/60 rounded-xl p-4 flex items-center justify-between text-left hover:bg-white dark:hover:bg-slate-800 transition-all"
-                    >
-                      <div>
-                        <span className="font-bold text-xs text-slate-800 dark:text-slate-200 block transition-colors">{classItem.name}</span>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold block mt-0.5 transition-colors">
-                          {formatScheduleString(classItem)}
-                        </span>
-                      </div>
-
-                      <Link
-                        to={`/teacher/log?classId=${classItem.id}`}
-                        className="inline-flex items-center space-x-1 text-xs font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xs hover:shadow-xs transition-all"
-                      >
-                        <span>{isLogged ? "Edit" : "Log"}</span>
-                        <ArrowRight className="h-3 w-3" />
-                      </Link>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          </button>
         </div>
+      )}
 
-        {/* Right Side: At Risk Students (1/3 width) */}
-        <div className="space-y-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">⚠️ At-Risk Students</h2>
+      {/* TAB 2: MATH TEACHER DIARY REVIEW PORTAL */}
+      {activeTeacherTab === "diaries" && isMathTeacher ? (
+        <div className="space-y-6">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+                Global Student Daily Diary Review
+              </h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                As a Math instructor, review and provide feedback on global daily student diary submissions.
+              </p>
+            </div>
+            <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3.5 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800 shrink-0">
+              {pendingDiaries.length} Pending Review
+            </span>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
-            {isDataLoading ? (
-              <div className="py-12 text-center text-slate-400 text-xs">
-                Scanning logs...
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">
+            {isPendingDiariesLoading ? (
+              <div className="py-16 text-center text-slate-400 text-xs">
+                Loading pending diary entries...
               </div>
-            ) : atRiskStudents.length > 0 ? (
-              <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
-                {atRiskStudents.map((student, index) => {
-                  const isCritical = student.reason.startsWith("Critical");
-                  return (
-                    <div 
-                      key={index} 
-                      className={`flex flex-col p-3 rounded-xl border text-left transition-all ${
-                        isCritical 
-                          ? "bg-red-50/50 dark:bg-red-900/20 border-red-100 dark:border-red-900/50" 
-                          : "bg-amber-50/50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/50"
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <span className="font-bold text-slate-850 dark:text-slate-200 text-xs truncate max-w-[150px]">
-                          {student.name}
-                        </span>
-                        <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider shrink-0 ${
-                          isCritical 
-                            ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400" 
-                            : "bg-amber-100 dark:bg-amber-900/50 text-amber-755 dark:text-amber-400"
-                        }`}>
-                          {isCritical ? "Critical" : "Warning"}
-                        </span>
-                      </div>
-                      
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1.5 flex items-center space-x-1">
-                        <GraduationCap className="h-3 w-3 text-slate-400 shrink-0" />
-                        <span className="truncate">{student.className}</span>
-                      </span>
-                      
-                      {student.communityCenter && (
-                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium pl-4">
-                          Center: {student.communityCenter}
-                        </span>
-                      )}
-                      
-                      <div className="mt-2.5 pt-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between text-[10px] font-bold">
-                        <span className={isCritical ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-500"}>
-                          {student.reason}
-                        </span>
-                        <Link 
-                          to={`/teacher/log?classId=${student.classId}`}
-                          className={`hover:underline ${
-                            isCritical ? "text-red-700 dark:text-red-400" : "text-amber-850 dark:text-amber-400"
-                          }`}
-                        >
-                          View Logs
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
+            ) : pendingDiaries.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                      <th className="px-6 py-3">Student Name</th>
+                      <th className="px-6 py-3">Submission Date</th>
+                      <th className="px-6 py-3">Diary Entry Preview</th>
+                      <th className="px-6 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-semibold text-slate-700 dark:text-slate-200">
+                    {pendingDiaries.map((diary) => (
+                      <tr key={diary.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/30">
+                        <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">{diary.studentName}</td>
+                        <td className="px-6 py-4 font-mono text-slate-500">{diary.date}</td>
+                        <td className="px-6 py-4 text-slate-600 dark:text-slate-300 line-clamp-1 italic max-w-md">
+                          "{diary.text}"
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            onClick={() => handleOpenDiaryModal(diary)}
+                            className="inline-flex items-center space-x-1.5 px-4 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            <span>Review Diary</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
-              <div className="py-12 text-center text-slate-400 text-xs">
-                No students flagged as at-risk. All systems clear!
+              <div className="py-16 text-center text-slate-400 text-sm flex flex-col items-center justify-center space-y-2">
+                <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+                <span className="font-bold text-slate-700 dark:text-slate-300">All student diaries reviewed!</span>
+                <span className="text-xs text-slate-400">There are no pending diary submissions awaiting grading.</span>
               </div>
             )}
           </div>
         </div>
-      </div>
+      ) : (
+        /* TAB 1: MASTER SCHEDULE & OVERVIEW */
+        <>
+          {/* KPI Stats Grid */}
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center space-x-4 transition-colors">
+              <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
+                <BookOpen className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Assigned Classes</p>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">{stats.totalClasses}</h3>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center space-x-4 transition-colors">
+              <div className="p-3 bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 rounded-xl transition-colors">
+                <Users className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Total Enrolled</p>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">{stats.totalStudents}</h3>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center space-x-4 transition-colors">
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl transition-colors">
+                <TrendingUp className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Avg Attendance</p>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">{stats.averageAttendance}%</h3>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center space-x-4 transition-colors">
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-xl transition-colors">
+                <Clock className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Pending Logs</p>
+                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">
+                  {stats.pendingToday === 0 ? "All Clear" : `${stats.pendingToday} Classes`}
+                </h3>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Roster Split Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            {/* Left Side: Today's Timetable & Master Schedule (2/3 width) */}
+            <div className="lg:col-span-2 space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">
+                    📅 Today's Timetable ({todayWeekday})
+                  </h2>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 transition-colors">Classes scheduled chronologically for today.</p>
+                </div>
+                {stats.pendingToday > 0 && (
+                  <div className="flex items-center space-x-1.5 text-xs text-amber-600 dark:text-amber-500 font-semibold bg-amber-50 dark:bg-amber-900/30 px-2.5 py-1 rounded-lg transition-colors">
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    <span>Log submission required</span>
+                  </div>
+                )}
+              </div>
+
+              {isDataLoading ? (
+                <div className="py-12 text-center text-slate-450 dark:text-slate-400 text-xs bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm transition-colors">
+                  Loading active master schedule from Firestore...
+                </div>
+              ) : todaysTimetable.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {todaysTimetable.map((classItem) => {
+                    const isLogged = todayLogs[classItem.id];
+                    const startTimeStr = formatTime12Hour(classItem.startTime);
+                    const endTimeStr = formatTime12Hour(classItem.endTime);
+                    const timeSpan = startTimeStr && endTimeStr ? `${startTimeStr} - ${endTimeStr}` : startTimeStr || "Scheduled Today";
+
+                    return (
+                      <div 
+                        key={classItem.id} 
+                        className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-all duration-200 group text-left relative overflow-hidden"
+                      >
+                        <div className="absolute top-0 left-0 h-1 w-full bg-brand-500" />
+                        <div>
+                          <div className="flex items-center justify-between mb-4">
+                            <span className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors">
+                              {classItem.section}
+                            </span>
+                            {isLogged ? (
+                              <span className="flex items-center space-x-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 rounded-lg transition-colors">
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <span>Attendance Saved</span>
+                              </span>
+                            ) : (
+                              <span className="flex items-center space-x-1 text-xs font-bold text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/30 px-2.5 py-1 rounded-lg transition-colors">
+                                <Clock className="h-3.5 w-3.5" />
+                                <span>Attendance Pending</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+                            {classItem.name}
+                          </h3>
+                          
+                          <div className="flex items-center space-x-2 text-xs text-brand-600 dark:text-brand-400 font-bold mt-3 bg-brand-50/60 dark:bg-brand-900/30 border border-brand-100/50 dark:border-brand-800/50 px-3 py-1.5 rounded-xl w-fit transition-colors">
+                            <Clock className="h-3.5 w-3.5 text-brand-500 dark:text-brand-400 shrink-0" />
+                            <span>{timeSpan}</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors">
+                          <Link 
+                            to={`/teacher/reports?classId=${classItem.id}`}
+                            className="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all"
+                          >
+                            View History
+                          </Link>
+
+                          <Link
+                            to={`/teacher/class/${classItem.id}`}
+                            className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer bg-brand-600 dark:bg-brand-600 text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 hover:translate-x-0.5"
+                          >
+                            <span>Enter Classroom</span>
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-12 text-center text-slate-400 dark:text-slate-500 text-xs bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col items-center space-y-2 transition-colors">
+                  <Calendar className="h-8 w-8 text-slate-300 dark:text-slate-600" />
+                  <span className="font-bold text-slate-700 dark:text-slate-300">No classes scheduled for today ({todayWeekday}).</span>
+                  <span className="text-slate-400 dark:text-slate-500 max-w-sm">Check your other master schedule classes below to log attendance.</span>
+                </div>
+              )}
+
+              {/* Unscheduled or Other Weekday Classes Section */}
+              {unscheduledOrOtherClasses.length > 0 && (
+                <div className="pt-4 space-y-4">
+                  <h3 className="text-sm font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider font-heading transition-colors">
+                    All Assigned Classes & Master Schedule
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {unscheduledOrOtherClasses.map((classItem) => {
+                      const isLogged = todayLogs[classItem.id];
+                      return (
+                        <div 
+                          key={classItem.id}
+                          className="bg-slate-50/60 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800/60 rounded-xl p-4 flex items-center justify-between text-left hover:bg-white dark:hover:bg-slate-800 transition-all"
+                        >
+                          <div>
+                            <span className="font-bold text-xs text-slate-800 dark:text-slate-200 block transition-colors">{classItem.name}</span>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold block mt-0.5 transition-colors">
+                              {formatScheduleString(classItem)}
+                            </span>
+                          </div>
+
+                          <Link
+                            to={`/teacher/class/${classItem.id}`}
+                            className="inline-flex items-center space-x-1 text-xs font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xs hover:shadow-xs transition-all"
+                          >
+                            <span>Enter Classroom</span>
+                            <ArrowRight className="h-3 w-3" />
+                          </Link>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Side: At Risk Students (1/3 width) */}
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">⚠️ At-Risk Students</h2>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
+                {isDataLoading ? (
+                  <div className="py-12 text-center text-slate-400 text-xs">
+                    Scanning logs...
+                  </div>
+                ) : atRiskStudents.length > 0 ? (
+                  <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
+                    {atRiskStudents.map((student, index) => {
+                      const isCritical = student.reason.startsWith("Critical");
+                      return (
+                        <div 
+                          key={index} 
+                          className={`flex flex-col p-3 rounded-xl border text-left transition-all ${
+                            isCritical 
+                              ? "bg-red-50/50 dark:bg-red-900/20 border-red-100 dark:border-red-900/50" 
+                              : "bg-amber-50/50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/50"
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <span className="font-bold text-slate-850 dark:text-slate-200 text-xs truncate max-w-[150px]">
+                              {student.name}
+                            </span>
+                            <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider shrink-0 ${
+                              isCritical 
+                                ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400" 
+                                : "bg-amber-100 dark:bg-amber-900/50 text-amber-755 dark:text-amber-400"
+                            }`}>
+                              {isCritical ? "Critical" : "Warning"}
+                            </span>
+                          </div>
+                          
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1.5 flex items-center space-x-1">
+                            <GraduationCap className="h-3 w-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{student.className}</span>
+                          </span>
+                          
+                          {student.communityCenter && (
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium pl-4">
+                              Center: {student.communityCenter}
+                            </span>
+                          )}
+                          
+                          <div className="mt-2.5 pt-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between text-[10px] font-bold">
+                            <span className={isCritical ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-500"}>
+                              {student.reason}
+                            </span>
+                            <Link 
+                              to={`/teacher/log?classId=${student.classId}`}
+                              className={`hover:underline ${
+                                isCritical ? "text-red-700 dark:text-red-400" : "text-amber-850 dark:text-amber-400"
+                              }`}
+                            >
+                              View Logs
+                            </Link>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-12 text-center text-slate-400 text-xs">
+                    No students flagged as at-risk. All systems clear!
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Modal: Math Teacher Diary Review */}
+      {isDiaryModalOpen && selectedDiary && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up space-y-5">
+            <button
+              onClick={() => setIsDiaryModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl">
+                <BookOpen className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading">
+                  Review Student Daily Diary
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Student: {selectedDiary.studentName} ({selectedDiary.date})
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                Student Diary Entry
+              </label>
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
+                {selectedDiary.text}
+              </div>
+            </div>
+
+            <form onSubmit={handleGradeDiarySubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                  Teacher Feedback & Grade Comments
+                </label>
+                <textarea
+                  rows={3}
+                  value={diaryFeedbackText}
+                  onChange={(e) => setDiaryFeedbackText(e.target.value)}
+                  placeholder="Insightful reflections! Keep up the great effort in class..."
+                  className="w-full text-xs font-medium text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-2xl p-3 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setIsDiaryModalOpen(false)}
+                  className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isGradingDiary}
+                  className="rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <span>{isGradingDiary ? "Saving..." : "Grade & Send Feedback"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,6 +9,16 @@ import MonthlyReports from './pages/MonthlyReports';
 import AdminDashboard from './pages/AdminDashboard';
 import TeacherRoster from './pages/TeacherRoster';
 import WeeklyLessonReport from './pages/WeeklyLessonReport';
+import StudentDashboard from './pages/StudentDashboard';
+import StudentClassDashboard from './pages/StudentClassDashboard';
+import ClassDashboard from './pages/ClassDashboard';
+
+const getRoleDefaultRoute = (role) => {
+  if (role === 'admin') return '/admin';
+  if (role === 'teacher') return '/teacher';
+  if (role === 'student') return '/student';
+  return '/login';
+};
 
 // Route guard with optional role authorization
 function ProtectedRoute({ children, allowedRoles }) {
@@ -27,8 +37,8 @@ function ProtectedRoute({ children, allowedRoles }) {
   }
   
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    // If not authorized for this specific role, redirect to appropriate console
-    return <Navigate to={user.role === 'admin' ? '/admin' : '/teacher'} replace />;
+    // If not authorized for this specific role, redirect to appropriate role dashboard
+    return <Navigate to={getRoleDefaultRoute(user.role)} replace />;
   }
   
   return children;
@@ -47,7 +57,7 @@ function PublicRoute({ children }) {
   }
 
   if (user) {
-    return <Navigate to={user.role === 'admin' ? '/admin' : '/teacher'} replace />;
+    return <Navigate to={getRoleDefaultRoute(user.role)} replace />;
   }
   
   return children;
@@ -66,7 +76,7 @@ function WildcardRedirect() {
   }
 
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={user.role === 'admin' ? '/admin' : '/teacher'} replace />;
+  return <Navigate to={getRoleDefaultRoute(user.role)} replace />;
 }
 
 export default function App() {
@@ -96,6 +106,19 @@ export default function App() {
             <Route index element={<AdminDashboard />} />
           </Route>
 
+          {/* Protected Student Routes */}
+          <Route 
+            path="/student" 
+            element={
+              <ProtectedRoute allowedRoles={['student']}>
+                <Layout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<StudentDashboard />} />
+            <Route path="class/:classId" element={<StudentClassDashboard />} />
+          </Route>
+
           {/* Protected Teacher Dashboard Routes */}
           <Route 
             path="/teacher" 
@@ -107,6 +130,9 @@ export default function App() {
           >
             {/* Overview dashboard */}
             <Route index element={<TeacherDashboard />} />
+
+            {/* Google Classroom Portal dynamic route */}
+            <Route path="class/:classId" element={<ClassDashboard />} />
             
             {/* Log attendance roster */}
             <Route path="log" element={<AttendanceLog />} />

@@ -54,6 +54,10 @@ export default function Navbar() {
     ? [
         { name: "Admin Console", path: "/admin", icon: School }
       ]
+    : user?.role === "student"
+    ? [
+        { name: "Student Portal", path: "/student", icon: CalendarCheck }
+      ]
     : [];
 
   return (
