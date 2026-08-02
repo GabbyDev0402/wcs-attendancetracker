@@ -11,7 +11,9 @@ import {
   setDoc, 
   updateDoc, 
   arrayUnion, 
-  arrayRemove 
+  arrayRemove,
+  addDoc,
+  serverTimestamp
 } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { formatStudentName, formatTime12Hour } from "../utils/helpers";
@@ -33,8 +35,13 @@ import {
   CheckCircle,
   Building2,
   Pencil,
-  FileText
+  FileText,
+  Trash2,
+  Plus,
+  ListChecks
 } from "lucide-react";
+
+const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
 
 export default function ClassDashboard() {
   const { classId } = useParams();
@@ -42,7 +49,7 @@ export default function ClassDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Tab State: 'roster' | 'attendance' | 'vocabularies'
+  // Tab State: 'roster' | 'attendance' | 'vocabularies' | 'exams'
   const currentTabParam = searchParams.get("tab") || "roster";
   const [activeTab, setActiveTab] = useState(currentTabParam);
 
@@ -86,6 +93,24 @@ export default function ClassDashboard() {
   const [vocabFeedbackInput, setVocabFeedbackInput] = useState("");
   const [isVocabModalOpen, setIsVocabModalOpen] = useState(false);
   const [isGradingVocab, setIsGradingVocab] = useState(false);
+
+  // Exams State (Tab 4)
+  const [exams, setExams] = useState([]);
+  const [isExamsLoading, setIsExamsLoading] = useState(false);
+  const [isBuildingExam, setIsBuildingExam] = useState(false);
+  const [examPublishSuccess, setExamPublishSuccess] = useState(false);
+  const [examTitle, setExamTitle] = useState("");
+  const [examTimeLimit, setExamTimeLimit] = useState(30);
+  const [examQuestions, setExamQuestions] = useState([]);
+
+  // Exam Submissions & Grading State
+  const [examSubmissions, setExamSubmissions] = useState([]);
+  const [isExamSubmissionsLoading, setIsExamSubmissionsLoading] = useState(false);
+  const [isGradingExamModalOpen, setIsGradingExamModalOpen] = useState(false);
+  const [selectedExamSubmission, setSelectedExamSubmission] = useState(null);
+  const [manualSubjScores, setManualSubjScores] = useState({});
+  const [isSavingExamGrade, setIsSavingExamGrade] = useState(false);
+  const [examGradeSuccessToast, setExamGradeSuccessToast] = useState(false);
 
   // Parse Class metadata from teacher's assignments
   useEffect(() => {
@@ -444,6 +469,218 @@ export default function ClassDashboard() {
     }
   };
 
+  // -------------------------------------------------------------
+  // TAB 4: EXAMS LOGIC
+  // -------------------------------------------------------------
+  const classTag = `${user?.id}_${classId}`;
+
+  useEffect(() => {
+    if (activeTab === "exams") loadExams();
+  }, [activeTab, classId, user]);
+
+  const loadExams = async () => {
+    if (!classId || !user) return;
+    setIsExamsLoading(true);
+    setIsExamSubmissionsLoading(true);
+    try {
+      const tag = `${user.id}_${classId}`;
+      const q = query(
+        collection(db, "exams"),
+        where("classId", "==", tag)
+      );
+      const snap = await getDocs(q);
+      setExams(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
+
+      // Fetch exam submissions for this class
+      const subSnap = await getDocs(collection(db, "exam_submissions"));
+      const allSubs = subSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+      const classSubs = allSubs.filter(sub => {
+        const matchesTag = sub.classId === tag || sub.classId === classId || sub.classId === decodeURIComponent(classId);
+        return matchesTag;
+      });
+      // Sort by submittedAt descending
+      classSubs.sort((a, b) => {
+        const timeA = a.submittedAt?.toDate ? a.submittedAt.toDate() : new Date(a.submittedAt || 0);
+        const timeB = b.submittedAt?.toDate ? b.submittedAt.toDate() : new Date(b.submittedAt || 0);
+        return timeB - timeA;
+      });
+      setExamSubmissions(classSubs);
+    } catch (e) {
+      console.error("Error loading exams & submissions:", e);
+    } finally {
+      setIsExamsLoading(false);
+      setIsExamSubmissionsLoading(false);
+    }
+  };
+
+  const handleOpenExamGradingModal = (sub) => {
+    setSelectedExamSubmission(sub);
+    if (sub.subjScoresDetail) {
+      setManualSubjScores(sub.subjScoresDetail);
+    } else {
+      setManualSubjScores({});
+    }
+    setIsGradingExamModalOpen(true);
+  };
+
+  const handleFinalizeExamGrade = async () => {
+    if (!selectedExamSubmission) return;
+    setIsSavingExamGrade(true);
+    try {
+      const calculatedSubjScore = Object.values(manualSubjScores).reduce(
+        (sum, pts) => sum + (Number(pts) || 0),
+        0
+      );
+
+      const subDocId = selectedExamSubmission.firestoreId || selectedExamSubmission.id;
+      const subRef = doc(db, "exam_submissions", subDocId);
+      await updateDoc(subRef, {
+        subjScore: calculatedSubjScore,
+        subjScoresDetail: manualSubjScores,
+        status: "Graded"
+      });
+
+      setExamGradeSuccessToast(true);
+      setTimeout(() => setExamGradeSuccessToast(false), 3000);
+      setIsGradingExamModalOpen(false);
+      setSelectedExamSubmission(null);
+      setManualSubjScores({});
+      loadExams();
+    } catch (err) {
+      alert("Failed to save exam grade: " + err.message);
+    } finally {
+      setIsSavingExamGrade(false);
+    }
+  };
+
+  // Exam Builder Helpers
+  let nextQId = examQuestions.length > 0 ? Math.max(...examQuestions.map(q => q.id)) + 1 : 1;
+
+  const addQuestion = (type) => {
+    const base = { id: nextQId, type, text: "", points: 1 };
+    let newQ;
+    switch (type) {
+      case "multipleChoice":
+        newQ = { ...base, options: ["", "", "", ""], correctOptionIndex: 0 };
+        break;
+      case "identification":
+        newQ = { ...base, correctAnswer: "" };
+        break;
+      case "vocabulary":
+        newQ = { ...base, vocabularyPairs: [{ id: "vp-1", word: "", definition: "" }] };
+        break;
+      case "essay":
+        newQ = { ...base, rubric: "", minWordCount: 50 };
+        break;
+      default:
+        return;
+    }
+    setExamQuestions(prev => [...prev, newQ]);
+  };
+
+  const updateQuestion = (qId, field, value) => {
+    setExamQuestions(prev => prev.map(q => q.id === qId ? { ...q, [field]: value } : q));
+  };
+
+  const deleteQuestion = (qId) => {
+    setExamQuestions(prev => prev.filter(q => q.id !== qId));
+  };
+
+  const updateOption = (qId, optIdx, value) => {
+    setExamQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      const newOpts = [...q.options];
+      newOpts[optIdx] = value;
+      return { ...q, options: newOpts };
+    }));
+  };
+
+  const addOption = (qId) => {
+    setExamQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      return { ...q, options: [...q.options, ""] };
+    }));
+  };
+
+  const removeOption = (qId, optIdx) => {
+    setExamQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      const newOpts = q.options.filter((_, i) => i !== optIdx);
+      let corrIdx = q.correctOptionIndex;
+      if (optIdx === corrIdx) corrIdx = 0;
+      else if (optIdx < corrIdx) corrIdx--;
+      return { ...q, options: newOpts, correctOptionIndex: Math.min(corrIdx, newOpts.length - 1) };
+    }));
+  };
+
+  const addVocabPair = (qId) => {
+    setExamQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      const newId = `vp-${q.vocabularyPairs.length + 1}`;
+      return { ...q, vocabularyPairs: [...q.vocabularyPairs, { id: newId, word: "", definition: "" }] };
+    }));
+  };
+
+  const updateVocabPair = (qId, pairId, field, value) => {
+    setExamQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      return {
+        ...q,
+        vocabularyPairs: q.vocabularyPairs.map(p => p.id === pairId ? { ...p, [field]: value } : p)
+      };
+    }));
+  };
+
+  const removeVocabPair = (qId, pairId) => {
+    setExamQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      return { ...q, vocabularyPairs: q.vocabularyPairs.filter(p => p.id !== pairId) };
+    }));
+  };
+
+  const handlePublishExam = async () => {
+    if (!examTitle.trim()) { alert("Please enter an exam title."); return; }
+    if (examQuestions.length === 0) { alert("Please add at least one question."); return; }
+
+    try {
+      const tag = `${user.id}_${classId}`;
+      await addDoc(collection(db, "exams"), {
+        classId: tag,
+        teacherId: user.id,
+        academicYear: CURRENT_ACADEMIC_YEAR,
+        title: examTitle.trim(),
+        timeLimit: Number(examTimeLimit) || 30,
+        questions: examQuestions,
+        status: "published",
+        createdAt: serverTimestamp()
+      });
+
+      setIsBuildingExam(false);
+      setExamTitle("");
+      setExamTimeLimit(30);
+      setExamQuestions([]);
+      setExamPublishSuccess(true);
+      setTimeout(() => setExamPublishSuccess(false), 3000);
+      loadExams();
+    } catch (e) {
+      alert("Failed to publish exam: " + e.message);
+    }
+  };
+
+  const resetExamBuilder = () => {
+    setIsBuildingExam(false);
+    setExamTitle("");
+    setExamTimeLimit(30);
+    setExamQuestions([]);
+  };
+
+  const questionTypeLabels = {
+    multipleChoice: { label: "Multiple Choice", color: "brand" },
+    identification: { label: "Identification", color: "teal" },
+    vocabulary: { label: "Vocabulary Match", color: "amber" },
+    essay: { label: "Essay", color: "purple" }
+  };
+
   // Filtered Roster lists
   const filteredClassStudents = classStudents.filter(s => {
     const search = rosterSearchQuery.toLowerCase();
@@ -561,6 +798,23 @@ export default function ClassDashboard() {
             {pendingVocabSubmissions.length > 0 && (
               <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-amber-500 text-white font-black">
                 {pendingVocabSubmissions.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => handleTabChange("exams")}
+            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${
+              activeTab === "exams"
+                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            <ListChecks className="h-4.5 w-4.5" />
+            <span>Exams</span>
+            {exams.length > 0 && (
+              <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                {exams.length}
               </span>
             )}
           </button>
@@ -1094,6 +1348,407 @@ export default function ClassDashboard() {
         </div>
       )}
 
+      {/* TAB 4: EXAMS VIEW */}
+      {activeTab === "exams" && (
+        <div className="space-y-6">
+          {examPublishSuccess && (
+            <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
+              <Sparkles className="h-4 w-4" />
+              <span>Exam published successfully!</span>
+            </div>
+          )}
+
+          {!isBuildingExam ? (
+            /* ── Exam List View ── */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">Published Exams</h2>
+                <button
+                  onClick={() => setIsBuildingExam(true)}
+                  className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Create New Exam</span>
+                </button>
+              </div>
+
+              {isExamsLoading ? (
+                <div className="py-16 text-center text-slate-400 text-sm">Loading exams...</div>
+              ) : exams.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {exams.map((exam) => (
+                    <div key={exam.firestoreId} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3 transition-colors">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{exam.title}</h3>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 font-semibold">{exam.academicYear || CURRENT_ACADEMIC_YEAR}</p>
+                        </div>
+                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-bold border ${
+                          exam.status === "published"
+                            ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800"
+                            : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-800"
+                        }`}>
+                          {exam.status === "published" ? "Published" : "Draft"}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-4 text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                        <span className="inline-flex items-center space-x-1">
+                          <Clock className="h-3.5 w-3.5" />
+                          <span>{exam.timeLimit || 30} mins</span>
+                        </span>
+                        <span className="inline-flex items-center space-x-1">
+                          <ListChecks className="h-3.5 w-3.5" />
+                          <span>{exam.questions?.length || 0} Questions</span>
+                        </span>
+                        <span className="inline-flex items-center space-x-1">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          <span>{(exam.questions || []).reduce((sum, q) => sum + (q.points || 1), 0)} pts</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-16 text-center space-y-2">
+                  <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Exams Created Yet</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">Click "Create New Exam" to build your first assessment for this class.</p>
+                </div>
+              )}
+
+              {/* ── Student Exam Submissions Section ── */}
+              <div className="pt-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">
+                      Student Exam Submissions
+                    </h3>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                      Review student test answers and score subjective essay/vocabulary questions.
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">
+                    {examSubmissions.length} Submissions
+                  </span>
+                </div>
+
+                {isExamSubmissionsLoading ? (
+                  <div className="py-8 text-center text-slate-400 text-xs">Loading submissions...</div>
+                ) : examSubmissions.length > 0 ? (
+                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-left">
+                        <thead>
+                          <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                            <th className="px-6 py-3">Student Name</th>
+                            <th className="px-6 py-3">Exam Title</th>
+                            <th className="px-6 py-3">Submitted Date</th>
+                            <th className="px-6 py-3">Status</th>
+                            <th className="px-6 py-3">Score</th>
+                            <th className="px-6 py-3 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                          {examSubmissions.map((sub) => {
+                            const totalCalculatedScore = (sub.objScore || 0) + (sub.subjScore || 0);
+                            const submittedDateStr = sub.submittedAt?.toDate
+                              ? sub.submittedAt.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                              : (sub.submittedAt || "Recently");
+
+                            return (
+                              <tr key={sub.firestoreId || sub.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
+                                <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">
+                                  {sub.studentName}
+                                </td>
+                                <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
+                                  {sub.examTitle || "Exam"}
+                                </td>
+                                <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                                  {submittedDateStr}
+                                </td>
+                                <td className="px-6 py-4">
+                                  <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${
+                                    sub.status === "Graded"
+                                      ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800"
+                                      : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-800"
+                                  }`}>
+                                    {sub.status === "Graded" ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
+                                    <span>{sub.status}</span>
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 font-mono font-bold text-brand-600 dark:text-brand-400">
+                                  {totalCalculatedScore} / {sub.totalPoints || sub.maxObjPoints || 0} pts
+                                </td>
+                                <td className="px-6 py-4 text-right">
+                                  <button
+                                    onClick={() => handleOpenExamGradingModal(sub)}
+                                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                      sub.status === "Pending Review"
+                                        ? "bg-brand-600 hover:bg-brand-700 text-white shadow-xs"
+                                        : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200"
+                                    }`}
+                                  >
+                                    {sub.status === "Pending Review" ? "Review & Grade ➔" : "View Results"}
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-slate-400 dark:text-slate-500 text-xs italic bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
+                    No student submissions received for this class yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* ── Exam Builder View ── */
+            <div className="space-y-6">
+              {/* Builder Header */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={resetExamBuilder}
+                  className="inline-flex items-center space-x-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span>Cancel</span>
+                </button>
+                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">Exam Builder Studio</h2>
+                <div />
+              </div>
+
+              {/* General Settings Card */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4 transition-colors">
+                <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">General Settings</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Exam Title</label>
+                    <input
+                      type="text"
+                      value={examTitle}
+                      onChange={(e) => setExamTitle(e.target.value)}
+                      placeholder="e.g., 1st Monthly Exam — Reading Comprehension"
+                      className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Time Limit (Minutes)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={examTimeLimit}
+                      onChange={(e) => setExamTimeLimit(e.target.value)}
+                      className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Question Type Toolbar */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm transition-colors">
+                <h3 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Add Question</h3>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => addQuestion("multipleChoice")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors cursor-pointer">
+                    <Plus className="h-3.5 w-3.5" /><span>Multiple Choice</span>
+                  </button>
+                  <button onClick={() => addQuestion("identification")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 dark:hover:bg-teal-900/50 transition-colors cursor-pointer">
+                    <Plus className="h-3.5 w-3.5" /><span>Identification</span>
+                  </button>
+                  <button onClick={() => addQuestion("vocabulary")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors cursor-pointer">
+                    <Plus className="h-3.5 w-3.5" /><span>Vocabulary</span>
+                  </button>
+                  <button onClick={() => addQuestion("essay")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors cursor-pointer">
+                    <Plus className="h-3.5 w-3.5" /><span>Essay</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Questions List */}
+              {examQuestions.length === 0 ? (
+                <div className="py-12 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                  <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300">No questions added yet</p>
+                  <p className="text-xs text-slate-400">Use the buttons above to add questions to this exam.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {examQuestions.map((q, idx) => {
+                    const typeInfo = questionTypeLabels[q.type] || { label: q.type, color: "slate" };
+                    return (
+                      <div key={q.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
+                        {/* Question Header */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <span className="flex items-center justify-center h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-600 dark:text-slate-300">
+                              {idx + 1}
+                            </span>
+                            <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${
+                              typeInfo.color === 'brand' ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border-brand-100 dark:border-brand-800' :
+                              typeInfo.color === 'teal' ? 'bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border-teal-100 dark:border-teal-800' :
+                              typeInfo.color === 'amber' ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-800' :
+                              'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800'
+                            }`}>
+                              {typeInfo.label}
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-3">
+                            <div className="flex items-center space-x-1.5">
+                              <label className="text-[10px] font-bold text-slate-400 uppercase">PTS</label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={q.points}
+                                onChange={(e) => updateQuestion(q.id, "points", parseInt(e.target.value) || 1)}
+                                className="w-14 text-xs font-bold text-center border border-slate-200 dark:border-slate-700 rounded-lg py-1 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                              />
+                            </div>
+                            <button onClick={() => deleteQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors cursor-pointer">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Question Prompt */}
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt</label>
+                          <textarea
+                            rows={2}
+                            value={q.text}
+                            onChange={(e) => updateQuestion(q.id, "text", e.target.value)}
+                            placeholder="Enter your question here..."
+                            className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
+                          />
+                        </div>
+
+                        {/* Type-Specific Fields */}
+                        {q.type === "multipleChoice" && (
+                          <div className="space-y-3">
+                            <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select correct answer)</label>
+                            {q.options.map((opt, optIdx) => (
+                              <div key={optIdx} className="flex items-center space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => updateQuestion(q.id, "correctOptionIndex", optIdx)}
+                                  className={`flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer ${
+                                    q.correctOptionIndex === optIdx
+                                      ? "border-emerald-500 bg-emerald-500"
+                                      : "border-slate-300 dark:border-slate-600 hover:border-brand-400"
+                                  }`}
+                                >
+                                  {q.correctOptionIndex === optIdx && <Check className="h-3 w-3 text-white" />}
+                                </button>
+                                <input
+                                  type="text"
+                                  value={opt}
+                                  onChange={(e) => updateOption(q.id, optIdx, e.target.value)}
+                                  placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
+                                  className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                                />
+                                {q.options.length > 2 && (
+                                  <button onClick={() => removeOption(q.id, optIdx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
+                                )}
+                              </div>
+                            ))}
+                            <button onClick={() => addOption(q.id)} className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer">+ Add Option</button>
+                          </div>
+                        )}
+
+                        {q.type === "identification" && (
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Exact Correct Answer</label>
+                            <input
+                              type="text"
+                              value={q.correctAnswer}
+                              onChange={(e) => updateQuestion(q.id, "correctAnswer", e.target.value)}
+                              placeholder="The answer that will be auto-graded (case-insensitive)"
+                              className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                            />
+                          </div>
+                        )}
+
+                        {q.type === "vocabulary" && (
+                          <div className="space-y-3">
+                            <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Word / Definition Pairs</label>
+                            {q.vocabularyPairs.map((pair) => (
+                              <div key={pair.id} className="flex items-center space-x-2">
+                                <input
+                                  type="text"
+                                  value={pair.word}
+                                  onChange={(e) => updateVocabPair(q.id, pair.id, "word", e.target.value)}
+                                  placeholder="Word"
+                                  className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                />
+                                <span className="text-slate-400 text-xs font-bold">→</span>
+                                <input
+                                  type="text"
+                                  value={pair.definition}
+                                  onChange={(e) => updateVocabPair(q.id, pair.id, "definition", e.target.value)}
+                                  placeholder="Definition / Translation"
+                                  className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                />
+                                {q.vocabularyPairs.length > 1 && (
+                                  <button onClick={() => removeVocabPair(q.id, pair.id)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
+                                )}
+                              </div>
+                            ))}
+                            <button onClick={() => addVocabPair(q.id)} className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer">+ Add Word Pair</button>
+                          </div>
+                        )}
+
+                        {q.type === "essay" && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Rubric / Grading Guidelines (Optional)</label>
+                              <textarea
+                                rows={3}
+                                value={q.rubric}
+                                onChange={(e) => updateQuestion(q.id, "rubric", e.target.value)}
+                                placeholder="Describe what a good answer looks like..."
+                                className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Min Word Count</label>
+                              <input
+                                type="number"
+                                min="0"
+                                value={q.minWordCount}
+                                onChange={(e) => updateQuestion(q.id, "minWordCount", parseInt(e.target.value) || 0)}
+                                className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Publish Footer */}
+              {examQuestions.length > 0 && (
+                <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm transition-colors">
+                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {examQuestions.length} Question{examQuestions.length !== 1 ? "s" : ""} • {examQuestions.reduce((sum, q) => sum + (q.points || 1), 0)} Total Points
+                  </div>
+                  <button
+                    onClick={handlePublishExam}
+                    className="inline-flex items-center space-x-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Publish Exam</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Modal: Enroll Existing Student into Classroom */}
       {isEnrollModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
@@ -1228,6 +1883,244 @@ export default function ClassDashboard() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Teacher Exam Review & Manual Grading Modal ── */}
+      {isGradingExamModalOpen && selectedExamSubmission && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="relative w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 font-heading">
+                  Exam Review & Manual Grading
+                </h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  Student: <span className="font-bold text-slate-700 dark:text-slate-300">{selectedExamSubmission.studentName}</span> • Exam: <span className="font-bold text-slate-700 dark:text-slate-300">{selectedExamSubmission.examTitle || "Exam"}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setIsGradingExamModalOpen(false);
+                  setSelectedExamSubmission(null);
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Sub-Header Stats Bar */}
+            <div className="px-6 py-3 bg-brand-50/50 dark:bg-brand-900/20 border-b border-brand-100/50 dark:border-brand-800/50 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+              <div className="flex items-center space-x-4">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Auto Obj Score:</span>{" "}
+                  <span className="font-bold text-brand-700 dark:text-brand-300">{selectedExamSubmission.objScore || 0} pts</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Manual Subj Score:</span>{" "}
+                  <span className="font-bold text-amber-600 dark:text-amber-400">
+                    {Object.values(manualSubjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} pts
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Total Score:</span>{" "}
+                  <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
+                    {(selectedExamSubmission.objScore || 0) + Object.values(manualSubjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} / {selectedExamSubmission.totalPoints || selectedExamSubmission.maxObjPoints || 0} pts
+                  </span>
+                </div>
+              </div>
+
+              <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${
+                selectedExamSubmission.status === "Graded" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
+              }`}>
+                {selectedExamSubmission.status}
+              </span>
+            </div>
+
+            {/* Modal Scrollable Answers Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {(() => {
+                const targetExam = exams.find(e => e.firestoreId === selectedExamSubmission.examId || e.id === selectedExamSubmission.examId);
+                const questions = targetExam?.questions || [];
+                const studentAnswers = selectedExamSubmission.answers || {};
+
+                if (questions.length === 0) {
+                  return (
+                    <div className="py-8 text-center text-slate-400 text-xs italic">
+                      Question structure not available for this exam.
+                    </div>
+                  );
+                }
+
+                return questions.map((q, idx) => {
+                  const pts = Number(q.points) || 1;
+                  const isSubjective = q.type === "essay" || q.type === "vocabulary";
+
+                  return (
+                    <div key={q.id || idx} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
+                      {/* Question Header */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <span className="h-6 w-6 rounded-lg bg-slate-200 dark:bg-slate-700 text-xs font-black flex items-center justify-center text-slate-700 dark:text-slate-200">
+                            {idx + 1}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                            {q.type}
+                          </span>
+                        </div>
+                        <span className="text-xs font-bold text-slate-400 dark:text-slate-500">
+                          Max Points: {pts}
+                        </span>
+                      </div>
+
+                      {/* Question Prompt */}
+                      <div className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                        {q.text}
+                      </div>
+
+                      {/* MULTIPLE CHOICE / IDENTIFICATION ANSWER REVIEW */}
+                      {!isSubjective && (
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                          <div>
+                            <span className="text-slate-400 font-bold">Student's Answer: </span>
+                            <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                              {q.type === "multipleChoice"
+                                ? (q.options ? q.options[studentAnswers[q.id]] || `Option ${String.fromCharCode(65 + Number(studentAnswers[q.id]))}` : studentAnswers[q.id])
+                                : (studentAnswers[q.id] || "No answer provided")}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 font-bold">Correct Answer: </span>
+                            <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
+                              {q.type === "multipleChoice"
+                                ? (q.options ? q.options[q.correctOptionIndex] || `Option ${String.fromCharCode(65 + Number(q.correctOptionIndex))}` : q.correctOptionIndex)
+                                : q.correctAnswer}
+                            </span>
+                          </div>
+                          <div className="pt-1 flex items-center space-x-1.5 text-[11px] font-bold">
+                            {(() => {
+                              let isCorrect = false;
+                              if (q.type === "multipleChoice") {
+                                isCorrect = Number(studentAnswers[q.id]) === Number(q.correctOptionIndex);
+                              } else {
+                                isCorrect = (studentAnswers[q.id] || "").toString().trim().toLowerCase() === (q.correctAnswer || "").toString().trim().toLowerCase();
+                              }
+                              return isCorrect ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 inline-flex items-center space-x-1">
+                                  <CheckCircle className="h-3.5 w-3.5" />
+                                  <span>Auto-Graded: Correct (+{pts} pts)</span>
+                                </span>
+                              ) : (
+                                <span className="text-red-500 dark:text-red-400 inline-flex items-center space-x-1">
+                                  <X className="h-3.5 w-3.5" />
+                                  <span>Auto-Graded: Incorrect (0 pts)</span>
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ESSAY ANSWER REVIEW & MANUAL SCORING */}
+                      {q.type === "essay" && (
+                        <div className="space-y-3 pt-1">
+                          <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Student Essay Response</span>
+                            {studentAnswers[q.id] || <span className="text-slate-400 italic">No response submitted.</span>}
+                          </div>
+
+                          {q.rubric && (
+                            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 text-xs text-amber-800 dark:text-amber-300">
+                              <span className="font-bold">Grading Rubric / Reference: </span>"{q.rubric}"
+                            </div>
+                          )}
+
+                          {/* Manual Point Selector */}
+                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Award Points (Max: {pts} pts):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={pts}
+                              value={manualSubjScores[q.id] ?? 0}
+                              onChange={(e) => {
+                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                setManualSubjScores(prev => ({ ...prev, [q.id]: val }));
+                              }}
+                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* VOCABULARY ANSWER REVIEW & MANUAL SCORING */}
+                      {q.type === "vocabulary" && (
+                        <div className="space-y-3 pt-1">
+                          <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Submitted Word Definitions</span>
+                            {(q.vocabularyPairs || []).map((pair) => {
+                              const userAns = (studentAnswers[q.id] || {})[pair.id] || "—";
+                              return (
+                                <div key={pair.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg bg-slate-50 dark:bg-slate-900">
+                                  <span className="font-bold text-amber-700 dark:text-amber-400">{pair.word}:</span>
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">"{userAns}"</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Manual Point Selector */}
+                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Award Vocabulary Points (Max: {pts} pts):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={pts}
+                              value={manualSubjScores[q.id] ?? 0}
+                              onChange={(e) => {
+                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                setManualSubjScores(prev => ({ ...prev, [q.id]: val }));
+                              }}
+                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-end space-x-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsGradingExamModalOpen(false);
+                  setSelectedExamSubmission(null);
+                }}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleFinalizeExamGrade}
+                disabled={isSavingExamGrade}
+                className="inline-flex items-center space-x-2 px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+              >
+                <CheckCircle className="h-4 w-4" />
+                <span>{isSavingExamGrade ? "Saving Grade..." : "Finalize & Save Grade"}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

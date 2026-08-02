@@ -25,7 +25,8 @@ import {
   Calendar,
   Hash,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Printer
 } from "lucide-react";
 
 // Categorized options for Grade levels (Standard & ESL)
@@ -165,6 +166,8 @@ export default function AdminDashboard() {
   const [studentProvisioningResult, setStudentProvisioningResult] = useState(null);
   const [isStudentLoading, setIsStudentLoading] = useState(false);
   const [studentSearchQuery, setStudentSearchQuery] = useState("");
+  const [filterGrade, setFilterGrade] = useState("All");
+  const [filterCommunity, setFilterCommunity] = useState("All");
 
   // Edit Teacher Assignments Modal Form State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -641,7 +644,7 @@ export default function AdminDashboard() {
       )}
 
       {/* Header Panel */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0 print:hidden">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-heading transition-colors">
             Admin Console
@@ -670,7 +673,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Metric overview cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 print:hidden">
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm flex items-center space-x-4 transition-colors">
           <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl transition-colors">
             <Users className="h-5 w-5" />
@@ -723,7 +726,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 transition-colors">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 transition-colors print:hidden">
         <button
           onClick={() => setActiveTab("teachers")}
           className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
@@ -1016,113 +1019,187 @@ export default function AdminDashboard() {
         </div>
       ) : (
         /* Global Student Directory Table */
-        <div className="space-y-4">
-          {/* Search bar */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex items-center justify-between transition-colors">
-            <div className="relative w-full max-w-md">
-              <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
-              <input
-                type="text"
-                placeholder="Search students by name, grade, community, code..."
-                value={studentSearchQuery}
-                onChange={(e) => setStudentSearchQuery(e.target.value)}
-                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-              />
-            </div>
-            <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold hidden sm:block">
-              Total Master List: {students.length} Students
-            </span>
-          </div>
+        (() => {
+          const uniqueGrades = Array.from(
+            new Set(students.map(s => s.gradeLevel || s.grade).filter(Boolean))
+          ).sort();
 
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex items-center justify-between transition-colors">
-              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Global Student Master List</h2>
-              <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700 transition-colors">
-                {students.filter(s => {
-                  const term = studentSearchQuery.toLowerCase();
-                  return `${s.name || ''} ${s.internationalName || ''} ${s.studentCode || ''} ${s.gradeLevel || s.grade || ''} ${s.communityName || s.communityCenter || ''}`.toLowerCase().includes(term);
-                }).length} Displayed
-              </span>
-            </div>
+          const uniqueCommunities = Array.from(
+            new Set(students.map(s => s.communityName || s.communityCenter).filter(Boolean))
+          ).sort();
 
-            {students.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left">
-                  <thead>
-                    <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
-                      <th className="px-6 py-3">Name</th>
-                      <th className="px-6 py-3">Grade</th>
-                      <th className="px-6 py-3">Community</th>
-                      <th className="px-6 py-3">Student Code</th>
-                      <th className="px-6 py-3">PIN</th>
-                      <th className="px-6 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors">
-                    {students
-                      .filter(s => {
-                        const term = studentSearchQuery.toLowerCase();
-                        return `${s.name || ''} ${s.internationalName || ''} ${s.studentCode || ''} ${s.gradeLevel || s.grade || ''} ${s.communityName || s.communityCenter || ''}`.toLowerCase().includes(term);
-                      })
-                      .map((student) => (
-                        <tr key={student.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center space-x-3">
-                              <div className="h-8 w-8 rounded-full bg-brand-50 dark:bg-brand-900/30 border border-brand-100/50 dark:border-brand-800/50 flex items-center justify-center font-bold text-xs text-brand-600 dark:text-brand-400 uppercase">
-                                {(student.internationalName || student.name || "ST").substring(0, 2)}
-                              </div>
-                              <div>
-                                <div className="font-bold text-slate-800 dark:text-slate-200">{formatStudentName(student)}</div>
-                                {student.email && <div className="text-[10px] text-slate-400 font-mono">{student.email}</div>}
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
-                            <span className="inline-flex px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200/60 dark:border-slate-700/60">
-                              {student.gradeLevel || student.grade || "Unassigned"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-slate-600 dark:text-slate-400">
-                            {student.communityName || student.communityCenter ? (
-                              <span className="inline-flex items-center space-x-1.5">
-                                <Building2 className="h-3.5 w-3.5 text-slate-400" />
-                                <span>{student.communityName || student.communityCenter}</span>
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 dark:text-slate-600 italic">Unassigned</span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="font-mono font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2.5 py-1 rounded-lg tracking-wider border border-brand-100/50 dark:border-brand-800/50 text-xs">
-                              {student.studentCode || "—"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="font-mono font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-lg tracking-widest border border-amber-200/50 dark:border-amber-800/50 text-xs">
-                              {student.defaultPin || "—"}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => handleDeleteStudent(student.id, formatStudentName(student))}
-                              title="Permanently Delete Student Account from Global Master List"
-                              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
+          const displayedStudents = students.filter(s => {
+            const term = studentSearchQuery.toLowerCase();
+            const matchesSearch = `${s.name || ''} ${s.internationalName || ''} ${s.studentCode || ''} ${s.gradeLevel || s.grade || ''} ${s.communityName || s.communityCenter || ''}`.toLowerCase().includes(term);
+            
+            const sGrade = s.gradeLevel || s.grade || "Unassigned";
+            const matchesGrade = filterGrade === "All" || sGrade === filterGrade;
+
+            const sComm = s.communityName || s.communityCenter || "Unassigned";
+            const matchesCommunity = filterCommunity === "All" || sComm === filterCommunity;
+
+            return matchesSearch && matchesGrade && matchesCommunity;
+          });
+
+          return (
+            <div className="space-y-4">
+              {/* Print-only Report Header */}
+              <div className="hidden print:block mb-6 text-slate-900 border-b border-slate-300 pb-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h1 className="text-2xl font-bold font-heading">Washington School — Global Student Directory</h1>
+                    <p className="text-sm text-slate-600 mt-1">Student Account Credentials & Access Roster</p>
+                  </div>
+                  <div className="text-right text-xs text-slate-600 font-mono space-y-0.5">
+                    <div>Date Generated: {new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</div>
+                    <div>Total Records: {displayedStudents.length} Students</div>
+                    {filterGrade !== "All" && <div>Grade Filter: {filterGrade}</div>}
+                    {filterCommunity !== "All" && <div>Community Filter: {filterCommunity}</div>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Search & Filter Bar */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors print:hidden">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto flex-1">
+                  {/* Search Input */}
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Search name, code, grade..."
+                      value={studentSearchQuery}
+                      onChange={(e) => setStudentSearchQuery(e.target.value)}
+                      className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                    />
+                  </div>
+
+                  {/* Grade Filter Dropdown */}
+                  <select
+                    value={filterGrade}
+                    onChange={(e) => setFilterGrade(e.target.value)}
+                    className="text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors cursor-pointer"
+                  >
+                    <option value="All">All Grades ({students.length})</option>
+                    {uniqueGrades.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Community Filter Dropdown */}
+                  <select
+                    value={filterCommunity}
+                    onChange={(e) => setFilterCommunity(e.target.value)}
+                    className="text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors cursor-pointer"
+                  >
+                    <option value="All">All Communities ({students.length})</option>
+                    {uniqueCommunities.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center space-x-3 shrink-0">
+                  <button
+                    onClick={() => window.print()}
+                    className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-brand-600 dark:hover:bg-brand-500 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>Print / Save PDF</span>
+                  </button>
+                  <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold hidden lg:block">
+                    Total Master List: {students.length} Students
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors print:border-none print:shadow-none print:bg-white">
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex items-center justify-between transition-colors print:hidden">
+                  <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Global Student Master List</h2>
+                  <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700 transition-colors">
+                    {displayedStudents.length} Displayed
+                  </span>
+                </div>
+
+                {students.length > 0 ? (
+                  <div className="overflow-x-auto print:overflow-visible">
+                    <table className="w-full border-collapse text-left print:text-black">
+                      <thead>
+                        <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors print:bg-slate-100 print:text-slate-900 print:border-slate-300">
+                          <th className="px-6 py-3">Name</th>
+                          <th className="px-6 py-3">Grade</th>
+                          <th className="px-6 py-3">Community</th>
+                          <th className="px-6 py-3">Student Code</th>
+                          <th className="px-6 py-3">PIN</th>
+                          <th className="px-6 py-3 text-right print:hidden">Actions</th>
                         </tr>
-                      ))}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors print:divide-slate-200 print:text-slate-900">
+                        {displayedStudents.map((student) => (
+                          <tr key={student.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors print:hover:bg-transparent">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center space-x-3">
+                                <div className="h-8 w-8 rounded-full bg-brand-50 dark:bg-brand-900/30 border border-brand-100/50 dark:border-brand-800/50 flex items-center justify-center font-bold text-xs text-brand-600 dark:text-brand-400 uppercase print:hidden">
+                                  {(student.internationalName || student.name || "ST").substring(0, 2)}
+                                </div>
+                                <div>
+                                  <div className="font-bold text-slate-800 dark:text-slate-200 print:text-black">{formatStudentName(student)}</div>
+                                  {student.email && <div className="text-[10px] text-slate-400 font-mono print:text-slate-600">{student.email}</div>}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-slate-700 dark:text-slate-300 print:text-black">
+                              <span className="inline-flex px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200/60 dark:border-slate-700/60 print:bg-transparent print:border-none print:p-0">
+                                {student.gradeLevel || student.grade || "Unassigned"}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-slate-600 dark:text-slate-400 print:text-black">
+                              {student.communityName || student.communityCenter ? (
+                                <span className="inline-flex items-center space-x-1.5">
+                                  <Building2 className="h-3.5 w-3.5 text-slate-400 print:hidden" />
+                                  <span>{student.communityName || student.communityCenter}</span>
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 dark:text-slate-600 italic">Unassigned</span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="font-mono font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2.5 py-1 rounded-lg tracking-wider border border-brand-100/50 dark:border-brand-800/50 text-xs print:bg-transparent print:border-none print:p-0 print:text-black">
+                                {student.studentCode || "—"}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="font-mono font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-lg tracking-widest border border-amber-200/50 dark:border-amber-800/50 text-xs print:bg-transparent print:border-none print:p-0 print:text-black">
+                                {student.defaultPin || "—"}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right print:hidden">
+                              <button
+                                onClick={() => handleDeleteStudent(student.id, formatStudentName(student))}
+                                title="Permanently Delete Student Account from Global Master List"
+                                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm transition-colors">
+                    No student accounts created yet. Click "Provision New Student" to get started.
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="py-16 text-center text-slate-400 dark:text-slate-500 text-sm transition-colors">
-                No student accounts created yet. Click "Provision New Student" to get started.
-              </div>
-            )}
-          </div>
-        </div>
+            </div>
+          );
+        })()
       )}
 
 
