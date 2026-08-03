@@ -23,8 +23,12 @@ export default function MonthlyReports() {
   
   const classId = searchParams.get("classId") || "";
   const [selectedClassId, setSelectedClassId] = useState(classId);
-  const [selectedMonth, setSelectedMonth] = useState("07"); // Default July
-  const [selectedYear, setSelectedYear] = useState("2026");
+  const now = new Date();
+  const currentMonthVal = (now.getMonth() + 1).toString().padStart(2, "0");
+  const currentYearVal = now.getFullYear().toString();
+
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthVal);
+  const [selectedYear, setSelectedYear] = useState(currentYearVal);
   const [reportData, setReportData] = useState([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [classStats, setClassStats] = useState({

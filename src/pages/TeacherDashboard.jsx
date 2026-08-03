@@ -155,46 +155,78 @@ export default function TeacherDashboard() {
           classNameMap[c.id] = c.name;
         });
 
-        // 1. Fetch Students
+        // 1. Fetch Students enrolled in teacher's classes V2
         const studentsQuery = query(
           collection(db, "users"),
           where("role", "==", "student")
         );
         const studentsSnap = await getDocs(studentsQuery);
-        const rawStudents = studentsSnap.docs.map(doc => doc.data());
+        const rawStudents = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const teacherPrefix = `${user.id}_`;
+
         const allStudents = rawStudents.filter(s => {
-          const hasClassTag = Array.isArray(s.enrolledClasses) && s.enrolledClasses.some(tag => tag.startsWith(`${user.id}_`));
+          const hasClassTag = Array.isArray(s.enrolledClasses) && s.enrolledClasses.some(tag => tag.startsWith(teacherPrefix));
           const hasTeacher = Array.isArray(s.enrolledTeachers) && s.enrolledTeachers.includes(user.id);
           const matchesClass = s.classId && classIds.includes(s.classId) && s.teacherId !== "unassigned";
           return hasClassTag || hasTeacher || s.teacherId === user.id || matchesClass;
         });
 
-        // 2. Fetch Sessions
+        // 2. Fetch Sessions for this teacher
         const sessionsQuery = query(
           collection(db, "sessions"),
-          where("classId", "in", classIds)
+          where("teacherId", "==", user.id)
         );
         const sessionsSnap = await getDocs(sessionsQuery);
-        const allSessions = sessionsSnap.docs.map(doc => doc.data());
+        let allSessions = sessionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        if (allSessions.length === 0 && classIds.length > 0) {
+          const legacyQuery = query(
+            collection(db, "sessions"),
+            where("classId", "in", classIds)
+          );
+          const legacySnap = await getDocs(legacyQuery);
+          allSessions = legacySnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        }
 
         // 3. Determine today's logged state
         const todayRecs = allSessions.filter(r => r.date === todayStr);
         const loggedTodayMap = {};
         todayRecs.forEach(r => {
           loggedTodayMap[r.classId] = true;
+          if (r.classId.includes("_")) {
+            loggedTodayMap[r.classId.split("_")[1]] = true;
+          }
         });
         setTodayLogs(loggedTodayMap);
 
-        const pendingTodayCount = teacherClasses.length - Object.keys(loggedTodayMap).length;
+        const pendingTodayCount = Math.max(0, teacherClasses.length - Object.keys(loggedTodayMap).length);
+
+        // Sort sessions chronologically (oldest to newest)
+        const sortedSessions = [...allSessions].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+        // Helper to extract student record from session
+        const getStudentRec = (session, stId) => {
+          if (Array.isArray(session.records)) {
+            return session.records.find(r => r.studentId === stId || r.id === stId);
+          }
+          if (session.attendance && typeof session.attendance === "object") {
+            const val = session.attendance[stId];
+            if (typeof val === "object" && val !== null) return val;
+            if (typeof val === "string") return { status: val, minutesLate: 0 };
+          }
+          return null;
+        };
 
         // 4. Calculate overall attendance rate
         let totalPresentExcused = 0;
         let totalRosterSize = 0;
 
-        allSessions.forEach(session => {
-          (session.records || []).forEach(record => {
-            if (allStudents.some(s => s.id === record.studentId)) {
-              if (record.status === "present" || record.status === "excused" || record.status === "late") {
+        sortedSessions.forEach(session => {
+          allStudents.forEach(s => {
+            const rec = getStudentRec(session, s.id);
+            if (rec) {
+              const status = typeof rec === "object" ? rec.status : rec;
+              if (status === "present" || status === "excused" || status === "late") {
                 totalPresentExcused++;
               }
               totalRosterSize++;
@@ -213,65 +245,85 @@ export default function TeacherDashboard() {
           pendingToday: pendingTodayCount
         });
 
-        // 5. Calculate At-Risk / Truancy Alerts in-memory
+        // 5. Calculate At-Risk Students & Truancy Alerts
         const atRiskList = [];
-        const sortedSessions = [...allSessions].sort((a, b) => new Date(a.date) - new Date(b.date));
 
         allStudents.forEach(student => {
-          let totalDays = 0;
-          let absentDays = 0;
+          let totalClasses = 0;
+          let presentCount = 0;
+          let lateCount = 0;
+          let excusedCount = 0;
+          let absentCount = 0;
           let consecutiveAbsences = 0;
           let maxConsecutiveAbsences = 0;
-          const joinDate = student.enrollmentDate || "2026-07-01";
 
-          const studentSessions = sortedSessions.filter(s => s.classId === student.classId);
+          sortedSessions.forEach(session => {
+            const rec = getStudentRec(session, student.id);
+            if (rec) {
+              totalClasses++;
+              const status = typeof rec === "object" ? rec.status : rec;
 
-          studentSessions.forEach(session => {
-            if (session.date < joinDate) return;
-
-            const record = (session.records || []).find(r => r.studentId === student.id);
-            if (record) {
-              totalDays++;
-              if (record.status === "absent") {
-                absentDays++;
+              if (status === "present") {
+                presentCount++;
+                consecutiveAbsences = 0;
+              } else if (status === "late") {
+                lateCount++;
+                consecutiveAbsences = 0;
+              } else if (status === "excused") {
+                excusedCount++;
+                consecutiveAbsences = 0;
+              } else if (status === "absent") {
+                absentCount++;
                 consecutiveAbsences++;
                 if (consecutiveAbsences > maxConsecutiveAbsences) {
                   maxConsecutiveAbsences = consecutiveAbsences;
                 }
-              } else {
-                consecutiveAbsences = 0;
               }
             }
           });
 
-          const attendedDays = totalDays - absentDays;
-          const rate = totalDays > 0 ? (attendedDays / totalDays) * 100 : 100;
+          const attended = presentCount + lateCount + excusedCount;
+          const rate = totalClasses > 0 ? Math.round((attended / totalClasses) * 100) : 100;
 
-          let flagged = false;
-          let reason = "";
+          let isAtRisk = false;
+          let reasonText = "";
+          let badgeType = "warning";
 
-          if (rate < 85 && totalDays > 0) {
-            flagged = true;
-            reason = `Critical: ${Math.round(rate)}% Attendance`;
+          if (totalClasses > 0 && rate < 85) {
+            isAtRisk = true;
+            if (rate < 70 || rate === 0) {
+              reasonText = `${rate}% - Critical`;
+              badgeType = "critical";
+            } else {
+              reasonText = `${rate}% - Warning`;
+              badgeType = "warning";
+            }
           } else if (maxConsecutiveAbsences >= 3) {
-            flagged = true;
-            reason = `Warning: ${maxConsecutiveAbsences} Consecutive Absences`;
+            isAtRisk = true;
+            reasonText = `3+ Consecutive Absences`;
+            badgeType = "warning";
           }
 
-          if (flagged) {
+          if (isAtRisk) {
+            const sGrade = student.gradeLevel || student.grade || "Student";
+            const sClass = classNameMap[student.classId] || sGrade;
+
             atRiskList.push({
               studentId: student.id,
               name: formatStudentName(student),
-              className: classNameMap[student.classId] || "Class",
-              classId: student.classId,
-              attendanceRate: Math.round(rate),
+              className: sClass,
+              grade: sGrade,
+              classId: student.classId || "",
+              attendanceRate: rate,
               streak: maxConsecutiveAbsences,
-              reason,
-              communityCenter: student.communityCenter
+              reason: reasonText,
+              badgeType: badgeType,
+              communityCenter: student.communityName || student.communityCenter || ""
             });
           }
         });
 
+        atRiskList.sort((a, b) => a.attendanceRate - b.attendanceRate);
         setAtRiskStudents(atRiskList);
 
       } catch (err) {
