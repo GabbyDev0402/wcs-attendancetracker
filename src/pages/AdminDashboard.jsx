@@ -199,12 +199,79 @@ export default function AdminDashboard() {
   const [isTogglingEnrollment, setIsTogglingEnrollment] = useState(false);
   const [showOnlyStudentGrade, setShowOnlyStudentGrade] = useState(true);
 
+  // Edit Student Profile Modal Form State
+  const [isEditStudentModalOpen, setIsEditStudentModalOpen] = useState(false);
+  const [editingStudent, setEditingStudent] = useState(null);
+  const [editStudentIntlName, setEditStudentIntlName] = useState("");
+  const [editStudentNationalName, setEditStudentNationalName] = useState("");
+  const [editStudentCommunity, setEditStudentCommunity] = useState("");
+  const [editStudentGrade, setEditStudentGrade] = useState("Grade 1");
+  const [editStudentError, setEditStudentError] = useState("");
+  const [editStudentSuccess, setEditStudentSuccess] = useState(false);
+  const [isEditStudentLoading, setIsEditStudentLoading] = useState(false);
+
   // Password reset toast alert state
   const [resetToastEmail, setResetToastEmail] = useState("");
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleOpenEditStudentModal = (student) => {
+    setEditingStudent(student);
+    setEditStudentIntlName(student.internationalName || student.name || "");
+    setEditStudentNationalName(student.nationalName || "");
+    setEditStudentCommunity(student.communityName || student.communityCenter || "");
+    setEditStudentGrade(student.gradeLevel || student.grade || "Grade 1");
+    setEditStudentError("");
+    setEditStudentSuccess(false);
+    setIsEditStudentModalOpen(true);
+  };
+
+  const handleSaveStudentProfile = async (e) => {
+    e.preventDefault();
+    setEditStudentError("");
+
+    if (!editStudentIntlName.trim()) {
+      setEditStudentError("International/Primary Name is required.");
+      return;
+    }
+
+    setIsEditStudentLoading(true);
+
+    try {
+      const studentRef = doc(db, "users", editingStudent.id);
+      const updateData = {
+        name: editStudentIntlName.trim(),
+        internationalName: editStudentIntlName.trim(),
+        nationalName: editStudentNationalName.trim(),
+        communityCenter: editStudentCommunity.trim(),
+        communityName: editStudentCommunity.trim(),
+        gradeLevel: editStudentGrade,
+        grade: editStudentGrade,
+        updatedAt: new Date().toISOString()
+      };
+
+      await updateDoc(studentRef, updateData);
+
+      // Update local state immediately so table reflects change without manual page refresh
+      setStudents(prev =>
+        prev.map(s => (s.id === editingStudent.id ? { ...s, ...updateData } : s))
+      );
+
+      setEditStudentSuccess(true);
+      setTimeout(() => {
+        setIsEditStudentModalOpen(false);
+        setEditingStudent(null);
+        setEditStudentSuccess(false);
+        setIsEditStudentLoading(false);
+      }, 1200);
+    } catch (err) {
+      console.error("Error updating student profile:", err);
+      setIsEditStudentLoading(false);
+      setEditStudentError("Failed to update student profile: " + err.message);
+    }
+  };
 
   const handleOpenManageClassesModal = (student) => {
     setSelectedManageStudent(student);
@@ -1262,6 +1329,13 @@ export default function AdminDashboard() {
                             <td className="px-6 py-4 text-right print:hidden">
                               <div className="flex items-center justify-end space-x-1.5">
                                 <button
+                                  onClick={() => handleOpenEditStudentModal(student)}
+                                  title="Edit Student Basic Demographic Information"
+                                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:border-brand-200 dark:hover:border-brand-800 transition-colors cursor-pointer"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
                                   onClick={() => handleOpenManageClassesModal(student)}
                                   title="Manage Student Class Enrollments"
                                   className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border border-brand-200 dark:border-brand-800 text-brand-600 dark:text-brand-400 bg-brand-50/50 dark:bg-brand-900/20 hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors cursor-pointer"
@@ -2146,6 +2220,142 @@ export default function AdminDashboard() {
                 Done
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Student Profile Modal */}
+      {isEditStudentModalOpen && editingStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up space-y-5 transition-colors">
+            <button
+              onClick={() => setIsEditStudentModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl">
+                <Pencil className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white font-heading">
+                  Edit Student Profile
+                </h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  Update basic demographic information. Login credentials remain immutable.
+                </p>
+              </div>
+            </div>
+
+            {editStudentSuccess ? (
+              <div className="py-10 flex flex-col items-center justify-center space-y-3">
+                <div className="h-12 w-12 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-inner">
+                  <CheckCircle className="h-7 w-7" />
+                </div>
+                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">Student Profile Updated!</h4>
+                <p className="text-xs text-slate-400">Demographic fields updated in Firestore master directory.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleSaveStudentProfile} className="space-y-4">
+                {editStudentError && (
+                  <div className="flex items-start space-x-2 rounded-xl bg-red-50 dark:bg-red-900/30 p-3.5 text-xs font-semibold text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800/50">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{editStudentError}</span>
+                  </div>
+                )}
+
+                {/* International Name */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading">
+                    International / Primary Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editStudentIntlName}
+                    onChange={(e) => setEditStudentIntlName(e.target.value)}
+                    placeholder="e.g. Alex Smith"
+                    className="w-full text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  />
+                </div>
+
+                {/* National Name */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading">
+                    National Name / Translation (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={editStudentNationalName}
+                    onChange={(e) => setEditStudentNationalName(e.target.value)}
+                    placeholder="e.g. 本国名"
+                    className="w-full text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  />
+                </div>
+
+                {/* Community Center */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading">
+                    Community Center / Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editStudentCommunity}
+                    onChange={(e) => setEditStudentCommunity(e.target.value)}
+                    placeholder="e.g. Northside Community Center"
+                    className="w-full text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  />
+                </div>
+
+                {/* Categorized Grade Level Dropdown */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading">
+                    Grade Level
+                  </label>
+                  <select
+                    value={editStudentGrade}
+                    onChange={(e) => setEditStudentGrade(e.target.value)}
+                    className="w-full text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors cursor-pointer"
+                  >
+                    {GRADE_CATEGORIES.map((cat, idx) => (
+                      <optgroup key={idx} label={cat.label}>
+                        {cat.options.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Immutable Login Credentials Notice */}
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 dark:text-slate-500 flex items-center justify-between">
+                  <span>Student Code: <strong className="font-mono text-slate-700 dark:text-slate-300">{editingStudent.studentCode || '—'}</strong></span>
+                  <span>PIN: <strong className="font-mono text-slate-700 dark:text-slate-300">{editingStudent.defaultPin || '—'}</strong></span>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditStudentModalOpen(false)}
+                    className="rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isEditStudentLoading}
+                    className="rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <span>{isEditStudentLoading ? "Saving Changes..." : "Save Changes"}</span>
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
