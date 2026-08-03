@@ -388,13 +388,17 @@ export default function ClassDashboard() {
     if (activeTab !== "vocabularies") return;
     loadClassHistory();
     loadPendingVocabSubmissions();
-  }, [activeTab, classId, historyDateFilter]);
+  }, [activeTab, classId, historyDateFilter, classInfo]);
 
   const loadClassHistory = async () => {
     if (!classId || !user) return;
     setIsHistoryLoading(true);
     try {
-      const classTag = `${user.id}_${classId}`;
+      const targetTag = `${user.id}_${classId}`.toLowerCase();
+      const targetSlug = classId.toLowerCase();
+      const targetGrade = (classInfo.grade || "").toLowerCase().trim();
+      const targetSubj = (classInfo.subject || "").toLowerCase().trim();
+
       const q = query(
         collection(db, "sessions"),
         where("teacherId", "==", user.id)
@@ -402,20 +406,26 @@ export default function ClassDashboard() {
       const snap = await getDocs(q);
       let historyDocs = snap.docs.map(d => d.data());
 
-      // Filter strictly for THIS classroom in V2
+      if (historyDocs.length === 0) {
+        const snapAll = await getDocs(collection(db, "sessions"));
+        historyDocs = snapAll.docs.map(d => d.data());
+      }
+
+      // Filter strictly for THIS classroom in V2 (case-insensitive)
       historyDocs = historyDocs.filter(d => {
-        const matchesClassTag = d.classId === classTag || d.classId === classId;
-        const matchesGradeSubject = (d.gradeLevel === classInfo.grade || d.grade === classInfo.grade) && d.subject === classInfo.subject;
-        return matchesClassTag || matchesGradeSubject;
+        const docClassId = (d.classId || "").toLowerCase();
+        const docGrade = (d.gradeLevel || d.grade || "").toLowerCase().trim();
+        const docSubject = (d.subject || "").toLowerCase().trim();
+
+        const matchesTag = docClassId === targetTag || docClassId === targetSlug || docClassId.endsWith(`_${targetSlug}`);
+        const matchesGradeSubject = targetGrade && targetSubj && docGrade === targetGrade && docSubject === targetSubj;
+
+        return matchesTag || matchesGradeSubject;
       });
 
-      // Date filtering logic
+      // Date filtering logic (if user picks a specific date in calendar picker)
       if (historyDateFilter) {
         historyDocs = historyDocs.filter(d => d.date === historyDateFilter);
-      } else {
-        const todayObj = new Date();
-        const sevenDaysAgo = new Date(todayObj.setDate(todayObj.getDate() - 7)).toISOString().split("T")[0];
-        historyDocs = historyDocs.filter(d => d.date >= sevenDaysAgo);
       }
 
       historyDocs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
