@@ -32,7 +32,7 @@ export default function TeacherDashboard() {
     pendingToday: 0
   });
   
-  const [todayLogs, setTodayLogs] = useState({});
+  const [todaySessions, setTodaySessions] = useState([]);
   const todayStr = new Date().toLocaleDateString("en-CA");
   const todayWeekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
 
@@ -188,18 +188,21 @@ export default function TeacherDashboard() {
           allSessions = legacySnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         }
 
-        // 3. Determine today's logged state
+        // 3. Determine today's logged state & pending classes count
         const todayRecs = allSessions.filter(r => r.date === todayStr);
-        const loggedTodayMap = {};
-        todayRecs.forEach(r => {
-          loggedTodayMap[r.classId] = true;
-          if (r.classId.includes("_")) {
-            loggedTodayMap[r.classId.split("_")[1]] = true;
-          }
-        });
-        setTodayLogs(loggedTodayMap);
+        setTodaySessions(todayRecs);
 
-        const pendingTodayCount = Math.max(0, teacherClasses.length - Object.keys(loggedTodayMap).length);
+        const todayScheduledClasses = teacherClasses.filter(c => c.daysOfWeek && c.daysOfWeek.includes(todayWeekday));
+
+        const pendingClassesCount = todayScheduledClasses.filter(assignment => {
+          const hasSession = todayRecs.some(session => {
+            const sessionGrade = session.gradeLevel || session.grade;
+            const matchesGradeSubject = sessionGrade === assignment.grade && session.subject === assignment.subject;
+            const matchesClassId = session.classId === assignment.id || session.classId === `${user?.id}_${assignment.id}`;
+            return matchesClassId || matchesGradeSubject;
+          });
+          return !hasSession;
+        }).length;
 
         // Sort sessions chronologically (oldest to newest)
         const sortedSessions = [...allSessions].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
@@ -242,7 +245,7 @@ export default function TeacherDashboard() {
           totalClasses: teacherClasses.length,
           totalStudents: allStudents.length,
           averageAttendance: averageRate,
-          pendingToday: pendingTodayCount
+          pendingToday: pendingClassesCount
         });
 
         // 5. Calculate At-Risk Students & Truancy Alerts
@@ -536,7 +539,13 @@ export default function TeacherDashboard() {
               ) : todaysTimetable.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {todaysTimetable.map((classItem) => {
-                    const isLogged = todayLogs[classItem.id];
+                    const isLogged = todaySessions.some(session => {
+                      const sessionGrade = session.gradeLevel || session.grade;
+                      const matchesGradeSubject = sessionGrade === classItem.grade && session.subject === classItem.subject;
+                      const matchesClassId = session.classId === classItem.id || session.classId === `${user?.id}_${classItem.id}`;
+                      return matchesClassId || matchesGradeSubject;
+                    });
+
                     const startTimeStr = formatTime12Hour(classItem.startTime);
                     const endTimeStr = formatTime12Hour(classItem.endTime);
                     const timeSpan = startTimeStr && endTimeStr ? `${startTimeStr} - ${endTimeStr}` : startTimeStr || "Scheduled Today";
@@ -612,7 +621,12 @@ export default function TeacherDashboard() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {unscheduledOrOtherClasses.map((classItem) => {
-                      const isLogged = todayLogs[classItem.id];
+                      const isLogged = todaySessions.some(session => {
+                        const sessionGrade = session.gradeLevel || session.grade;
+                        const matchesGradeSubject = sessionGrade === classItem.grade && session.subject === classItem.subject;
+                        const matchesClassId = session.classId === classItem.id || session.classId === `${user?.id}_${classItem.id}`;
+                        return matchesClassId || matchesGradeSubject;
+                      });
                       return (
                         <div 
                           key={classItem.id}
