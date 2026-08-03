@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { auth, db, provisionUserSecondary, generateStudentAccount } from "../firebase/config";
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { useAuth } from "../context/AuthContext";
 import ProfileSettingsModal from "../components/ProfileSettingsModal";
@@ -192,12 +192,89 @@ export default function AdminDashboard() {
   const [reassignSuccess, setReassignSuccess] = useState(false);
   const [isReassignLoading, setIsReassignLoading] = useState(false);
 
+  // Manage Student Classes Modal State
+  const [isManageClassesModalOpen, setIsManageClassesModalOpen] = useState(false);
+  const [selectedManageStudent, setSelectedManageStudent] = useState(null);
+  const [masterClassList, setMasterClassList] = useState([]);
+  const [isTogglingEnrollment, setIsTogglingEnrollment] = useState(false);
+
   // Password reset toast alert state
   const [resetToastEmail, setResetToastEmail] = useState("");
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleOpenManageClassesModal = (student) => {
+    setSelectedManageStudent(student);
+
+    // Format master list of all classes in school from teachers
+    const masterClasses = [];
+    teachers.forEach(t => {
+      (t.assignments || []).forEach(asg => {
+        const gradeVal = asg.gradeLevel || asg.grade || "Grade 1";
+        const classSlug = `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+        const classTag = `${t.id || t.uid}_${classSlug}`;
+        const displayLabel = `${t.name || "Teacher"} — ${gradeVal} (${asg.subject})`;
+
+        masterClasses.push({
+          classTag,
+          classSlug,
+          teacherId: t.id || t.uid,
+          teacherName: t.name || "Teacher",
+          grade: gradeVal,
+          subject: asg.subject,
+          displayLabel
+        });
+      });
+    });
+
+    setMasterClassList(masterClasses);
+    setIsManageClassesModalOpen(true);
+  };
+
+  const handleToggleStudentClass = async (classItem, isEnrolled) => {
+    if (!selectedManageStudent) return;
+    setIsTogglingEnrollment(true);
+
+    try {
+      const studentRef = doc(db, "users", selectedManageStudent.id);
+      const classTag = classItem.classTag;
+
+      if (isEnrolled) {
+        // Unenroll from specific classTag
+        await updateDoc(studentRef, {
+          enrolledClasses: arrayRemove(classTag)
+        });
+
+        // Update local state immediately
+        const updatedEnrolledClasses = (selectedManageStudent.enrolledClasses || []).filter(tag => tag !== classTag);
+        const updatedStudent = { ...selectedManageStudent, enrolledClasses: updatedEnrolledClasses };
+
+        setSelectedManageStudent(updatedStudent);
+        setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+      } else {
+        // Enroll into specific classTag
+        await updateDoc(studentRef, {
+          enrolledClasses: arrayUnion(classTag),
+          enrolledTeachers: arrayUnion(classItem.teacherId)
+        });
+
+        // Update local state immediately
+        const currentClasses = Array.isArray(selectedManageStudent.enrolledClasses) ? selectedManageStudent.enrolledClasses : [];
+        const updatedEnrolledClasses = [...currentClasses, classTag];
+        const updatedStudent = { ...selectedManageStudent, enrolledClasses: updatedEnrolledClasses };
+
+        setSelectedManageStudent(updatedStudent);
+        setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+      }
+    } catch (err) {
+      console.error("Error toggling class enrollment:", err);
+      alert("Failed to update class enrollment: " + err.message);
+    } finally {
+      setIsTogglingEnrollment(false);
+    }
+  };
 
   const handleProvisionStudent = async (e) => {
     e.preventDefault();
@@ -1193,13 +1270,23 @@ export default function AdminDashboard() {
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right print:hidden">
-                              <button
-                                onClick={() => handleDeleteStudent(student.id, formatStudentName(student))}
-                                title="Permanently Delete Student Account from Global Master List"
-                                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center justify-end space-x-1.5">
+                                <button
+                                  onClick={() => handleOpenManageClassesModal(student)}
+                                  title="Manage Student Class Enrollments"
+                                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border border-brand-200 dark:border-brand-800 text-brand-600 dark:text-brand-400 bg-brand-50/50 dark:bg-brand-900/20 hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors cursor-pointer"
+                                >
+                                  <BookOpen className="h-3.5 w-3.5" />
+                                  <span className="text-xs font-bold">Manage Classes</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteStudent(student.id, formatStudentName(student))}
+                                  title="Permanently Delete Student Account from Global Master List"
+                                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-100 dark:hover:border-red-800/50 transition-colors cursor-pointer"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1908,6 +1995,88 @@ export default function AdminDashboard() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Manage Student Classes Modal */}
+      {isManageClassesModalOpen && selectedManageStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up space-y-6 transition-colors">
+            <button
+              onClick={() => setIsManageClassesModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl">
+                <BookOpen className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white font-heading">
+                  Manage Class Enrollments
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Student: <span className="font-bold text-slate-800 dark:text-slate-200">{formatStudentName(selectedManageStudent)}</span> ({selectedManageStudent.gradeLevel || selectedManageStudent.grade || "No Grade"})
+                </p>
+              </div>
+            </div>
+
+            {/* Scrollable Master Class List */}
+            <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+              {masterClassList.length > 0 ? (
+                masterClassList.map((c, idx) => {
+                  const isEnrolled = Array.isArray(selectedManageStudent.enrolledClasses) && selectedManageStudent.enrolledClasses.includes(c.classTag);
+                  return (
+                    <div
+                      key={idx}
+                      className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all ${
+                        isEnrolled
+                          ? "bg-emerald-50/40 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800/50"
+                          : "bg-white dark:bg-slate-800/50 border-slate-100 dark:border-slate-800 hover:border-slate-200"
+                      }`}
+                    >
+                      <div className="flex flex-col text-left">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                          {c.grade} — {c.subject}
+                        </span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">
+                          Teacher: {c.teacherName}
+                        </span>
+                      </div>
+
+                      <button
+                        disabled={isTogglingEnrollment}
+                        onClick={() => handleToggleStudentClass(c, isEnrolled)}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer disabled:opacity-50 ${
+                          isEnrolled
+                            ? "bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-800/50 hover:bg-red-100 dark:hover:bg-red-900/50"
+                            : "bg-brand-600 hover:bg-brand-700 text-white shadow-sm"
+                        }`}
+                      >
+                        {isEnrolled ? "Unenroll" : "Enroll"}
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="py-12 text-center text-slate-400 dark:text-slate-500 text-xs">
+                  No classes created yet in the master schedule.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+              <button
+                onClick={() => setIsManageClassesModalOpen(false)}
+                className="rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 text-white px-5 py-2 text-xs font-bold shadow-sm transition-colors"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}
