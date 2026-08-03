@@ -38,14 +38,16 @@ export default function MonthlyReports() {
   const [activeClass, setActiveClass] = useState(null);
   const [students, setStudents] = useState([]);
 
-  // Parse classes from teacher's assignments
+  // Parse classes from teacher's assignments using V2 classTag schema
   useEffect(() => {
     if (!user) return;
     
     const teacherClasses = (user.assignments || []).map((asg) => {
-      const classSlug = `${asg.grade.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
-      
-      const gradeNum = parseInt(asg.grade.replace(/\D/g, ""), 10);
+      const g = asg.grade || asg.gradeLevel || "Grade 1";
+      const classSlug = `${g.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+      const classTag = `${user.id}_${classSlug}`;
+
+      const gradeNum = parseInt(g.replace(/\D/g, ""), 10);
       let section = "Elementary";
       if (!isNaN(gradeNum)) {
         if (gradeNum > 8) section = "High School";
@@ -53,9 +55,11 @@ export default function MonthlyReports() {
       }
 
       return {
-        id: classSlug,
-        name: `${asg.grade} - ${asg.subject}`,
-        grade: asg.grade,
+        id: classTag,
+        tag: classTag,
+        slug: classSlug,
+        name: `${g} - ${asg.subject}`,
+        grade: g,
         subject: asg.subject,
         section
       };
@@ -63,62 +67,77 @@ export default function MonthlyReports() {
 
     setClassList(teacherClasses);
     if (classId) {
-      setSelectedClassId(classId);
+      const matched = teacherClasses.find(c => c.tag === classId || c.slug === classId || c.tag === `${user.id}_${classId}`);
+      if (matched) {
+        setSelectedClassId(matched.tag);
+      } else {
+        setSelectedClassId(classId);
+      }
     } else if (teacherClasses.length > 0 && !selectedClassId) {
-      setSelectedClassId(teacherClasses[0].id);
+      setSelectedClassId(teacherClasses[0].tag);
     }
   }, [user, classId]);
 
   // Sync active class information
   useEffect(() => {
     if (!selectedClassId) return;
-    const found = classList.find(c => c.id === selectedClassId);
-    setActiveClass(found);
+    const found = classList.find(c => c.tag === selectedClassId || c.id === selectedClassId || c.slug === selectedClassId);
+    setActiveClass(found || null);
   }, [selectedClassId, classList]);
 
-  // Fetch students for selected class from Firestore
-  useEffect(() => {
-    const fetchStudents = async () => {
-      if (!selectedClassId) return;
-      try {
-        const q = query(
-          collection(db, "users"),
-          where("role", "==", "student"),
-          where("classId", "==", selectedClassId)
-        );
-        const snap = await getDocs(q);
-        const fetched = snap.docs.map(doc => doc.data());
-        setStudents(fetched);
-      } catch (err) {
-        console.error("Error loading students for reports:", err);
-      }
-    };
-    fetchStudents();
-  }, [selectedClassId]);
-
-  // Fetch session history and build stats
+  // Fetch sessions, enrolled students, and build V2 Monthly Report
   useEffect(() => {
     const buildReport = async () => {
-      if (!selectedClassId || !activeClass || students.length === 0) return;
+      if (!user || !selectedClassId || !activeClass) return;
       
       setIsDataLoading(true);
       try {
-        const q = query(
-          collection(db, "sessions"),
-          where("classId", "==", selectedClassId)
+        // 1. Fetch Students enrolled in this specific class (V2 enrolledClasses)
+        const qStudents = query(
+          collection(db, "users"),
+          where("role", "==", "student")
         );
-        
-        const snap = await getDocs(q);
-        const allSessions = snap.docs.map(d => d.data());
-        
-        const prefix = `${selectedYear}-${selectedMonth}`;
-        // Filter sessions by date prefix in-memory (bypasses complex index requirement)
-        const classMonthlyRecords = allSessions.filter(s => s.date.startsWith(prefix));
+        const snapStudents = await getDocs(qStudents);
+        const allStudents = snapStudents.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // Initialize counts for each student
-        const studentStats = students.map(student => ({
-          id: student.id,
-          name: student.name,
+        const enrolledStudents = allStudents.filter(s => {
+          if (Array.isArray(s.enrolledClasses)) {
+            return s.enrolledClasses.includes(selectedClassId) || s.enrolledClasses.includes(activeClass.tag);
+          }
+          // Legacy fallback
+          const isEnrolledByTeacher = (Array.isArray(s.enrolledTeachers) && s.enrolledTeachers.includes(user.id)) || s.teacherId === user.id;
+          const matchesClass = s.classId === activeClass.slug || s.classId === selectedClassId;
+          return isEnrolledByTeacher && matchesClass;
+        });
+
+        setStudents(enrolledStudents);
+
+        // 2. Fetch Sessions for this teacher
+        const qSessions = query(
+          collection(db, "sessions"),
+          where("teacherId", "==", user.id)
+        );
+        const snapSessions = await getDocs(qSessions);
+        const allSessions = snapSessions.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        // 3. Filter sessions by selected Month/Year and Class Tag/Slug
+        const prefix = `${selectedYear}-${selectedMonth}`;
+        const filteredSessions = allSessions.filter(s => {
+          if (!s.date || !s.date.startsWith(prefix)) return false;
+
+          const sessionClassTag = `${s.teacherId}_${s.classId}`;
+          const matchesTag = sessionClassTag === selectedClassId || s.classId === selectedClassId || sessionClassTag === activeClass.tag;
+          const matchesSlug = s.classId === activeClass.slug;
+          const matchesGradeSubj = s.grade === activeClass.grade && s.subject === activeClass.subject;
+
+          return matchesTag || matchesSlug || matchesGradeSubj;
+        });
+
+        // 4. Aggregation Engine
+        const studentStats = enrolledStudents.map(student => ({
+          id: student.id || student.uid,
+          studentCode: student.studentCode || "",
+          name: formatStudentName(student),
           studentObj: student,
           present: 0,
           late: 0,
@@ -128,29 +147,40 @@ export default function MonthlyReports() {
           total: 0
         }));
 
-        classMonthlyRecords.forEach(record => {
+        const getRecord = (session, stId) => {
+          if (Array.isArray(session.records)) {
+            return session.records.find(r => r.studentId === stId || r.id === stId);
+          }
+          if (session.attendance && typeof session.attendance === "object") {
+            const val = session.attendance[stId];
+            if (typeof val === "object" && val !== null) return val;
+            if (typeof val === "string") return { status: val, minutesLate: 0 };
+          }
+          return null;
+        };
+
+        filteredSessions.forEach(session => {
           studentStats.forEach(stat => {
-            const studentRec = (record.records || []).find(r => r.studentId === stat.id);
-            if (studentRec) {
-              const status = studentRec.status;
-              const mins = studentRec.minutesLate || 0;
-              
+            const rec = getRecord(session, stat.id);
+            if (rec) {
+              const status = typeof rec === "object" ? rec.status : rec;
+              const mins = Number(rec.minutesLate) || 0;
+
               if (status === "present") stat.present++;
               else if (status === "late") {
                 stat.late++;
                 stat.minutesLate += mins;
-              }
-              else if (status === "absent") stat.absent++;
+              } else if (status === "absent") stat.absent++;
               else if (status === "excused") stat.excused++;
-              
+
               stat.total++;
             }
           });
         });
 
-        // Format display values
+        // Format display values and calculate attendance rate %
         const formattedData = studentStats.map(stat => {
-          const attended = stat.present + stat.excused + stat.late;
+          const attended = stat.present + stat.late + stat.excused;
           const rate = stat.total > 0
             ? Math.round((attended / stat.total) * 100)
             : 100;
@@ -161,7 +191,7 @@ export default function MonthlyReports() {
           };
         });
 
-        // Calculate aggregated metrics
+        // Aggregated summary metrics
         const totalRates = formattedData.reduce((acc, curr) => acc + curr.rate, 0);
         const avgRate = formattedData.length > 0 ? Math.round(totalRates / formattedData.length) : 0;
         const perfectCount = formattedData.filter(s => s.absent === 0 && s.total > 0).length;
@@ -172,19 +202,19 @@ export default function MonthlyReports() {
           avgRate,
           perfectCount,
           atRiskCount,
-          totalLogsCount: classMonthlyRecords.length
+          totalLogsCount: filteredSessions.length
         });
       } catch (err) {
-        console.error("Error loading reports log:", err);
+        console.error("Error loading monthly report data:", err);
       } finally {
         setIsDataLoading(false);
       }
     };
 
     buildReport();
-  }, [selectedClassId, selectedMonth, selectedYear, activeClass, students]);
+  }, [user, selectedClassId, selectedMonth, selectedYear, activeClass]);
 
-  // Export Action
+  // Export CSV Action
   const handleExportCSV = () => {
     if (!activeClass) return;
     
@@ -202,8 +232,8 @@ export default function MonthlyReports() {
     ];
     
     const rows = reportData.map(s => [
-      s.id,
-      formatStudentName(s.studentObj),
+      s.studentCode || s.id,
+      `"${formatStudentName(s.studentObj)}"`,
       s.present,
       s.late,
       s.excused,
@@ -211,7 +241,7 @@ export default function MonthlyReports() {
       s.minutesLate,
       `${s.rate}%`,
       s.status,
-      s.studentObj.communityCenter || ""
+      `"${s.studentObj.communityName || s.studentObj.communityCenter || ""}"`
     ]);
 
     const csvContent = "data:text/csv;charset=utf-8," 
