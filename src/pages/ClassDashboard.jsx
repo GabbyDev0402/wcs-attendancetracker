@@ -391,15 +391,23 @@ export default function ClassDashboard() {
   }, [activeTab, classId, historyDateFilter]);
 
   const loadClassHistory = async () => {
-    if (!classId) return;
+    if (!classId || !user) return;
     setIsHistoryLoading(true);
     try {
+      const classTag = `${user.id}_${classId}`;
       const q = query(
         collection(db, "sessions"),
-        where("classId", "==", classId)
+        where("teacherId", "==", user.id)
       );
       const snap = await getDocs(q);
       let historyDocs = snap.docs.map(d => d.data());
+
+      // Filter strictly for THIS classroom in V2
+      historyDocs = historyDocs.filter(d => {
+        const matchesClassTag = d.classId === classTag || d.classId === classId;
+        const matchesGradeSubject = (d.gradeLevel === classInfo.grade || d.grade === classInfo.grade) && d.subject === classInfo.subject;
+        return matchesClassTag || matchesGradeSubject;
+      });
 
       // Date filtering logic
       if (historyDateFilter) {
@@ -410,7 +418,7 @@ export default function ClassDashboard() {
         historyDocs = historyDocs.filter(d => d.date >= sevenDaysAgo);
       }
 
-      historyDocs.sort((a, b) => new Date(b.date) - new Date(a.date));
+      historyDocs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
       setClassSessionsHistory(historyDocs);
     } catch (e) {
       console.error("Error loading class session history:", e);
@@ -1142,7 +1150,7 @@ export default function ClassDashboard() {
 
       {/* TAB 3: VOCABULARIES & SUBMISSIONS VIEW */}
       {activeTab === "vocabularies" && (
-        <div className="space-y-8">
+        <div className="max-w-5xl mx-auto w-full space-y-8">
           {/* Top Section: Pending Student Submissions */}
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -1241,39 +1249,45 @@ export default function ClassDashboard() {
               </div>
             ) : classSessionsHistory.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {classSessionsHistory.map((session, index) => (
-                  <div key={index} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
-                      <span className="text-xs font-bold text-brand-600 dark:text-brand-400 font-mono">
-                        📅 {session.date}
-                      </span>
-                      {session.pages && (
-                        <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-300">
-                          Pages: {session.pages}
+                {classSessionsHistory.map((session, index) => {
+                  const displayPages = session.pages || session.page;
+                  const displayTopic = session.topic ? session.topic : "No topic logged";
+                  const vocabWords = session.vocabularyWords || session.vocabularies;
+
+                  return (
+                    <div key={index} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                        <span className="text-xs font-bold text-brand-600 dark:text-brand-400 font-mono">
+                          📅 {session.date}
                         </span>
-                      )}
-                    </div>
-
-                    <div>
-                      <div className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        Topic: {session.topic || "General Lesson Session"}
+                        <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-300">
+                          Pages: {displayPages || "N/A"}
+                        </span>
                       </div>
-                    </div>
 
-                    {session.vocabularyWords && (
-                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Vocabulary</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {session.vocabularyWords.split(",").map((word, wIdx) => (
-                            <span key={wIdx} className="text-xs font-semibold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-md border border-brand-100 dark:border-brand-800">
-                              {word.trim()}
-                            </span>
-                          ))}
+                      <div>
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                          Topic: <span className="font-semibold text-slate-600 dark:text-slate-300">{displayTopic}</span>
                         </div>
                       </div>
-                    )}
-                  </div>
-                ))}
+
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Vocabulary</span>
+                        {vocabWords && vocabWords.trim().length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {vocabWords.split(",").map((word, wIdx) => (
+                              <span key={wIdx} className="text-xs font-semibold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-md border border-brand-100 dark:border-brand-800">
+                                {word.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400 dark:text-slate-500 italic">No vocabulary words logged</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-400 space-y-2">
