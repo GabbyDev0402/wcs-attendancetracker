@@ -1,12 +1,14 @@
 import React, { useState, useRef } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, School, Users, BookOpen, Sun, Moon, ChevronLeft, ChevronRight } from "lucide-react";
+import ProfileSettingsModal from "./ProfileSettingsModal";
+import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, School, Users, BookOpen, Sun, Moon, ChevronLeft, ChevronRight, Settings } from "lucide-react";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const navContainerRef = useRef(null);
 
   const [theme, setTheme] = useState(() => {
@@ -135,16 +137,26 @@ export default function Navbar() {
               <div className="flex items-center space-x-2 lg:space-x-3">
                 <button
                   onClick={toggleTheme}
-                  className="p-1.5 rounded-full text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors"
+                  className="p-1.5 rounded-full text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   aria-label="Toggle Dark Mode"
                 >
                   {theme === "light" ? <Moon className="h-4 w-4 lg:h-5 lg:w-5" /> : <Sun className="h-4 w-4 lg:h-5 lg:w-5" />}
                 </button>
+
+                <button
+                  onClick={() => setIsProfileModalOpen(true)}
+                  className="p-1.5 rounded-xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  aria-label="Profile Settings"
+                  title="Profile Settings"
+                >
+                  <Settings className="h-4 w-4 lg:h-5 lg:w-5" />
+                </button>
+
                 <div className="flex items-center space-x-2 lg:space-x-2.5 border-r border-slate-100 dark:border-slate-800 pr-2 lg:pr-3">
                   <img
-                    src={user.avatar}
+                    src={user.photoURL || user.avatar}
                     alt={user.name}
-                    className="h-7 w-7 lg:h-8 lg:w-8 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 shrink-0"
+                    className="h-7 w-7 lg:h-8 lg:w-8 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 shrink-0 object-cover"
                   />
                   <div className="hidden xl:flex flex-col text-left">
                     <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-none whitespace-nowrap transition-colors">
@@ -273,6 +285,12 @@ export default function Navbar() {
           )}
         </div>
       )}
+
+      {/* Profile Settings Modal */}
+      <ProfileSettingsModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
     </nav>
   );
 }

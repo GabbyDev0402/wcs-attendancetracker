@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import { auth, db, provisionUserSecondary, generateStudentAccount } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
+import { useAuth } from "../context/AuthContext";
+import ProfileSettingsModal from "../components/ProfileSettingsModal";
 import { formatStudentName, formatScheduleString } from "../utils/helpers";
 import { 
   Users, 
@@ -26,7 +28,8 @@ import {
   Hash,
   ShieldCheck,
   ShieldAlert,
-  Printer
+  Printer,
+  Settings
 } from "lucide-react";
 
 // Categorized options for Grade levels (Standard & ESL)
@@ -143,6 +146,9 @@ export default function AdminDashboard() {
       badgeText
     };
   };
+
+  // Profile Settings Modal State
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Provision Teacher Modal Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -653,23 +659,32 @@ export default function AdminDashboard() {
             Manage academic staff profiles, master schedules, and global student master list.
           </p>
         </div>
-        {activeTab === "teachers" ? (
+        <div className="flex items-center space-x-3">
           <button
-            onClick={() => setIsModalOpen(true)}
-            className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
+            onClick={() => setIsProfileModalOpen(true)}
+            className="inline-flex items-center space-x-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
           >
-            <UserPlus className="h-4 w-4" />
-            <span>Provision New Teacher</span>
+            <Settings className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+            <span>Profile Settings</span>
           </button>
-        ) : (
-          <button
-            onClick={() => setIsStudentModalOpen(true)}
-            className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
-          >
-            <UserPlus className="h-4 w-4" />
-            <span>Provision New Student</span>
-          </button>
-        )}
+          {activeTab === "teachers" ? (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>Provision New Teacher</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsStudentModalOpen(true)}
+              className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
+            >
+              <UserPlus className="h-4 w-4" />
+              <span>Provision New Student</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Metric overview cards */}
@@ -1896,6 +1911,12 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* Profile Settings Modal */}
+      <ProfileSettingsModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
     </div>
   );
 }

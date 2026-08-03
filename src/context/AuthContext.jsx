@@ -57,6 +57,32 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
+  const refreshUser = async () => {
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return;
+    try {
+      const userDocRef = doc(db, "users", firebaseUser.uid);
+      const userDocSnap = await getDoc(userDocRef);
+      
+      if (userDocSnap.exists()) {
+        const data = userDocSnap.data();
+        const photo = data.photoURL || data.avatar || firebaseUser.photoURL || `https://api.dicebear.com/7.x/adventurer/svg?seed=${firebaseUser.uid}`;
+        setUser({
+          id: firebaseUser.uid,
+          email: firebaseUser.email,
+          name: data.name || firebaseUser.displayName || "User",
+          role: data.role || "teacher",
+          avatar: photo,
+          photoURL: photo,
+          assignments: data.assignments || [],
+          ...data
+        });
+      }
+    } catch (error) {
+      console.error("Error refreshing user profile:", error);
+    }
+  };
+
   const login = async (email, password, rememberMe = true) => {
     const persistenceType = rememberMe ? browserLocalPersistence : browserSessionPersistence;
     await setPersistence(auth, persistenceType);
@@ -76,7 +102,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, generateStudentAccount }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refreshUser, generateStudentAccount }}>
       {!loading && children}
     </AuthContext.Provider>
   );
