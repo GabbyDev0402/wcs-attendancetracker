@@ -183,11 +183,11 @@ export default function AdminDashboard() {
   const [editSuccess, setEditSuccess] = useState(false);
   const [isEditLoading, setIsEditLoading] = useState(false);
 
-  // Reassign Student Modal Form State
+  // Reassign Student Modal Form State (Bulk Checkbox Enrollment)
   const [isReassignModalOpen, setIsReassignModalOpen] = useState(false);
   const [reassigningStudent, setReassigningStudent] = useState(null);
-  const [reassignTeacherId, setReassignTeacherId] = useState("");
-  const [reassignClassId, setReassignClassId] = useState("");
+  const [selectedClasses, setSelectedClasses] = useState([]);
+  const [reassignClassSearchQuery, setReassignClassSearchQuery] = useState("");
   const [reassignError, setReassignError] = useState("");
   const [reassignSuccess, setReassignSuccess] = useState(false);
   const [isReassignLoading, setIsReassignLoading] = useState(false);
@@ -630,74 +630,62 @@ export default function AdminDashboard() {
     }
   };
 
-  // Open Reassign Student Modal
+  // Open Bulk Reassign Student Modal
   const handleOpenReassignModal = (student) => {
     setReassigningStudent(student);
-    const assignedTeacher = teachers.find(t => t.id === student.teacherId);
-    const defaultTeacherId = assignedTeacher ? assignedTeacher.id : (teachers[0]?.id || "");
-    
-    setReassignTeacherId(defaultTeacherId);
-    
-    // Set default class slug for selected teacher
-    const targetTeacherObj = teachers.find(t => t.id === defaultTeacherId);
-    const firstAsg = targetTeacherObj?.assignments?.[0];
-    const firstGrade = firstAsg ? (firstAsg.grade || firstAsg.gradeLevel || "Grade 1") : "Grade 1";
-    const defaultClassSlug = firstAsg 
-      ? `${firstGrade.replace(/\s+/g, '-').toLowerCase()}-${firstAsg.subject.replace(/\s+/g, '-').toLowerCase()}`
-      : student.classId;
-
-    setReassignClassId(defaultClassSlug);
+    setSelectedClasses(Array.isArray(student.enrolledClasses) ? [...student.enrolledClasses] : []);
+    setReassignClassSearchQuery("");
     setReassignError("");
     setReassignSuccess(false);
     setIsReassignModalOpen(true);
-  };
-
-  const handleTeacherSelectChange = (newTeacherId) => {
-    setReassignTeacherId(newTeacherId);
-    const targetTeacherObj = teachers.find(t => t.id === newTeacherId);
-    const firstAsg = targetTeacherObj?.assignments?.[0];
-    if (firstAsg) {
-      const g = firstAsg.grade || firstAsg.gradeLevel || "Grade 1";
-      const classSlug = `${g.replace(/\s+/g, '-').toLowerCase()}-${firstAsg.subject.replace(/\s+/g, '-').toLowerCase()}`;
-      setReassignClassId(classSlug);
-    }
   };
 
   const handleReassignSubmit = async (e) => {
     e.preventDefault();
     setReassignError("");
 
-    if (!reassignTeacherId) {
-      setReassignError("Please select a target active teacher.");
-      return;
-    }
-
-    if (!reassignClassId) {
-      setReassignError("Please select a target classroom assignment.");
+    if (selectedClasses.length === 0) {
+      setReassignError("Please select at least one classroom assignment to enroll.");
       return;
     }
 
     setIsReassignLoading(true);
 
     try {
-      const classTag = `${reassignTeacherId}_${reassignClassId}`;
+      // Find all associated teacher IDs for selected classes
+      const masterClasses = [];
+      teachers.forEach(t => {
+        (t.assignments || []).forEach(asg => {
+          const gradeVal = asg.gradeLevel || asg.grade || "Grade 1";
+          const classSlug = `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+          const classTag = `${t.id || t.uid}_${classSlug}`;
+          masterClasses.push({ classTag, teacherId: t.id || t.uid });
+        });
+      });
+
+      const selectedTeacherIds = masterClasses
+        .filter(c => selectedClasses.includes(c.classTag))
+        .map(c => c.teacherId);
+
       const studentRef = doc(db, "users", reassigningStudent.id);
+
       await updateDoc(studentRef, {
-        enrolledClasses: arrayUnion(classTag),
-        enrolledTeachers: arrayUnion(reassignTeacherId)
+        enrolledClasses: arrayUnion(...selectedClasses),
+        ...(selectedTeacherIds.length > 0 ? { enrolledTeachers: arrayUnion(...selectedTeacherIds) } : {})
       });
 
       setReassignSuccess(true);
       setTimeout(() => {
         setIsReassignModalOpen(false);
         setReassigningStudent(null);
+        setSelectedClasses([]);
         setReassignSuccess(false);
         setIsReassignLoading(false);
         loadData();
       }, 1200);
     } catch (err) {
       setIsReassignLoading(false);
-      setReassignError(err.message || "Failed to reassign student.");
+      setReassignError(err.message || "Failed to enroll student in selected classes.");
     }
   };
 
@@ -1744,42 +1732,85 @@ export default function AdminDashboard() {
                   </div>
                 )}
 
+                {/* Class Filter Search */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 transition-colors">Target Teacher</label>
-                  <select
-                    value={reassignTeacherId}
-                    onChange={(e) => handleTeacherSelectChange(e.target.value)}
-                    className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
-                  >
-                    {teachers.map(t => (
-                      <option key={t.id} value={t.id}>{t.name} ({t.email})</option>
-                    ))}
-                  </select>
-                </div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">
+                      Select Classroom Assignments ({selectedClasses.length} Selected)
+                    </label>
+                  </div>
+                  
+                  <div className="relative mb-2">
+                    <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Search grade, subject, or teacher..."
+                      value={reassignClassSearchQuery}
+                      onChange={(e) => setReassignClassSearchQuery(e.target.value)}
+                      className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 transition-colors">Target Classroom Assignment</label>
-                  <select
-                    value={reassignClassId}
-                    onChange={(e) => setReassignClassId(e.target.value)}
-                    className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
-                  >
+                  {/* Scrollable Checkbox List */}
+                  <div className="max-h-60 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-xl p-2 bg-slate-50/50 dark:bg-slate-800/30 space-y-2">
                     {(() => {
-                      const targetTeacherObj = teachers.find(t => t.id === reassignTeacherId);
-                      const asgs = targetTeacherObj?.assignments || [];
-                      if (asgs.length === 0) return <option value="">No assignments allocated for this teacher</option>;
-                      
-                      return asgs.map((asg, idx) => {
-                        const g = asg.grade || asg.gradeLevel || "Grade 1";
-                        const slug = `${g.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+                      const allMasterClasses = [];
+                      teachers.forEach(t => {
+                        (t.assignments || []).forEach(asg => {
+                          const g = asg.gradeLevel || asg.grade || "Grade 1";
+                          const slug = `${g.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+                          const classTag = `${t.id || t.uid}_${slug}`;
+                          const sched = formatScheduleString(asg);
+                          const label = `${t.name || "Teacher"}: ${g} - ${asg.subject}${sched ? ` (${sched})` : ""}`;
+                          allMasterClasses.push({ classTag, label, teacherName: t.name, grade: g, subject: asg.subject });
+                        });
+                      });
+
+                      const filtered = allMasterClasses.filter(c => {
+                        const term = reassignClassSearchQuery.toLowerCase();
+                        return c.label.toLowerCase().includes(term) || c.classTag.toLowerCase().includes(term);
+                      });
+
+                      if (filtered.length === 0) {
                         return (
-                          <option key={idx} value={slug}>
-                            {g} - {asg.subject} {formatScheduleString(asg)}
-                          </option>
+                          <div className="py-8 text-center text-xs text-slate-400">
+                            No matching classes found.
+                          </div>
+                        );
+                      }
+
+                      return filtered.map((c) => {
+                        const isChecked = selectedClasses.includes(c.classTag);
+                        return (
+                          <label
+                            key={c.classTag}
+                            className={`flex items-center space-x-3 p-2.5 rounded-xl border transition-all cursor-pointer ${
+                              isChecked
+                                ? "bg-brand-50/80 dark:bg-brand-900/30 border-brand-300 dark:border-brand-700 text-brand-900 dark:text-brand-200"
+                                : "bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700/80 hover:border-slate-300 text-slate-700 dark:text-slate-200"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                if (isChecked) {
+                                  setSelectedClasses(prev => prev.filter(tag => tag !== c.classTag));
+                                } else {
+                                  setSelectedClasses(prev => [...prev, c.classTag]);
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 accent-brand-600 cursor-pointer shrink-0"
+                            />
+                            <div className="flex flex-col text-left overflow-hidden">
+                              <span className="text-xs font-bold truncate">{c.label}</span>
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono truncate">{c.classTag}</span>
+                            </div>
+                          </label>
                         );
                       });
                     })()}
-                  </select>
+                  </div>
                 </div>
 
                 <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end space-x-3 transition-colors">
@@ -1792,10 +1823,10 @@ export default function AdminDashboard() {
                   </button>
                   <button
                     type="submit"
-                    disabled={isReassignLoading}
-                    className="rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 dark:shadow-md dark:shadow-blue-500/30 dark:hover:shadow-blue-500/50 transition-all cursor-pointer disabled:opacity-50"
+                    disabled={isReassignLoading || selectedClasses.length === 0}
+                    className="rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 text-xs font-bold flex items-center space-x-1.5 shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/30 transition-all cursor-pointer disabled:opacity-50"
                   >
-                    <span>{isReassignLoading ? "Reassigning..." : "Reassign Student"}</span>
+                    <span>{isReassignLoading ? "Enrolling..." : `Enroll ${selectedClasses.length} Selected Classes`}</span>
                   </button>
                 </div>
               </form>
