@@ -84,6 +84,7 @@ export default function ClassDashboard() {
   // Vocabularies & Submissions State (Tab 3)
   const [classSessionsHistory, setClassSessionsHistory] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [historyRangeFilter, setHistoryRangeFilter] = useState("7days"); // "7days" | "30days" | "all" | "custom"
   const [historyDateFilter, setHistoryDateFilter] = useState("");
 
   // Pending Vocab Submissions State (Tab 3 Top Section)
@@ -388,7 +389,7 @@ export default function ClassDashboard() {
     if (activeTab !== "vocabularies") return;
     loadClassHistory();
     loadPendingVocabSubmissions();
-  }, [activeTab, classId, historyDateFilter, classInfo]);
+  }, [activeTab, classId, historyRangeFilter, historyDateFilter, classInfo]);
 
   const loadClassHistory = async () => {
     if (!classId || !user) return;
@@ -423,10 +424,37 @@ export default function ClassDashboard() {
         return matchesTag || matchesGradeSubject;
       });
 
-      // Date filtering logic (if user picks a specific date in calendar picker)
+      // Date Range Filtering with robust Date object parsing
+      const now = new Date();
+      now.setHours(23, 59, 59, 999);
+
       if (historyDateFilter) {
+        // Specific Date selected from calendar picker
         historyDocs = historyDocs.filter(d => d.date === historyDateFilter);
+      } else if (historyRangeFilter === "7days") {
+        // Default: Last 7 Days (1 Week Window)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(now.getDate() - 7);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+
+        historyDocs = historyDocs.filter(d => {
+          if (!d.date) return false;
+          const sessionDate = new Date(d.date);
+          return !isNaN(sessionDate.getTime()) ? sessionDate >= sevenDaysAgo : true;
+        });
+      } else if (historyRangeFilter === "30days") {
+        // Last 30 Days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(now.getDate() - 30);
+        thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+        historyDocs = historyDocs.filter(d => {
+          if (!d.date) return false;
+          const sessionDate = new Date(d.date);
+          return !isNaN(sessionDate.getTime()) ? sessionDate >= thirtyDaysAgo : true;
+        });
       }
+      // "all": No cutoff date filter
 
       historyDocs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
       setClassSessionsHistory(historyDocs);
@@ -1230,26 +1258,65 @@ export default function ClassDashboard() {
                 </p>
               </div>
 
-              {/* Calendar Picker for filtering */}
-              <div className="flex items-center space-x-2 shrink-0">
-                <label htmlFor="historyDateFilter" className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  Filter by Date:
-                </label>
-                <input
-                  type="date"
-                  id="historyDateFilter"
-                  value={historyDateFilter}
-                  onChange={(e) => setHistoryDateFilter(e.target.value)}
-                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-                {historyDateFilter && (
+              {/* Range Selector & Calendar Picker */}
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
                   <button
-                    onClick={() => setHistoryDateFilter("")}
-                    className="text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline"
+                    type="button"
+                    onClick={() => { setHistoryRangeFilter("7days"); setHistoryDateFilter(""); }}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      historyRangeFilter === "7days" && !historyDateFilter
+                        ? "bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                    }`}
                   >
-                    Clear
+                    Last 7 Days
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => { setHistoryRangeFilter("30days"); setHistoryDateFilter(""); }}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      historyRangeFilter === "30days" && !historyDateFilter
+                        ? "bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    Last 30 Days
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setHistoryRangeFilter("all"); setHistoryDateFilter(""); }}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      historyRangeFilter === "all" && !historyDateFilter
+                        ? "bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    All History
+                  </button>
+                </div>
+
+                <div className="flex items-center space-x-1.5">
+                  <input
+                    type="date"
+                    id="historyDateFilter"
+                    value={historyDateFilter}
+                    onChange={(e) => {
+                      setHistoryDateFilter(e.target.value);
+                      if (e.target.value) setHistoryRangeFilter("custom");
+                    }}
+                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  {historyDateFilter && (
+                    <button
+                      type="button"
+                      onClick={() => { setHistoryDateFilter(""); setHistoryRangeFilter("7days"); }}
+                      className="text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
