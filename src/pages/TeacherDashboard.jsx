@@ -89,11 +89,12 @@ export default function TeacherDashboard() {
     try {
       const q = query(
         collection(db, "diaries"),
-        where("mathTeacherId", "==", user.id),
         where("status", "==", "pending")
       );
       const snap = await getDocs(q);
-      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const items = snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(d => d.mathTeacherId === user.id || d.mathTeacherId === "unassigned" || !d.mathTeacherId);
       setPendingDiaries(items);
     } catch (e) {
       console.error("Error loading pending diaries:", e);

@@ -190,16 +190,20 @@ export default function StudentClassDashboard() {
 
     setIsSubmittingVocab((prev) => ({ ...prev, [sessionKey]: true, [classId]: true }));
     try {
-      const subDocId = `${user.id}-${classId}-${sessionDate}`;
+      const fullClassTag = targetClassTag || (extractedTeacherId ? `${extractedTeacherId}_${extractedClassId}` : classId);
+      const subDocId = `${user.id}-${extractedClassId}-${sessionDate}`;
+      
       const payload = {
         studentId: user.id,
         studentName: formatStudentName(user),
-        classId,
+        classId: fullClassTag,
+        rawClassId: classId,
         teacherId: session.teacherId || extractedTeacherId || "",
         date: sessionDate,
         sentences: inputVal.trim(),
         status: "pending",
         feedback: "",
+        academicYear: "SY 2026-2027",
         createdAt: new Date().toISOString()
       };
 

@@ -420,16 +420,23 @@ export default function ClassDashboard() {
   };
 
   const loadPendingVocabSubmissions = async () => {
-    if (!classId) return;
+    if (!classId || !user) return;
     setIsPendingVocabLoading(true);
     try {
+      const classTag = `${user.id}_${classId}`;
       const q = query(
         collection(db, "vocab_submissions"),
-        where("classId", "==", classId),
         where("status", "==", "pending")
       );
       const snap = await getDocs(q);
-      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const items = snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(sub => 
+          sub.classId === classTag || 
+          sub.classId === classId || 
+          sub.rawClassId === classId ||
+          (sub.teacherId === user.id && (sub.classId.includes(classId) || sub.classId === classId))
+        );
       setPendingVocabSubmissions(items);
     } catch (e) {
       console.error("Error loading pending vocab submissions:", e);

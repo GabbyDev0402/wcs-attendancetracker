@@ -163,7 +163,9 @@ export default function StudentDashboard() {
     setIsSubmittingDiary(true);
     try {
       const mathClassTag = (user?.enrolledClasses || []).find(tag => tag.toLowerCase().includes('math'));
-      const mathTeacherId = mathClassTag ? mathClassTag.split('_')[0] : (user?.teacherId || 'unassigned');
+      const mathTeacherId = mathClassTag 
+        ? mathClassTag.split('_')[0] 
+        : ((user?.enrolledTeachers && user.enrolledTeachers[0]) || user?.mathTeacherId || user?.teacherId || 'unassigned');
 
       const docId = `${user.id}-${todayStr}`;
       const payload = {
@@ -174,6 +176,7 @@ export default function StudentDashboard() {
         text: diaryInput.trim(),
         status: "pending",
         feedback: "",
+        academicYear: "SY 2026-2027",
         createdAt: new Date().toISOString()
       };
 
