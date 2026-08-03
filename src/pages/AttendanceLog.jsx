@@ -42,13 +42,14 @@ export default function AttendanceLog() {
   // Timezone safe today's date
   const today = new Date().toLocaleDateString("en-CA");
 
-  // Parse classes from teacher's assignments
+  // Parse classes from teacher's assignments using V2 classTag schema
   useEffect(() => {
     if (!user) return;
     
     const teacherClasses = (user.assignments || []).map((asg) => {
       const gradeVal = asg.grade || asg.gradeLevel || "Grade 1";
       const classSlug = `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+      const classTag = `${user.id}_${classSlug}`;
       
       const gradeNum = parseInt(gradeVal.replace(/\D/g, ""), 10);
       let section = "Elementary";
@@ -58,7 +59,9 @@ export default function AttendanceLog() {
       }
 
       return {
-        id: classSlug,
+        id: classTag,
+        tag: classTag,
+        slug: classSlug,
         name: `${gradeVal} - ${asg.subject}`,
         grade: gradeVal,
         subject: asg.subject,
@@ -71,33 +74,48 @@ export default function AttendanceLog() {
 
     setClassList(teacherClasses);
     if (classId) {
-      setSelectedClassId(classId);
+      const matched = teacherClasses.find(c => c.tag === classId || c.slug === classId || c.tag === `${user.id}_${classId}`);
+      if (matched) {
+        setSelectedClassId(matched.tag);
+      } else {
+        setSelectedClassId(classId);
+      }
     } else if (teacherClasses.length > 0 && !selectedClassId) {
-      setSelectedClassId(teacherClasses[0].id);
+      setSelectedClassId(teacherClasses[0].tag);
     }
   }, [user, classId]);
 
   // Sync active class information
   useEffect(() => {
     if (!selectedClassId) return;
-    const found = classList.find(c => c.id === selectedClassId);
-    setActiveClass(found);
+    const found = classList.find(c => c.tag === selectedClassId || c.id === selectedClassId || c.slug === selectedClassId);
+    setActiveClass(found || null);
   }, [selectedClassId, classList]);
 
-  // Fetch students for selected class from Firestore
+  // Fetch students for selected class from Firestore (V2 enrolledClasses)
   useEffect(() => {
     const fetchStudents = async () => {
-      if (!selectedClassId) return;
+      if (!selectedClassId || !activeClass) return;
       setIsDataLoading(true);
       try {
         const q = query(
           collection(db, "users"),
-          where("role", "==", "student"),
-          where("classId", "==", selectedClassId)
+          where("role", "==", "student")
         );
         const snap = await getDocs(q);
-        const fetched = snap.docs.map(doc => doc.data());
-        setStudents(fetched);
+        const allStudents = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        const classRoster = allStudents.filter(u => {
+          if (Array.isArray(u.enrolledClasses)) {
+            return u.enrolledClasses.includes(selectedClassId) || u.enrolledClasses.includes(activeClass.tag);
+          }
+          // Legacy fallback
+          const isEnrolledByTeacher = (Array.isArray(u.enrolledTeachers) && u.enrolledTeachers.includes(user.id)) || u.teacherId === user.id;
+          const matchesClass = u.classId === activeClass.slug || u.classId === selectedClassId;
+          return isEnrolledByTeacher && matchesClass;
+        });
+
+        setStudents(classRoster);
       } catch (err) {
         console.error("Error loading students for attendance log:", err);
       } finally {
@@ -105,7 +123,7 @@ export default function AttendanceLog() {
       }
     };
     fetchStudents();
-  }, [selectedClassId]);
+  }, [selectedClassId, activeClass]);
 
   // Load existing records from Firestore sessions collection
   useEffect(() => {
@@ -113,18 +131,32 @@ export default function AttendanceLog() {
       if (!selectedClassId || !date || students.length === 0) return;
       
       try {
-        const docId = `${selectedClassId}-${date}`;
-        const docSnap = await getDoc(doc(db, "sessions", docId));
+        const tagDocId = `${selectedClassId}-${date}`;
+        let docSnap = await getDoc(doc(db, "sessions", tagDocId));
+        
+        if (!docSnap.exists() && activeClass) {
+          const slugDocId = `${activeClass.slug}-${date}`;
+          docSnap = await getDoc(doc(db, "sessions", slugDocId));
+        }
         
         if (docSnap.exists()) {
           const data = docSnap.data();
           const parsedRecords = {};
           
           (data.records || []).forEach(r => {
+            const stId = r.studentId || r.id;
             if (r.status === "late") {
-              parsedRecords[r.studentId] = { status: "late", minutesLate: r.minutesLate || 15 };
+              parsedRecords[stId] = { status: "late", minutesLate: r.minutesLate || 15 };
             } else {
-              parsedRecords[r.studentId] = r.status;
+              parsedRecords[stId] = r.status;
+            }
+          });
+
+          // Default remaining unrecorded students to "present"
+          students.forEach(s => {
+            const stId = s.id || s.uid;
+            if (parsedRecords[stId] === undefined) {
+              parsedRecords[stId] = "present";
             }
           });
           
@@ -136,7 +168,7 @@ export default function AttendanceLog() {
           // Default all to "present"
           const defaultState = {};
           students.forEach(s => {
-            defaultState[s.id] = "present";
+            defaultState[s.id || s.uid] = "present";
           });
           setAttendance(defaultState);
           setTopic("");
@@ -150,7 +182,7 @@ export default function AttendanceLog() {
     };
 
     loadSessionRecord();
-  }, [selectedClassId, date, students]);
+  }, [selectedClassId, date, students, activeClass]);
 
   const handleStatusChange = (studentId, status) => {
     setAttendance(prev => {
@@ -185,10 +217,11 @@ export default function AttendanceLog() {
     setAttendance(prev => {
       const newState = { ...prev };
       activeRoster.forEach(s => {
+        const stId = s.id || s.uid;
         if (status === "late") {
-          newState[s.id] = { status: "late", minutesLate: 15 };
+          newState[stId] = { status: "late", minutesLate: 15 };
         } else {
-          newState[s.id] = status;
+          newState[stId] = status;
         }
       });
       return newState;
@@ -201,25 +234,33 @@ export default function AttendanceLog() {
     
     try {
       const docId = `${selectedClassId}-${date}`;
-      const recordsArray = Object.keys(attendance).map(studentId => {
-        const val = attendance[studentId];
+      const recordsArray = students.map(s => {
+        const stId = s.id || s.uid;
+        const val = attendance[stId] || "present";
         const status = typeof val === "object" ? val.status : val;
         const minutesLate = typeof val === "object" ? val.minutesLate || 0 : 0;
-        return { studentId, status, minutesLate };
+        return {
+          studentId: stId,
+          name: formatStudentName(s),
+          status,
+          minutesLate
+        };
       });
 
       await setDoc(doc(db, "sessions", docId), {
         classId: selectedClassId,
-        date,
         teacherId: user.id,
+        grade: activeClass.grade,
         gradeLevel: activeClass.grade,
         subject: activeClass.subject,
+        date,
         topic: topic.trim(),
         page: pages.trim(),
         pages: pages.trim(),
         vocabularyWords: vocabularyWords.trim(),
-        records: recordsArray
-      });
+        records: recordsArray,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
 
       setSaveSuccess(true);
       setTimeout(() => {
@@ -289,7 +330,7 @@ export default function AttendanceLog() {
         {saveSuccess && (
           <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800/50 px-4 py-2.5 rounded-xl shadow-sm animate-pulse transition-colors">
             <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            <span>Attendance saved successfully!</span>
+            <span>Attendance and Lesson Log Saved!</span>
           </div>
         )}
       </div>
@@ -308,7 +349,7 @@ export default function AttendanceLog() {
             className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
           >
             {classList.map(c => (
-              <option key={c.id} value={c.id}>
+              <option key={c.tag || c.id} value={c.tag || c.id}>
                 {c.name} {formatScheduleString(c)}
               </option>
             ))}
