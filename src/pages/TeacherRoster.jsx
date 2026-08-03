@@ -39,9 +39,11 @@ export default function TeacherRoster() {
     if (!user) return;
     
     const teacherClasses = (user.assignments || []).map((asg) => {
-      const classSlug = `${asg.grade.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+      const gradeVal = asg.gradeLevel || asg.grade || "Grade 1";
+      const classSlug = `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+      const classTag = `${user.id}_${classSlug}`;
       
-      const gradeNum = parseInt(asg.grade.replace(/\D/g, ""), 10);
+      const gradeNum = parseInt(gradeVal.replace(/\D/g, ""), 10);
       let section = "Elementary";
       if (!isNaN(gradeNum)) {
         if (gradeNum > 8) section = "High School";
@@ -50,8 +52,10 @@ export default function TeacherRoster() {
 
       return {
         id: classSlug,
-        name: `${asg.grade} - ${asg.subject}`,
-        grade: asg.grade,
+        slug: classSlug,
+        tag: classTag,
+        name: `${gradeVal} - ${asg.subject}`,
+        grade: gradeVal,
         subject: asg.subject,
         section
       };
@@ -59,16 +63,17 @@ export default function TeacherRoster() {
 
     setClassList(teacherClasses);
     if (teacherClasses.length > 0 && !targetClassId) {
-      setTargetClassId(teacherClasses[0].id);
+      setTargetClassId(teacherClasses[0].slug);
     }
   }, [user]);
 
-  // Load students from Firestore matching assignments or enrolledTeachers
+  // Load students from Firestore matching V2 enrolledClasses or legacy enrolledTeachers
   useEffect(() => {
     loadStudents();
   }, [classList]);
 
   const loadStudents = async () => {
+    if (!user) return;
     setIsDataLoading(true);
     try {
       const q = query(
@@ -77,17 +82,15 @@ export default function TeacherRoster() {
       );
 
       const snap = await getDocs(q);
-      const classIds = classList.map(c => c.id);
+      const allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      const students = snap.docs
-        .map(d => d.data())
-        .filter(s => 
-          (Array.isArray(s.enrolledTeachers) && s.enrolledTeachers.includes(user.id)) ||
-          s.teacherId === user.id ||
-          (s.classId && classIds.includes(s.classId) && s.teacherId !== "unassigned")
-        );
+      const myGlobalStudents = allUsers.filter(u =>
+        (Array.isArray(u.enrolledClasses) && u.enrolledClasses.some(tag => tag.startsWith(`${user.id}_`))) ||
+        (Array.isArray(u.enrolledTeachers) && u.enrolledTeachers.includes(user.id)) ||
+        u.teacherId === user.id
+      );
       
-      setStudentRoster(students);
+      setStudentRoster(myGlobalStudents);
     } catch (e) {
       console.error("Error loading students from Firestore", e);
     } finally {
@@ -102,13 +105,13 @@ export default function TeacherRoster() {
     try {
       const q = query(collection(db, "users"), where("role", "==", "student"));
       const snap = await getDocs(q);
-      const docs = snap.docs.map(d => d.data());
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setAllMasterStudents(docs);
       if (docs.length > 0) {
         setSelectedStudentId(docs[0].id);
       }
       if (classList.length > 0) {
-        setTargetClassId(classList[0].id);
+        setTargetClassId(classList[0].slug);
       }
     } catch (err) {
       console.error("Error fetching master student list", err);
@@ -128,20 +131,20 @@ export default function TeacherRoster() {
 
     try {
       const studentRef = doc(db, "users", selectedStudentId);
-      const classTag = targetClassId ? `${user.id}_${targetClassId}` : "";
+      const classTag = `${user.id}_${targetClassId}`;
       const updatePayload = {
+        enrolledClasses: arrayUnion(classTag),
         enrolledTeachers: arrayUnion(user.id)
       };
-      if (classTag) {
-        updatePayload.enrolledClasses = arrayUnion(classTag);
-      }
 
       await updateDoc(studentRef, updatePayload);
-      setEnrollSuccessMessage("Student enrolled successfully!");
+      setEnrollSuccessMessage("Student successfully enrolled in class!");
 
       setTimeout(() => {
         setIsEnrollModalOpen(false);
         setEnrollSuccessMessage("");
+        setSelectedStudentId("");
+        setEnrollSearchTerm("");
         setIsEnrolling(false);
         loadStudents();
       }, 1200);
