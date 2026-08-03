@@ -197,6 +197,7 @@ export default function AdminDashboard() {
   const [selectedManageStudent, setSelectedManageStudent] = useState(null);
   const [masterClassList, setMasterClassList] = useState([]);
   const [isTogglingEnrollment, setIsTogglingEnrollment] = useState(false);
+  const [showOnlyStudentGrade, setShowOnlyStudentGrade] = useState(true);
 
   // Password reset toast alert state
   const [resetToastEmail, setResetToastEmail] = useState("");
@@ -207,6 +208,7 @@ export default function AdminDashboard() {
 
   const handleOpenManageClassesModal = (student) => {
     setSelectedManageStudent(student);
+    setShowOnlyStudentGrade(true);
 
     // Format master list of all classes in school from teachers
     const masterClasses = [];
@@ -2055,10 +2057,50 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            {/* Smart Filter Toggle Bar */}
+            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <label className="flex items-center space-x-2.5 cursor-pointer text-xs font-bold text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={showOnlyStudentGrade}
+                  onChange={(e) => setShowOnlyStudentGrade(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 accent-brand-600 cursor-pointer"
+                />
+                <span>
+                  Show only {selectedManageStudent.gradeLevel || selectedManageStudent.grade || "Grade"} classes
+                </span>
+              </label>
+            </div>
+
             {/* Scrollable Master Class List */}
-            <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
-              {masterClassList.length > 0 ? (
-                masterClassList.map((c, idx) => {
+            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+              {(() => {
+                const sGrade = (selectedManageStudent.gradeLevel || selectedManageStudent.grade || "").toLowerCase().trim();
+
+                let displayedClasses = masterClassList.filter(c => {
+                  if (!showOnlyStudentGrade || !sGrade) return true;
+                  const cGrade = (c.grade || "").toLowerCase().trim();
+                  return cGrade === sGrade;
+                });
+
+                // Alphabetical sort order fallback by Subject then Teacher Name
+                displayedClasses.sort((a, b) => {
+                  const subjectCompare = (a.subject || "").localeCompare(b.subject || "");
+                  if (subjectCompare !== 0) return subjectCompare;
+                  return (a.teacherName || "").localeCompare(b.teacherName || "");
+                });
+
+                if (displayedClasses.length === 0) {
+                  return (
+                    <div className="py-12 text-center text-slate-400 dark:text-slate-500 text-xs">
+                      {showOnlyStudentGrade
+                        ? `No classes matching ${selectedManageStudent.gradeLevel || selectedManageStudent.grade || "this grade"}. Uncheck filter to see all classes.`
+                        : "No classes created yet in the master schedule."}
+                    </div>
+                  );
+                }
+
+                return displayedClasses.map((c, idx) => {
                   const isEnrolled = Array.isArray(selectedManageStudent.enrolledClasses) && selectedManageStudent.enrolledClasses.includes(c.classTag);
                   return (
                     <div
@@ -2091,12 +2133,8 @@ export default function AdminDashboard() {
                       </button>
                     </div>
                   );
-                })
-              ) : (
-                <div className="py-12 text-center text-slate-400 dark:text-slate-500 text-xs">
-                  No classes created yet in the master schedule.
-                </div>
-              )}
+                });
+              })()}
             </div>
 
             {/* Modal Footer */}
