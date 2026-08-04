@@ -100,6 +100,11 @@ export default function ClassDashboard() {
   const [isVocabModalOpen, setIsVocabModalOpen] = useState(false);
   const [isGradingVocab, setIsGradingVocab] = useState(false);
 
+  // Graded Vocab Submissions Archive State (Tab 3 Middle Section)
+  const [gradedVocabSubmissions, setGradedVocabSubmissions] = useState([]);
+  const [gradedVocabDateFilter, setGradedVocabDateFilter] = useState(todayStr);
+  const [isGradedVocabLoading, setIsGradedVocabLoading] = useState(false);
+
   // Exams State (Tab 4)
   const [exams, setExams] = useState([]);
   const [isExamsLoading, setIsExamsLoading] = useState(false);
@@ -592,11 +597,45 @@ export default function ClassDashboard() {
       setIsPendingVocabLoading(false);
     });
 
+    // 3. Real-time Graded Student Vocab Submissions Archive Listener
+    setIsGradedVocabLoading(true);
+    const gradedVocabQuery = query(
+      collection(db, "vocab_submissions"),
+      where("status", "==", "graded")
+    );
+
+    const unsubGradedVocab = onSnapshot(gradedVocabQuery, (snap) => {
+      let items = snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(sub => 
+          sub.classId === classTag || 
+          sub.classId === classId || 
+          sub.rawClassId === classId ||
+          (sub.teacherId === user.id && (sub.classId.includes(classId) || sub.classId === classId))
+        );
+
+      if (gradedVocabDateFilter) {
+        items = items.filter(sub => sub.date === gradedVocabDateFilter);
+      } else {
+        const nowObj = new Date();
+        const sevenDaysAgoStr = new Date(nowObj.setDate(nowObj.getDate() - 7)).toISOString().split("T")[0];
+        items = items.filter(sub => !sub.date || sub.date >= sevenDaysAgoStr);
+      }
+
+      items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      setGradedVocabSubmissions(items);
+      setIsGradedVocabLoading(false);
+    }, (e) => {
+      console.error("Error listening to graded vocab submissions archive:", e);
+      setIsGradedVocabLoading(false);
+    });
+
     return () => {
       unsubHistory();
       unsubPendingVocab();
+      unsubGradedVocab();
     };
-  }, [activeTab, classId, historyRangeFilter, historyDateFilter, classInfo, user]);
+  }, [activeTab, classId, historyRangeFilter, historyDateFilter, gradedVocabDateFilter, classInfo, user]);
 
   const loadClassHistory = () => {};
   const loadPendingVocabSubmissions = () => {};
@@ -621,10 +660,10 @@ export default function ClassDashboard() {
         feedback: vocabFeedbackInput.trim()
       });
 
+      alert("Feedback Updated!");
       setIsVocabModalOpen(false);
       setSelectedVocabSub(null);
       setVocabFeedbackInput("");
-      loadPendingVocabSubmissions();
     } catch (err) {
       alert("Failed to save grade feedback: " + err.message);
     } finally {
@@ -1382,6 +1421,92 @@ export default function ClassDashboard() {
                 <CheckCircle className="h-6 w-6 text-emerald-500" />
                 <span className="font-bold text-slate-700 dark:text-slate-300">All submissions graded!</span>
                 <span>No pending vocabulary submissions for this classroom.</span>
+              </div>
+            )}
+          </div>
+
+          {/* Middle Section: Graded Submissions Archive */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
+                  Graded Submissions Archive
+                </h2>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  View previously graded vocabulary homework and edit teacher feedback.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <input
+                  type="date"
+                  value={gradedVocabDateFilter}
+                  onChange={(e) => setGradedVocabDateFilter(e.target.value)}
+                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                {gradedVocabDateFilter ? (
+                  <button
+                    type="button"
+                    onClick={() => setGradedVocabDateFilter("")}
+                    className="text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline cursor-pointer"
+                  >
+                    Clear Filter (Last 7 Days)
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+                    Showing Last 7 Days
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {isGradedVocabLoading ? (
+              <div className="py-8 text-center text-xs text-slate-400">Loading graded submissions archive...</div>
+            ) : gradedVocabSubmissions.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {gradedVocabSubmissions.map((item) => (
+                  <div key={item.id} className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-sm text-slate-800 dark:text-slate-100">{item.studentName}</span>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[10px] font-mono text-slate-400">📅 {item.date}</span>
+                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded border border-emerald-100 dark:border-emerald-800">
+                          Graded
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Submitted Sentences:</span>
+                      <div className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60 line-clamp-2 italic">
+                        "{item.sentences}"
+                      </div>
+                    </div>
+
+                    {item.feedback && (
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Teacher Feedback:</span>
+                        <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-200 bg-emerald-50/60 dark:bg-emerald-950/30 p-2 rounded-lg border border-emerald-100 dark:border-emerald-900">
+                          "{item.feedback}"
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        onClick={() => handleOpenVocabModal(item)}
+                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-brand-600 hover:text-white dark:hover:bg-brand-600 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        <span>Edit Feedback</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-slate-400 text-xs italic">
+                No graded submissions found for the selected date filter.
               </div>
             )}
           </div>

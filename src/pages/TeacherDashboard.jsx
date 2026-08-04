@@ -46,6 +46,11 @@ export default function TeacherDashboard() {
   const [isDiaryModalOpen, setIsDiaryModalOpen] = useState(false);
   const [isGradingDiary, setIsGradingDiary] = useState(false);
 
+  // Graded Diaries Archive State
+  const [gradedDiaries, setGradedDiaries] = useState([]);
+  const [gradedDiaryDateFilter, setGradedDiaryDateFilter] = useState(todayStr);
+  const [isGradedDiariesLoading, setIsGradedDiariesLoading] = useState(false);
+
   // Parse classes from teacher assignments
   useEffect(() => {
     if (!user) return;
@@ -53,41 +58,35 @@ export default function TeacherDashboard() {
     const parsedClasses = (user.assignments || []).map((asg) => {
       const gradeVal = asg.grade || asg.gradeLevel || "Grade 1";
       const classSlug = `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
-      
-      const gradeNum = parseInt(gradeVal.replace(/\D/g, ""), 10);
-      let section = "Elementary";
-      if (!isNaN(gradeNum)) {
-        if (gradeNum > 8) section = "High School";
-        else if (gradeNum > 5) section = "Middle School";
-      }
-
       return {
         id: classSlug,
-        name: `${gradeVal} - ${asg.subject}`,
+        name: `${gradeVal} ${asg.subject}`,
         grade: gradeVal,
         subject: asg.subject,
-        startTime: asg.startTime || "",
-        endTime: asg.endTime || "",
-        daysOfWeek: asg.daysOfWeek || [],
-        section
+        section: asg.room || "Main Room",
+        startTime: asg.startTime || "09:00",
+        endTime: asg.endTime || "10:00",
+        scheduleDays: asg.days || []
       };
     });
 
     setTeacherClasses(parsedClasses);
   }, [user]);
 
-  // Load pending diaries if user is a Math teacher (Real-time onSnapshot)
+  // Load pending & graded diaries if user is a Math teacher (Real-time onSnapshot)
   useEffect(() => {
     if (!isMathTeacher || !user) return;
 
     setIsPendingDiariesLoading(true);
+    setIsGradedDiariesLoading(true);
 
-    const q = query(
+    // 1. Pending Diaries Listener
+    const qPending = query(
       collection(db, "diaries"),
       where("status", "==", "pending")
     );
 
-    const unsubscribe = onSnapshot(q, (snap) => {
+    const unsubPending = onSnapshot(qPending, (snap) => {
       const items = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(d => d.mathTeacherId === user.id || d.mathTeacherId === "unassigned" || !d.mathTeacherId);
@@ -98,8 +97,38 @@ export default function TeacherDashboard() {
       setIsPendingDiariesLoading(false);
     });
 
-    return () => unsubscribe();
-  }, [isMathTeacher, user]);
+    // 2. Graded Diaries Archive Listener
+    const qGraded = query(
+      collection(db, "diaries"),
+      where("status", "==", "graded")
+    );
+
+    const unsubGraded = onSnapshot(qGraded, (snap) => {
+      let items = snap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(d => d.mathTeacherId === user.id || d.mathTeacherId === "unassigned" || !d.mathTeacherId);
+
+      if (gradedDiaryDateFilter) {
+        items = items.filter(d => d.date === gradedDiaryDateFilter);
+      } else {
+        const nowObj = new Date();
+        const sevenDaysAgoStr = new Date(nowObj.setDate(nowObj.getDate() - 7)).toISOString().split("T")[0];
+        items = items.filter(d => !d.date || d.date >= sevenDaysAgoStr);
+      }
+
+      items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      setGradedDiaries(items);
+      setIsGradedDiariesLoading(false);
+    }, (e) => {
+      console.error("Error listening to graded diaries archive:", e);
+      setIsGradedDiariesLoading(false);
+    });
+
+    return () => {
+      unsubPending();
+      unsubGraded();
+    };
+  }, [isMathTeacher, gradedDiaryDateFilter, user]);
 
   const loadPendingDiaries = () => {};
 
@@ -123,10 +152,10 @@ export default function TeacherDashboard() {
         feedback: diaryFeedbackText.trim()
       });
 
+      alert("Feedback Updated!");
       setIsDiaryModalOpen(false);
       setSelectedDiary(null);
       setDiaryFeedbackText("");
-      loadPendingDiaries();
     } catch (err) {
       alert("Failed to grade diary: " + err.message);
     } finally {
@@ -462,6 +491,87 @@ export default function TeacherDashboard() {
                 <CheckCircle2 className="h-8 w-8 text-emerald-500" />
                 <span className="font-bold text-slate-700 dark:text-slate-300">All student diaries reviewed!</span>
                 <span className="text-xs text-slate-400">There are no pending diary submissions awaiting grading.</span>
+              </div>
+            )}
+          </div>
+
+          {/* Graded Diaries Archive */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-heading">
+                  Graded Diaries Archive
+                </h2>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  View previously reviewed student daily diaries and edit teacher feedback.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <input
+                  type="date"
+                  value={gradedDiaryDateFilter}
+                  onChange={(e) => setGradedDiaryDateFilter(e.target.value)}
+                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
+                />
+                {gradedDiaryDateFilter ? (
+                  <button
+                    type="button"
+                    onClick={() => setGradedDiaryDateFilter("")}
+                    className="text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline cursor-pointer"
+                  >
+                    Clear Filter (Last 7 Days)
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+                    Showing Last 7 Days
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {isGradedDiariesLoading ? (
+              <div className="py-12 text-center text-xs text-slate-400">Loading graded diaries archive...</div>
+            ) : gradedDiaries.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50/50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 uppercase tracking-wider font-bold text-[10px]">
+                    <tr>
+                      <th className="px-6 py-3">Student Name</th>
+                      <th className="px-6 py-3">Date</th>
+                      <th className="px-6 py-3">Submitted Entry</th>
+                      <th className="px-6 py-3">Teacher Feedback</th>
+                      <th className="px-6 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                    {gradedDiaries.map((diary) => (
+                      <tr key={diary.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/30">
+                        <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">{diary.studentName}</td>
+                        <td className="px-6 py-4 font-mono text-slate-500">{diary.date}</td>
+                        <td className="px-6 py-4 text-slate-600 dark:text-slate-300 line-clamp-1 italic max-w-xs">
+                          "{diary.text}"
+                        </td>
+                        <td className="px-6 py-4 text-emerald-700 dark:text-emerald-300 max-w-xs truncate">
+                          "{diary.feedback || "No feedback"}"
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            onClick={() => handleOpenDiaryModal(diary)}
+                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-brand-600 hover:text-white text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            <span>Edit Feedback</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-12 text-center text-slate-400 text-xs italic">
+                No graded diaries found for the selected date filter.
               </div>
             )}
           </div>
