@@ -14,7 +14,8 @@ import {
   Save, 
   Clock,
   Sparkles,
-  BookOpen
+  BookOpen,
+  ShieldCheck
 } from "lucide-react";
 
 export default function AttendanceLog() {
@@ -29,6 +30,7 @@ export default function AttendanceLog() {
   const [attendance, setAttendance] = useState({});
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(false);
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false);
 
   // Lesson Details State
   const [topic, setTopic] = useState("");
@@ -230,8 +232,9 @@ export default function AttendanceLog() {
   };
 
   const handleSave = async () => {
-    if (!selectedClassId || !activeClass) return;
+    if (!selectedClassId || !activeClass || isSavingAttendance) return;
     
+    setIsSavingAttendance(true);
     try {
       const docId = `${selectedClassId}-${date}`;
       const recordsArray = students.map(s => {
@@ -268,6 +271,8 @@ export default function AttendanceLog() {
       }, 3000);
     } catch (err) {
       alert("Failed to save attendance: " + err.message);
+    } finally {
+      setIsSavingAttendance(false);
     }
   };
 
@@ -489,6 +494,12 @@ export default function AttendanceLog() {
                   All Present
                 </button>
                 <button
+                  onClick={() => handleMarkAll("excused")}
+                  className="text-[10px] font-bold bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 border border-slate-200 dark:border-slate-700 hover:border-indigo-200 dark:hover:border-indigo-800/50 rounded-lg px-2.5 py-1.5 transition-all shadow-sm cursor-pointer"
+                >
+                  All Excused
+                </button>
+                <button
                   onClick={() => handleMarkAll("absent")}
                   className="text-[10px] font-bold bg-white dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 border border-slate-200 dark:border-slate-700 hover:border-red-200 dark:hover:border-red-800/50 rounded-lg px-2.5 py-1.5 transition-all shadow-sm cursor-pointer"
                 >
@@ -553,11 +564,11 @@ export default function AttendanceLog() {
                             onClick={() => handleStatusChange(student.id, "excused")}
                             className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                               currentStatus === "excused"
-                                ? "bg-slate-400 text-white shadow-sm"
+                                ? "bg-indigo-600 text-white shadow-sm"
                                 : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                             }`}
                           >
-                            <Clock className="h-3.5 w-3.5" />
+                            <ShieldCheck className="h-3.5 w-3.5" />
                             <span className="hidden sm:inline">Excused</span>
                           </button>
 
@@ -645,10 +656,15 @@ export default function AttendanceLog() {
 
               <button
                 onClick={handleSave}
-                className="w-full mt-6 inline-flex items-center justify-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 py-2.5 text-sm font-semibold text-white shadow-md dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 transition-all hover:bg-slate-800 dark:hover:bg-brand-500 focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] cursor-pointer animate-fade-in"
+                disabled={isSavingAttendance}
+                className={`w-full mt-6 inline-flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-semibold text-white shadow-md dark:shadow-lg dark:shadow-blue-500/40 transition-all focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] cursor-pointer animate-fade-in ${
+                  isSavingAttendance
+                    ? "bg-slate-400 text-white cursor-not-allowed"
+                    : "bg-slate-900 dark:bg-brand-600 hover:bg-slate-800 dark:hover:bg-brand-500"
+                }`}
               >
                 <Save className="h-4 w-4" />
-                <span>Save Attendance</span>
+                <span>{isSavingAttendance ? "Saving..." : "Save Attendance"}</span>
               </button>
             </div>
 

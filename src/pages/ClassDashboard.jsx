@@ -10,6 +10,7 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
+  deleteDoc,
   arrayUnion, 
   arrayRemove,
   addDoc,
@@ -38,7 +39,8 @@ import {
   FileText,
   Trash2,
   Plus,
-  ListChecks
+  ListChecks,
+  ShieldCheck
 } from "lucide-react";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
@@ -80,6 +82,7 @@ export default function ClassDashboard() {
   const [attendanceSearchQuery, setAttendanceSearchQuery] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
+  const [isSavingAttendance, setIsSavingAttendance] = useState(false);
 
   // Vocabularies & Submissions State (Tab 3)
   const [classSessionsHistory, setClassSessionsHistory] = useState([]);
@@ -351,8 +354,9 @@ export default function ClassDashboard() {
   };
 
   const handleSaveAttendance = async () => {
-    if (!classId) return;
+    if (!classId || isSavingAttendance) return;
 
+    setIsSavingAttendance(true);
     try {
       const docId = `${classId}-${attendanceDate}`;
       const recordsArray = Object.keys(attendance).map(studentId => {
@@ -377,8 +381,63 @@ export default function ClassDashboard() {
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
+      if (activeTab === "vocabularies") loadClassHistory();
     } catch (err) {
       alert("Failed to save attendance: " + err.message);
+    } finally {
+      setIsSavingAttendance(false);
+    }
+  };
+
+  // Session Deletion UI & Cleanup Query (Firestore Cascading Delete)
+  const handleDeleteSession = async (sessionToDelete) => {
+    if (!sessionToDelete) return;
+
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this log? This will remove the attendance record and withdraw the vocabulary assignment from the students."
+    );
+    if (!confirmed) return;
+
+    try {
+      const sessionDate = sessionToDelete.date;
+      const targetClassTag = sessionToDelete.classId || `${user.id}_${classId}`;
+
+      // Step A: Query matching student vocab submissions and delete them
+      const vocabQuery = query(
+        collection(db, "vocab_submissions"),
+        where("date", "==", sessionDate)
+      );
+      const vocabSnap = await getDocs(vocabQuery);
+
+      const deletePromises = [];
+      vocabSnap.docs.forEach(d => {
+        const subData = d.data();
+        const matchesClass = subData.classId === targetClassTag || 
+                             subData.classId === classId || 
+                             subData.rawClassId === classId || 
+                             d.id.includes(sessionDate);
+        if (matchesClass) {
+          deletePromises.push(deleteDoc(doc(db, "vocab_submissions", d.id)));
+        }
+      });
+      await Promise.all(deletePromises);
+
+      // Step B: Delete the session document from sessions collection
+      let sessionDocId = sessionToDelete.id;
+      if (!sessionDocId) {
+        sessionDocId = `${sessionToDelete.classId || classId}-${sessionDate}`;
+      }
+
+      await deleteDoc(doc(db, "sessions", sessionDocId)).catch(async () => {
+        const fallbackTagDocId = `${user.id}_${classId}-${sessionDate}`;
+        await deleteDoc(doc(db, "sessions", fallbackTagDocId)).catch(() => {});
+      });
+
+      // UI State Sync: Instantly remove deleted session from local state
+      setClassSessionsHistory(prev => prev.filter(s => s.date !== sessionDate || s.classId !== sessionToDelete.classId));
+      loadPendingVocabSubmissions();
+    } catch (err) {
+      alert("Failed to delete lesson log: " + err.message);
     }
   };
 
@@ -1079,6 +1138,12 @@ export default function ClassDashboard() {
                       All Present
                     </button>
                     <button
+                      onClick={() => handleMarkAll("excused")}
+                      className="text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-lg px-2.5 py-1 hover:bg-indigo-100 transition-all cursor-pointer"
+                    >
+                      All Excused
+                    </button>
+                    <button
                       onClick={() => handleMarkAll("absent")}
                       className="text-[10px] font-bold bg-red-50 text-red-700 border border-red-100 rounded-lg px-2.5 py-1 hover:bg-red-100 transition-all cursor-pointer"
                     >
@@ -1123,6 +1188,15 @@ export default function ClassDashboard() {
                               <span>Late</span>
                             </button>
                             <button
+                              onClick={() => handleStatusChange(student.id, "excused")}
+                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                currentStatus === "excused" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              <span>Excused</span>
+                            </button>
+                            <button
                               onClick={() => handleStatusChange(student.id, "absent")}
                               className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                 currentStatus === "absent" ? "bg-red-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
@@ -1163,6 +1237,10 @@ export default function ClassDashboard() {
                     <span>Late</span>
                     <span className="font-bold">{attendanceStats.late}</span>
                   </div>
+                  <div className="flex justify-between border-b pb-2 text-indigo-600 dark:text-indigo-400">
+                    <span>Excused</span>
+                    <span className="font-bold">{attendanceStats.excused}</span>
+                  </div>
                   <div className="flex justify-between border-b pb-2 text-red-600">
                     <span>Absent</span>
                     <span className="font-bold">{attendanceStats.absent}</span>
@@ -1175,10 +1253,15 @@ export default function ClassDashboard() {
 
                 <button
                   onClick={handleSaveAttendance}
-                  className="w-full inline-flex items-center justify-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white py-2.5 text-sm font-bold shadow-md transition-all cursor-pointer"
+                  disabled={isSavingAttendance}
+                  className={`w-full inline-flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-bold shadow-md transition-all cursor-pointer ${
+                    isSavingAttendance
+                      ? "bg-slate-400 text-white cursor-not-allowed"
+                      : "bg-brand-600 hover:bg-brand-700 text-white"
+                  }`}
                 >
                   <Save className="h-4 w-4" />
-                  <span>Save Attendance</span>
+                  <span>{isSavingAttendance ? "Saving..." : "Save Attendance"}</span>
                 </button>
               </div>
             </div>
@@ -1337,9 +1420,19 @@ export default function ClassDashboard() {
                         <span className="text-xs font-bold text-brand-600 dark:text-brand-400 font-mono">
                           📅 {session.date}
                         </span>
-                        <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-300">
-                          Pages: {displayPages || "N/A"}
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-300">
+                            Pages: {displayPages || "N/A"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSession(session)}
+                            className="p-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 dark:hover:border-red-800/50 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
+                            title="Delete Log"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       <div>
