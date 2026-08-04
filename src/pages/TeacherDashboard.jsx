@@ -58,6 +58,8 @@ export default function TeacherDashboard() {
     const parsedClasses = (user.assignments || []).map((asg) => {
       const gradeVal = asg.grade || asg.gradeLevel || "Grade 1";
       const classSlug = `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
+      const daysArr = asg.daysOfWeek || asg.scheduleDays || asg.days || [];
+
       return {
         id: classSlug,
         name: `${gradeVal} ${asg.subject}`,
@@ -66,7 +68,8 @@ export default function TeacherDashboard() {
         section: asg.room || "Main Room",
         startTime: asg.startTime || "09:00",
         endTime: asg.endTime || "10:00",
-        scheduleDays: asg.days || []
+        daysOfWeek: daysArr,
+        scheduleDays: daysArr
       };
     });
 
@@ -222,13 +225,28 @@ export default function TeacherDashboard() {
         const todayRecs = allSessions.filter(r => r.date === todayStr);
         setTodaySessions(todayRecs);
 
-        const todayScheduledClasses = teacherClasses.filter(c => c.daysOfWeek && c.daysOfWeek.includes(todayWeekday));
+        const norm = (s) => (s || "").toString().toLowerCase().trim();
+
+        const todayScheduledClasses = teacherClasses.filter(c => {
+          const days = c.daysOfWeek || c.scheduleDays || [];
+          if (!Array.isArray(days) || days.length === 0) return true;
+          return days.some(d => norm(d) === norm(todayWeekday));
+        });
 
         const pendingClassesCount = todayScheduledClasses.filter(assignment => {
           const hasSession = todayRecs.some(session => {
             const sessionGrade = session.gradeLevel || session.grade;
-            const matchesGradeSubject = sessionGrade === assignment.grade && session.subject === assignment.subject;
-            const matchesClassId = session.classId === assignment.id || session.classId === `${user?.id}_${assignment.id}`;
+            const normSessionGrade = norm(sessionGrade);
+            const normAssignGrade = norm(assignment.grade);
+            const normSessionSubj = norm(session.subject);
+            const normAssignSubj = norm(assignment.subject);
+            const normClassId = norm(session.classId);
+            const normTargetTag = norm(`${user?.id}_${assignment.id}`);
+            const normTargetSlug = norm(assignment.id);
+
+            const matchesGradeSubject = normSessionGrade && normSessionSubj && normSessionGrade === normAssignGrade && normSessionSubj === normAssignSubj;
+            const matchesClassId = normClassId && (normClassId === normTargetSlug || normClassId === normTargetTag || normClassId.endsWith(`_${normTargetSlug}`));
+
             return matchesClassId || matchesGradeSubject;
           });
           return !hasSession;
@@ -369,17 +387,25 @@ export default function TeacherDashboard() {
     fetchDashboardState();
   }, [teacherClasses, todayStr]);
 
+  const norm = (s) => (s || "").toString().toLowerCase().trim();
+
   const todaysTimetable = teacherClasses
-    .filter(c => c.daysOfWeek && c.daysOfWeek.includes(todayWeekday))
+    .filter(c => {
+      const days = c.daysOfWeek || c.scheduleDays || [];
+      if (!Array.isArray(days) || days.length === 0) return true;
+      return days.some(d => norm(d) === norm(todayWeekday));
+    })
     .sort((a, b) => {
       if (!a.startTime) return 1;
       if (!b.startTime) return -1;
       return a.startTime.localeCompare(b.startTime);
     });
 
-  const unscheduledOrOtherClasses = teacherClasses.filter(c => 
-    !c.daysOfWeek || c.daysOfWeek.length === 0 || !c.daysOfWeek.includes(todayWeekday)
-  );
+  const unscheduledOrOtherClasses = teacherClasses.filter(c => {
+    const days = c.daysOfWeek || c.scheduleDays || [];
+    if (!Array.isArray(days) || days.length === 0) return false;
+    return !days.some(d => norm(d) === norm(todayWeekday));
+  });
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -652,8 +678,16 @@ export default function TeacherDashboard() {
                   {todaysTimetable.map((classItem) => {
                     const isLogged = todaySessions.some(session => {
                       const sessionGrade = session.gradeLevel || session.grade;
-                      const matchesGradeSubject = sessionGrade === classItem.grade && session.subject === classItem.subject;
-                      const matchesClassId = session.classId === classItem.id || session.classId === `${user?.id}_${classItem.id}`;
+                      const normSessionGrade = norm(sessionGrade);
+                      const normClassGrade = norm(classItem.grade);
+                      const normSessionSubj = norm(session.subject);
+                      const normClassSubj = norm(classItem.subject);
+                      const normClassId = norm(session.classId);
+                      const normTargetTag = norm(`${user?.id}_${classItem.id}`);
+                      const normTargetSlug = norm(classItem.id);
+
+                      const matchesGradeSubject = normSessionGrade && normSessionSubj && normSessionGrade === normClassGrade && normSessionSubj === normClassSubj;
+                      const matchesClassId = normClassId && (normClassId === normTargetSlug || normClassId === normTargetTag || normClassId.endsWith(`_${normTargetSlug}`));
                       return matchesClassId || matchesGradeSubject;
                     });
 
