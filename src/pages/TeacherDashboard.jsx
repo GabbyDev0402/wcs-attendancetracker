@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { db } from "../firebase/config";
-import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { formatStudentName, formatTime12Hour, formatScheduleString } from "../utils/helpers";
 import { 
@@ -76,32 +76,32 @@ export default function TeacherDashboard() {
     setTeacherClasses(parsedClasses);
   }, [user]);
 
-  // Load pending diaries if user is a Math teacher
+  // Load pending diaries if user is a Math teacher (Real-time onSnapshot)
   useEffect(() => {
-    if (isMathTeacher) {
-      loadPendingDiaries();
-    }
-  }, [isMathTeacher]);
+    if (!isMathTeacher || !user) return;
 
-  const loadPendingDiaries = async () => {
-    if (!user) return;
     setIsPendingDiariesLoading(true);
-    try {
-      const q = query(
-        collection(db, "diaries"),
-        where("status", "==", "pending")
-      );
-      const snap = await getDocs(q);
+
+    const q = query(
+      collection(db, "diaries"),
+      where("status", "==", "pending")
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
       const items = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(d => d.mathTeacherId === user.id || d.mathTeacherId === "unassigned" || !d.mathTeacherId);
       setPendingDiaries(items);
-    } catch (e) {
-      console.error("Error loading pending diaries:", e);
-    } finally {
       setIsPendingDiariesLoading(false);
-    }
-  };
+    }, (e) => {
+      console.error("Error listening to pending diaries:", e);
+      setIsPendingDiariesLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [isMathTeacher, user]);
+
+  const loadPendingDiaries = () => {};
 
   const handleOpenDiaryModal = (diary) => {
     setSelectedDiary(diary);

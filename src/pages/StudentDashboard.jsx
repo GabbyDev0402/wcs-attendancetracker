@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
-import { collection, query, where, getDocs, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { formatStudentName } from "../utils/helpers";
 import { 
   GraduationCap, 
@@ -43,41 +43,45 @@ export default function StudentDashboard() {
   const [isSubmittingDiary, setIsSubmittingDiary] = useState(false);
   const [diarySuccessMsg, setDiarySuccessMsg] = useState("");
 
+  // Real-time Listeners for Daily Diary & Attendance Metrics
   useEffect(() => {
     if (!user) return;
-    loadStudentData();
-    loadDiaryData();
-  }, [user]);
-
-  // Load attendance logs and compute real-time attendance metrics
-  const loadStudentData = async () => {
-    if (!user) return;
     setIsLoading(true);
-    try {
-      // 1. Extract unique Teacher UIDs from enrolledClasses, enrolledTeachers, teacherId
-      const teacherIds = [...new Set((user?.enrolledClasses || []).map(tag => tag.split('_')[0]))];
-      if (Array.isArray(user?.enrolledTeachers)) {
-        user.enrolledTeachers.forEach(id => { if (id) teacherIds.push(id); });
-      }
-      if (user?.teacherId && user.teacherId !== "unassigned") {
-        teacherIds.push(user.teacherId);
-      }
-      const uniqueTeacherIds = [...new Set(teacherIds)].filter(Boolean);
 
-      let fetchedSessions = [];
-      if (uniqueTeacherIds.length > 0) {
-        const q = query(
-          collection(db, "sessions"),
-          where("teacherId", "in", uniqueTeacherIds.slice(0, 10))
-        );
-        const snap = await getDocs(q);
-        fetchedSessions = snap.docs.map(doc => doc.data());
+    // 1. Real-time Daily Diary Listener
+    const diaryDocId = `${user.id}-${todayStr}`;
+    const unsubDiary = onSnapshot(doc(db, "diaries", diaryDocId), (docSnap) => {
+      if (docSnap.exists()) {
+        setTodayDiary(docSnap.data());
       } else {
-        const snap = await getDocs(collection(db, "sessions"));
-        fetchedSessions = snap.docs.map(doc => doc.data());
+        setTodayDiary(null);
       }
+    }, (err) => {
+      console.error("Error listening to diary:", err);
+    });
 
-      // 2. Loop through sessions and calculate attendance for current student
+    // 2. Real-time Sessions / Attendance Listener
+    const teacherIds = [...new Set((user?.enrolledClasses || []).map(tag => tag.split('_')[0]))];
+    if (Array.isArray(user?.enrolledTeachers)) {
+      user.enrolledTeachers.forEach(id => { if (id) teacherIds.push(id); });
+    }
+    if (user?.teacherId && user.teacherId !== "unassigned") {
+      teacherIds.push(user.teacherId);
+    }
+    const uniqueTeacherIds = [...new Set(teacherIds)].filter(Boolean);
+
+    let sessionsQuery;
+    if (uniqueTeacherIds.length > 0) {
+      sessionsQuery = query(
+        collection(db, "sessions"),
+        where("teacherId", "in", uniqueTeacherIds.slice(0, 10))
+      );
+    } else {
+      sessionsQuery = collection(db, "sessions");
+    }
+
+    const unsubSessions = onSnapshot(sessionsQuery, (snap) => {
+      const fetchedSessions = snap.docs.map(doc => doc.data());
       let present = 0, late = 0, absent = 0, excused = 0;
       const studentLogsList = [];
 
@@ -99,25 +103,6 @@ export default function StudentDashboard() {
         }
       });
 
-      // 3. Fallback check on attendanceLogs collection if sessions yields 0 records
-      if (studentLogsList.length === 0) {
-        try {
-          const qLog = query(collection(db, "attendanceLogs"), where("studentId", "==", user.id));
-          const snapLog = await getDocs(qLog);
-          snapLog.docs.forEach(docSnap => {
-            const data = docSnap.data();
-            const st = (data.status || "").toLowerCase();
-            if (st === "present") present++;
-            else if (st === "late") late++;
-            else if (st === "absent") absent++;
-            else if (st === "excused") excused++;
-            studentLogsList.push(data);
-          });
-        } catch (e) {
-          console.warn("Legacy attendanceLogs fallback warning:", e);
-        }
-      }
-
       const totalSessions = present + late + absent + excused;
       const averageScore = totalSessions > 0 ? Math.round(((present + late + excused) / totalSessions) * 100) : 100;
 
@@ -131,29 +116,17 @@ export default function StudentDashboard() {
       });
 
       setAttendanceRecords(studentLogsList.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)));
-    } catch (e) {
-      console.warn("Error loading student attendance data:", e);
-    } finally {
       setIsLoading(false);
-    }
-  };
+    }, (err) => {
+      console.warn("Error listening to sessions:", err);
+      setIsLoading(false);
+    });
 
-  // Load Today's Daily Diary
-  const loadDiaryData = async () => {
-    if (!user) return;
-    try {
-      const docId = `${user.id}-${todayStr}`;
-      const docSnap = await getDoc(doc(db, "diaries", docId));
-
-      if (docSnap.exists()) {
-        setTodayDiary(docSnap.data());
-      } else {
-        setTodayDiary(null);
-      }
-    } catch (e) {
-      console.error("Error loading diary data:", e);
-    }
-  };
+    return () => {
+      unsubDiary();
+      unsubSessions();
+    };
+  }, [user]);
 
   // Handle Submit Daily Diary
   const handleSubmitDiary = async (e) => {

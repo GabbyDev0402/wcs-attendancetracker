@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot } from "firebase/firestore";
 import { formatStudentName } from "../utils/helpers";
 import { 
   ArrowLeft,
@@ -59,10 +59,70 @@ export default function StudentClassDashboard() {
   const displayTitle = formatTitle(extractedClassId);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !targetClassTag) return;
     loadTeacherInfo();
-    loadClassVocabData();
+    setIsLoading(true);
+
+    // 1. Real-time Sessions Listener (Vocab Assignments)
+    const unsubSessions = onSnapshot(collection(db, "sessions"), (sessionsSnap) => {
+      const rawSessions = sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const relevantSessions = rawSessions.filter((s) => {
+        const hasVocab = s.vocabularyWords && s.vocabularyWords.trim().length > 0;
+        const sessionClassTag = `${s.teacherId}_${s.classId}`;
+
+        const matchesExactTag = sessionClassTag === targetClassTag;
+        const matchesClassId = s.classId === extractedClassId || s.classId === targetClassTag;
+        const matchesTeacher = extractedTeacherId ? s.teacherId === extractedTeacherId : true;
+
+        let isDateMatch = false;
+        if (vocabDateFilter) {
+          isDateMatch = s.date === vocabDateFilter;
+        } else {
+          const todayObj = new Date();
+          const sevenDaysAgo = new Date(todayObj.setDate(todayObj.getDate() - 7)).toISOString().split("T")[0];
+          isDateMatch = s.date >= sevenDaysAgo;
+        }
+
+        return hasVocab && (matchesExactTag || (matchesClassId && matchesTeacher)) && isDateMatch;
+      });
+
+      relevantSessions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      setVocabSessions(relevantSessions);
+      setIsLoading(false);
+    }, (e) => {
+      console.error("Error listening to class session data:", e);
+      setIsLoading(false);
+    });
+
+    // 2. Real-time Vocab Submissions Listener for Student
+    const vocabSubQuery = query(
+      collection(db, "vocab_submissions"),
+      where("studentId", "==", user.id)
+    );
+
+    const unsubSubmissions = onSnapshot(vocabSubQuery, (subSnap) => {
+      const submissionsMap = {};
+      subSnap.docs.forEach((doc) => {
+        const data = doc.data();
+        const sessionKey = `${data.rawClassId || data.classId}-${data.date}`;
+        submissionsMap[sessionKey] = data;
+        submissionsMap[data.classId] = data;
+        if (data.rawClassId) {
+          submissionsMap[data.rawClassId] = data;
+        }
+      });
+      setVocabSubmissionsMap(submissionsMap);
+    }, (e) => {
+      console.error("Error listening to vocab submissions:", e);
+    });
+
     loadExamsData();
+
+    return () => {
+      unsubSessions();
+      unsubSubmissions();
+    };
   }, [user, targetClassTag, vocabDateFilter]);
 
   // Load Published Exams & Student Submissions for this classroom
@@ -113,64 +173,6 @@ export default function StudentClassDashboard() {
       }
     } catch (e) {
       console.warn("Could not load teacher profile:", e);
-    }
-  };
-
-  // Load Class Vocabularies & Submissions for this specific classroom
-  const loadClassVocabData = async () => {
-    setIsLoading(true);
-    try {
-      const sessionsSnap = await getDocs(collection(db, "sessions"));
-      const rawSessions = sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      const relevantSessions = rawSessions.filter((s) => {
-        const hasVocab = s.vocabularyWords && s.vocabularyWords.trim().length > 0;
-        const sessionClassTag = `${s.teacherId}_${s.classId}`;
-
-        const matchesExactTag = sessionClassTag === targetClassTag;
-        const matchesClassId = s.classId === extractedClassId || s.classId === targetClassTag;
-        const matchesTeacher = extractedTeacherId ? s.teacherId === extractedTeacherId : true;
-
-        // Date filter
-        let isDateMatch = false;
-        if (vocabDateFilter) {
-          isDateMatch = s.date === vocabDateFilter;
-        } else {
-          // Default: Only show assignments from the last 7 days
-          const todayObj = new Date();
-          const sevenDaysAgo = new Date(todayObj.setDate(todayObj.getDate() - 7)).toISOString().split("T")[0];
-          isDateMatch = s.date >= sevenDaysAgo;
-        }
-
-        return hasVocab && (matchesExactTag || (matchesClassId && matchesTeacher)) && isDateMatch;
-      });
-
-      // Sort by date descending (newest first)
-      relevantSessions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-      setVocabSessions(relevantSessions);
-
-      // Check existing submissions
-      const submissionsMap = {};
-      for (const session of relevantSessions) {
-        const sessionKey = `${session.classId}-${session.date}`;
-        const subDocId = `${user.id}-${session.classId}-${session.date}`;
-        let subSnap = await getDoc(doc(db, "vocab_submissions", subDocId));
-
-        if (!subSnap.exists() && session.date === todayStr) {
-          const legacyDocId = `${user.id}-${session.classId}-${todayStr}`;
-          subSnap = await getDoc(doc(db, "vocab_submissions", legacyDocId));
-        }
-
-        if (subSnap.exists()) {
-          submissionsMap[sessionKey] = subSnap.data();
-          submissionsMap[session.classId] = subSnap.data();
-        }
-      }
-      setVocabSubmissionsMap(submissionsMap);
-    } catch (e) {
-      console.error("Error loading class vocabulary data:", e);
-    } finally {
-      setIsLoading(false);
     }
   };
 

@@ -11,6 +11,7 @@ import {
   setDoc, 
   updateDoc, 
   deleteDoc,
+  onSnapshot,
   arrayUnion, 
   arrayRemove,
   addDoc,
@@ -442,34 +443,27 @@ export default function ClassDashboard() {
   };
 
   // -------------------------------------------------------------
-  // TAB 3: VOCABULARIES & SUBMISSIONS LOGIC
+  // TAB 3: VOCABULARIES & SUBMISSIONS LOGIC (REAL-TIME SNAPSHOTS)
   // -------------------------------------------------------------
   useEffect(() => {
-    if (activeTab !== "vocabularies") return;
-    loadClassHistory();
-    loadPendingVocabSubmissions();
-  }, [activeTab, classId, historyRangeFilter, historyDateFilter, classInfo]);
+    if (activeTab !== "vocabularies" || !classId || !user) return;
 
-  const loadClassHistory = async () => {
-    if (!classId || !user) return;
     setIsHistoryLoading(true);
-    try {
-      const targetTag = `${user.id}_${classId}`.toLowerCase();
-      const targetSlug = classId.toLowerCase();
-      const targetGrade = (classInfo.grade || "").toLowerCase().trim();
-      const targetSubj = (classInfo.subject || "").toLowerCase().trim();
+    setIsPendingVocabLoading(true);
 
-      const q = query(
-        collection(db, "sessions"),
-        where("teacherId", "==", user.id)
-      );
-      const snap = await getDocs(q);
-      let historyDocs = snap.docs.map(d => d.data());
+    const targetTag = `${user.id}_${classId}`.toLowerCase();
+    const targetSlug = classId.toLowerCase();
+    const targetGrade = (classInfo.grade || "").toLowerCase().trim();
+    const targetSubj = (classInfo.subject || "").toLowerCase().trim();
 
-      if (historyDocs.length === 0) {
-        const snapAll = await getDocs(collection(db, "sessions"));
-        historyDocs = snapAll.docs.map(d => d.data());
-      }
+    // 1. Real-time Sessions Listener (Class History)
+    const sessionsQuery = query(
+      collection(db, "sessions"),
+      where("teacherId", "==", user.id)
+    );
+
+    const unsubHistory = onSnapshot(sessionsQuery, (snap) => {
+      let historyDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
       // Filter strictly for THIS classroom in V2 (case-insensitive)
       historyDocs = historyDocs.filter(d => {
@@ -483,15 +477,13 @@ export default function ClassDashboard() {
         return matchesTag || matchesGradeSubject;
       });
 
-      // Date Range Filtering with robust Date object parsing
+      // Date Range Filtering
       const now = new Date();
       now.setHours(23, 59, 59, 999);
 
       if (historyDateFilter) {
-        // Specific Date selected from calendar picker
         historyDocs = historyDocs.filter(d => d.date === historyDateFilter);
       } else if (historyRangeFilter === "7days") {
-        // Default: Last 7 Days (1 Week Window)
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(now.getDate() - 7);
         sevenDaysAgo.setHours(0, 0, 0, 0);
@@ -502,7 +494,6 @@ export default function ClassDashboard() {
           return !isNaN(sessionDate.getTime()) ? sessionDate >= sevenDaysAgo : true;
         });
       } else if (historyRangeFilter === "30days") {
-        // Last 30 Days
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(now.getDate() - 30);
         thirtyDaysAgo.setHours(0, 0, 0, 0);
@@ -513,27 +504,23 @@ export default function ClassDashboard() {
           return !isNaN(sessionDate.getTime()) ? sessionDate >= thirtyDaysAgo : true;
         });
       }
-      // "all": No cutoff date filter
 
       historyDocs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
       setClassSessionsHistory(historyDocs);
-    } catch (e) {
-      console.error("Error loading class session history:", e);
-    } finally {
       setIsHistoryLoading(false);
-    }
-  };
+    }, (e) => {
+      console.error("Error listening to class session history:", e);
+      setIsHistoryLoading(false);
+    });
 
-  const loadPendingVocabSubmissions = async () => {
-    if (!classId || !user) return;
-    setIsPendingVocabLoading(true);
-    try {
-      const classTag = `${user.id}_${classId}`;
-      const q = query(
-        collection(db, "vocab_submissions"),
-        where("status", "==", "pending")
-      );
-      const snap = await getDocs(q);
+    // 2. Real-time Pending Student Vocab Submissions Listener
+    const classTag = `${user.id}_${classId}`;
+    const pendingVocabQuery = query(
+      collection(db, "vocab_submissions"),
+      where("status", "==", "pending")
+    );
+
+    const unsubPendingVocab = onSnapshot(pendingVocabQuery, (snap) => {
       const items = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(sub => 
@@ -543,12 +530,20 @@ export default function ClassDashboard() {
           (sub.teacherId === user.id && (sub.classId.includes(classId) || sub.classId === classId))
         );
       setPendingVocabSubmissions(items);
-    } catch (e) {
-      console.error("Error loading pending vocab submissions:", e);
-    } finally {
       setIsPendingVocabLoading(false);
-    }
-  };
+    }, (e) => {
+      console.error("Error listening to pending vocab submissions:", e);
+      setIsPendingVocabLoading(false);
+    });
+
+    return () => {
+      unsubHistory();
+      unsubPendingVocab();
+    };
+  }, [activeTab, classId, historyRangeFilter, historyDateFilter, classInfo, user]);
+
+  const loadClassHistory = () => {};
+  const loadPendingVocabSubmissions = () => {};
 
   const handleOpenVocabModal = (sub) => {
     setSelectedVocabSub(sub);
