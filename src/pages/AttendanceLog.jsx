@@ -31,6 +31,7 @@ export default function AttendanceLog() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [isSavingAttendance, setIsSavingAttendance] = useState(false);
+  const [existingSessionId, setExistingSessionId] = useState(null);
 
   // Lesson Details State
   const [topic, setTopic] = useState("");
@@ -133,18 +134,23 @@ export default function AttendanceLog() {
       if (!selectedClassId || !date || students.length === 0) return;
       
       try {
-        const tagDocId = `${selectedClassId}-${date}`;
-        let docSnap = await getDoc(doc(db, "sessions", tagDocId));
-        
-        if (!docSnap.exists() && activeClass) {
-          const slugDocId = `${activeClass.slug}-${date}`;
-          docSnap = await getDoc(doc(db, "sessions", slugDocId));
-        }
-        
-        if (docSnap.exists()) {
-          const data = docSnap.data();
+        const targetClassTag = `${user?.id}_${selectedClassId}`;
+        const q = query(
+          collection(db, "sessions"),
+          where("date", "==", date)
+        );
+        const snap = await getDocs(q);
+
+        const foundDoc = snap.docs.find(d => {
+          const data = d.data();
+          return data.classId === selectedClassId || data.classId === targetClassTag || d.id === `${selectedClassId}-${date}` || d.id === `${targetClassTag}-${date}`;
+        });
+
+        if (foundDoc) {
+          setExistingSessionId(foundDoc.id);
+          const data = foundDoc.data();
           const parsedRecords = {};
-          
+
           (data.records || []).forEach(r => {
             const stId = r.studentId || r.id;
             if (r.status === "late") {
@@ -161,21 +167,53 @@ export default function AttendanceLog() {
               parsedRecords[stId] = "present";
             }
           });
-          
+
           setAttendance(parsedRecords);
           setTopic(data.topic || "");
           setPages(data.pages || data.page || "");
           setVocabularyWords(data.vocabularyWords || "");
         } else {
-          // Default all to "present"
-          const defaultState = {};
-          students.forEach(s => {
-            defaultState[s.id || s.uid] = "present";
-          });
-          setAttendance(defaultState);
-          setTopic("");
-          setPages("");
-          setVocabularyWords("");
+          // Direct doc lookup fallback
+          const tagDocId = `${selectedClassId}-${date}`;
+          let docSnap = await getDoc(doc(db, "sessions", tagDocId));
+          if (!docSnap.exists() && activeClass) {
+            const slugDocId = `${activeClass.slug}-${date}`;
+            docSnap = await getDoc(doc(db, "sessions", slugDocId));
+          }
+
+          if (docSnap.exists()) {
+            setExistingSessionId(docSnap.id);
+            const data = docSnap.data();
+            const parsedRecords = {};
+            (data.records || []).forEach(r => {
+              const stId = r.studentId || r.id;
+              if (r.status === "late") {
+                parsedRecords[stId] = { status: "late", minutesLate: r.minutesLate || 15 };
+              } else {
+                parsedRecords[stId] = r.status;
+              }
+            });
+            students.forEach(s => {
+              const stId = s.id || s.uid;
+              if (parsedRecords[stId] === undefined) {
+                parsedRecords[stId] = "present";
+              }
+            });
+            setAttendance(parsedRecords);
+            setTopic(data.topic || "");
+            setPages(data.pages || data.page || "");
+            setVocabularyWords(data.vocabularyWords || "");
+          } else {
+            setExistingSessionId(null);
+            const defaultState = {};
+            students.forEach(s => {
+              defaultState[s.id || s.uid] = "present";
+            });
+            setAttendance(defaultState);
+            setTopic("");
+            setPages("");
+            setVocabularyWords("");
+          }
         }
       } catch (err) {
         console.error("Error loading session attendance from Firestore:", err);
@@ -236,7 +274,6 @@ export default function AttendanceLog() {
     
     setIsSavingAttendance(true);
     try {
-      const docId = `${selectedClassId}-${date}`;
       const recordsArray = students.map(s => {
         const stId = s.id || s.uid;
         const val = attendance[stId] || "present";
@@ -250,7 +287,7 @@ export default function AttendanceLog() {
         };
       });
 
-      await setDoc(doc(db, "sessions", docId), {
+      const payload = {
         classId: selectedClassId,
         teacherId: user.id,
         grade: activeClass.grade,
@@ -263,7 +300,17 @@ export default function AttendanceLog() {
         vocabularyWords: vocabularyWords.trim(),
         records: recordsArray,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      };
+
+      if (existingSessionId) {
+        await updateDoc(doc(db, "sessions", existingSessionId), payload);
+        alert("Attendance Updated!");
+      } else {
+        const docId = `${selectedClassId}-${date}`;
+        await setDoc(doc(db, "sessions", docId), payload);
+        setExistingSessionId(docId);
+        alert("Attendance Logged!");
+      }
 
       setSaveSuccess(true);
       setTimeout(() => {
@@ -664,7 +711,13 @@ export default function AttendanceLog() {
                 }`}
               >
                 <Save className="h-4 w-4" />
-                <span>{isSavingAttendance ? "Saving..." : "Save Attendance"}</span>
+                <span>
+                  {isSavingAttendance
+                    ? "Saving..."
+                    : existingSessionId
+                    ? "Update Attendance"
+                    : "Save Attendance"}
+                </span>
               </button>
             </div>
 

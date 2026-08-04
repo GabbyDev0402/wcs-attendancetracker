@@ -84,6 +84,7 @@ export default function ClassDashboard() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
   const [isSavingAttendance, setIsSavingAttendance] = useState(false);
+  const [existingSessionId, setExistingSessionId] = useState(null);
 
   // Vocabularies & Submissions State (Tab 3)
   const [classSessionsHistory, setClassSessionsHistory] = useState([]);
@@ -268,6 +269,8 @@ export default function ClassDashboard() {
   // -------------------------------------------------------------
   // TAB 2: ATTENDANCE LOGIC
   // -------------------------------------------------------------
+  // TAB 2: ATTENDANCE LOGIC (UPSERT PATTERN)
+  // -------------------------------------------------------------
   useEffect(() => {
     if (activeTab !== "attendance") return;
     loadSessionRecord();
@@ -278,11 +281,21 @@ export default function ClassDashboard() {
 
     setIsAttendanceLoading(true);
     try {
-      const docId = `${classId}-${attendanceDate}`;
-      const docSnap = await getDoc(doc(db, "sessions", docId));
+      const targetClassTag = `${user?.id}_${classId}`;
+      const q = query(
+        collection(db, "sessions"),
+        where("date", "==", attendanceDate)
+      );
+      const snap = await getDocs(q);
 
-      if (docSnap.exists()) {
-        const data = docSnap.data();
+      const foundDoc = snap.docs.find(d => {
+        const data = d.data();
+        return data.classId === classId || data.classId === targetClassTag || d.id === `${classId}-${attendanceDate}` || d.id === `${targetClassTag}-${attendanceDate}`;
+      });
+
+      if (foundDoc) {
+        setExistingSessionId(foundDoc.id);
+        const data = foundDoc.data();
         const parsedRecords = {};
 
         (data.records || []).forEach(r => {
@@ -293,19 +306,52 @@ export default function ClassDashboard() {
           }
         });
 
+        // Default any remaining unrecorded enrolled students to "present"
+        classStudents.forEach(s => {
+          if (parsedRecords[s.id] === undefined) {
+            parsedRecords[s.id] = "present";
+          }
+        });
+
         setAttendance(parsedRecords);
         setTopic(data.topic || "");
         setPages(data.pages || data.page || "");
         setVocabularyWords(data.vocabularyWords || "");
       } else {
-        const defaultState = {};
-        classStudents.forEach(s => {
-          defaultState[s.id] = "present";
-        });
-        setAttendance(defaultState);
-        setTopic("");
-        setPages("");
-        setVocabularyWords("");
+        // Direct document ID lookup fallback
+        const docId = `${classId}-${attendanceDate}`;
+        const docSnap = await getDoc(doc(db, "sessions", docId));
+        if (docSnap.exists()) {
+          setExistingSessionId(docSnap.id);
+          const data = docSnap.data();
+          const parsedRecords = {};
+          (data.records || []).forEach(r => {
+            if (r.status === "late") {
+              parsedRecords[r.studentId] = { status: "late", minutesLate: r.minutesLate || 15 };
+            } else {
+              parsedRecords[r.studentId] = r.status;
+            }
+          });
+          classStudents.forEach(s => {
+            if (parsedRecords[s.id] === undefined) {
+              parsedRecords[s.id] = "present";
+            }
+          });
+          setAttendance(parsedRecords);
+          setTopic(data.topic || "");
+          setPages(data.pages || data.page || "");
+          setVocabularyWords(data.vocabularyWords || "");
+        } else {
+          setExistingSessionId(null);
+          const defaultState = {};
+          classStudents.forEach(s => {
+            defaultState[s.id] = "present";
+          });
+          setAttendance(defaultState);
+          setTopic("");
+          setPages("");
+          setVocabularyWords("");
+        }
       }
     } catch (err) {
       console.error("Error loading session attendance:", err);
@@ -359,7 +405,6 @@ export default function ClassDashboard() {
 
     setIsSavingAttendance(true);
     try {
-      const docId = `${classId}-${attendanceDate}`;
       const recordsArray = Object.keys(attendance).map(studentId => {
         const val = attendance[studentId];
         const status = typeof val === "object" ? val.status : val;
@@ -367,7 +412,7 @@ export default function ClassDashboard() {
         return { studentId, status, minutesLate };
       });
 
-      await setDoc(doc(db, "sessions", docId), {
+      const payload = {
         classId,
         date: attendanceDate,
         teacherId: user.id,
@@ -377,8 +422,19 @@ export default function ClassDashboard() {
         page: pages.trim(),
         pages: pages.trim(),
         vocabularyWords: vocabularyWords.trim(),
-        records: recordsArray
-      });
+        records: recordsArray,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (existingSessionId) {
+        await updateDoc(doc(db, "sessions", existingSessionId), payload);
+        alert("Attendance Updated!");
+      } else {
+        const docId = `${classId}-${attendanceDate}`;
+        await setDoc(doc(db, "sessions", docId), payload);
+        setExistingSessionId(docId);
+        alert("Attendance Logged!");
+      }
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -1256,7 +1312,13 @@ export default function ClassDashboard() {
                   }`}
                 >
                   <Save className="h-4 w-4" />
-                  <span>{isSavingAttendance ? "Saving..." : "Save Attendance"}</span>
+                  <span>
+                    {isSavingAttendance
+                      ? "Saving..."
+                      : existingSessionId
+                      ? "Update Attendance"
+                      : "Save Attendance"}
+                  </span>
                 </button>
               </div>
             </div>
