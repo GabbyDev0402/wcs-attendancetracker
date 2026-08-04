@@ -17,7 +17,8 @@ import {
   Pencil,
   X,
   MessageSquare,
-  FileText
+  FileText,
+  Bell
 } from "lucide-react";
 
 export default function TeacherDashboard() {
@@ -35,6 +36,9 @@ export default function TeacherDashboard() {
   const [todaySessions, setTodaySessions] = useState([]);
   const todayStr = new Date().toLocaleDateString("en-CA");
   const todayWeekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
+
+  // Real-time Pending Vocab Submissions by Class State
+  const [pendingVocabsByClass, setPendingVocabsByClass] = useState({});
 
   // Math Teacher Detection & Diary Grading State
   const isMathTeacher = (user?.assignments || []).some(a => (a.subject || '').toLowerCase().includes('math'));
@@ -132,6 +136,42 @@ export default function TeacherDashboard() {
       unsubGraded();
     };
   }, [isMathTeacher, gradedDiaryDateFilter, user]);
+
+  // Real-time Pending Vocab Submissions by Class Listener
+  useEffect(() => {
+    if (!user) return;
+
+    const qPendingVocabs = query(
+      collection(db, "vocab_submissions"),
+      where("status", "==", "pending")
+    );
+
+    const unsubPendingVocabs = onSnapshot(qPendingVocabs, (snap) => {
+      const counts = {};
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        const isMySubmission = data.teacherId === user.id || (data.classId && data.classId.startsWith(`${user.id}_`));
+        if (isMySubmission && data.classId) {
+          const cId = data.classId;
+          const rawId = data.rawClassId || (cId.includes("_") ? cId.split("_")[1] : cId);
+          
+          counts[cId] = (counts[cId] || 0) + 1;
+          if (rawId && rawId !== cId) {
+            counts[rawId] = (counts[rawId] || 0) + 1;
+          }
+          const fullTag = `${user.id}_${rawId}`;
+          if (fullTag !== cId) {
+            counts[fullTag] = (counts[fullTag] || 0) + 1;
+          }
+        }
+      });
+      setPendingVocabsByClass(counts);
+    }, (e) => {
+      console.error("Error listening to pending vocab submissions count:", e);
+    });
+
+    return () => unsubPendingVocabs();
+  }, [user]);
 
   const loadPendingDiaries = () => {};
 
@@ -695,6 +735,9 @@ export default function TeacherDashboard() {
                     const endTimeStr = formatTime12Hour(classItem.endTime);
                     const timeSpan = startTimeStr && endTimeStr ? `${startTimeStr} - ${endTimeStr}` : startTimeStr || "Scheduled Today";
 
+                    const classTag = `${user?.id}_${classItem.id}`;
+                    const pendingVocabCount = pendingVocabsByClass[classTag] || pendingVocabsByClass[classItem.id] || 0;
+
                     return (
                       <div 
                         key={classItem.id} 
@@ -723,9 +766,18 @@ export default function TeacherDashboard() {
                             {classItem.name}
                           </h3>
                           
-                          <div className="flex items-center space-x-2 text-xs text-brand-600 dark:text-brand-400 font-bold mt-3 bg-brand-50/60 dark:bg-brand-900/30 border border-brand-100/50 dark:border-brand-800/50 px-3 py-1.5 rounded-xl w-fit transition-colors">
-                            <Clock className="h-3.5 w-3.5 text-brand-500 dark:text-brand-400 shrink-0" />
-                            <span>{timeSpan}</span>
+                          <div className="flex flex-wrap items-center gap-2 mt-3">
+                            <div className="flex items-center space-x-2 text-xs text-brand-600 dark:text-brand-400 font-bold bg-brand-50/60 dark:bg-brand-900/30 border border-brand-100/50 dark:border-brand-800/50 px-3 py-1.5 rounded-xl w-fit transition-colors">
+                              <Clock className="h-3.5 w-3.5 text-brand-500 dark:text-brand-400 shrink-0" />
+                              <span>{timeSpan}</span>
+                            </div>
+
+                            {pendingVocabCount > 0 && (
+                              <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 text-xs font-bold transition-all animate-pulse">
+                                <Bell className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span>{pendingVocabCount} Pending Vocab{pendingVocabCount !== 1 ? "s" : ""}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -766,6 +818,9 @@ export default function TeacherDashboard() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {unscheduledOrOtherClasses.map((classItem) => {
+                      const classTag = `${user?.id}_${classItem.id}`;
+                      const pendingVocabCount = pendingVocabsByClass[classTag] || pendingVocabsByClass[classItem.id] || 0;
+
                       const isLogged = todaySessions.some(session => {
                         const sessionGrade = session.gradeLevel || session.grade;
                         const matchesGradeSubject = sessionGrade === classItem.grade && session.subject === classItem.subject;
@@ -777,16 +832,22 @@ export default function TeacherDashboard() {
                           key={classItem.id}
                           className="bg-slate-50/60 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800/60 rounded-xl p-4 flex items-center justify-between text-left hover:bg-white dark:hover:bg-slate-800 transition-all"
                         >
-                          <div>
+                          <div className="space-y-1">
                             <span className="font-bold text-xs text-slate-800 dark:text-slate-200 block transition-colors">{classItem.name}</span>
-                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold block mt-0.5 transition-colors">
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold block transition-colors">
                               {formatScheduleString(classItem)}
                             </span>
+                            {pendingVocabCount > 0 && (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 text-[10px] font-bold animate-pulse">
+                                <Bell className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span>{pendingVocabCount} Pending Vocab{pendingVocabCount !== 1 ? "s" : ""}</span>
+                              </span>
+                            )}
                           </div>
 
                           <Link
                             to={`/teacher/class/${classItem.id}`}
-                            className="inline-flex items-center space-x-1 text-xs font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xs hover:shadow-xs transition-all"
+                            className="inline-flex items-center space-x-1 text-xs font-bold text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-2xs hover:shadow-xs transition-all shrink-0 ml-2"
                           >
                             <span>Enter Classroom</span>
                             <ArrowRight className="h-3 w-3" />
