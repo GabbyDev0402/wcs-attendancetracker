@@ -357,7 +357,9 @@ export default function AttendanceLog() {
     return combinedNames.includes(searchQuery.toLowerCase());
   });
 
-  const isFutureDate = date > today;
+  // TODO: REVERT - TEMPORARY TIME TRAVEL TEST
+  // const isFutureDate = date > today;
+  const isFutureDate = false;
   const isRosterEmpty = activeRoster.length === 0;
 
   // Stats for the active session
@@ -440,7 +442,7 @@ export default function AttendanceLog() {
             <input
               type="date"
               value={date}
-              max={today}
+              /* max={today} TODO: REVERT - TEMPORARY TIME TRAVEL TEST */
               onChange={(e) => setDate(e.target.value)}
               className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
             />
@@ -577,7 +579,8 @@ export default function AttendanceLog() {
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-450 dark:text-slate-400 shadow-sm flex flex-col items-center justify-center transition-colors">
           Querying roster database from Firestore...
         </div>
-      ) : isFutureDate ? (
+      ) : /* TODO: REVERT - TEMPORARY TIME TRAVEL TEST
+      isFutureDate ? (
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-400 dark:text-slate-500 shadow-sm flex flex-col items-center justify-center space-y-3 transition-colors">
           <div className="text-4xl">🚫</div>
           <span className="font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Future Date Selected</span>
@@ -585,7 +588,7 @@ export default function AttendanceLog() {
             You cannot log attendance for upcoming days. Please select a valid past or current date.
           </span>
         </div>
-      ) : isRosterEmpty ? (
+      ) : */ isRosterEmpty ? (
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-12 text-center text-slate-400 dark:text-slate-500 shadow-sm flex flex-col items-center justify-center space-y-3 transition-colors">
           <AlertCircle className="h-8 w-8 text-slate-300 dark:text-slate-600" />
           <span className="font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">No Students Enrolled</span>
