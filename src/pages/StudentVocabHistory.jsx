@@ -25,6 +25,9 @@ export default function StudentVocabHistory() {
   const [isLoading, setIsLoading] = useState(true);
   const [historyRange, setHistoryRange] = useState("7days"); // "7days" | "30days" | "all"
 
+  const norm = (s) => (s || "").toString().toLowerCase().trim();
+
+  // Extract and decode URL params
   const targetClassTag = decodeURIComponent(rawClassParam || "");
   let extractedTeacherId = "";
   let extractedClassId = targetClassTag;
@@ -35,28 +38,51 @@ export default function StudentVocabHistory() {
     extractedClassId = parts[1];
   }
 
-  const formatTitle = (slug) => {
-    if (!slug) return "Classroom Portal";
-    const parts = slug.split("-");
-    return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
-  };
+  // Parse Grade and Subject from slug (e.g., "grade-7-social-science" -> Grade 7, Social Science)
+  let expectedGrade = "";
+  let expectedSubject = "";
 
-  const displayTitle = formatTitle(extractedClassId);
+  if (extractedClassId.startsWith("grade-")) {
+    const match = extractedClassId.match(/^grade-(\d+)-(.*)$/i);
+    if (match) {
+      expectedGrade = `Grade ${match[1]}`;
+      expectedSubject = match[2].replace(/-/g, " ");
+    }
+  } else if (extractedClassId.includes("-")) {
+    const parts = extractedClassId.split("-");
+    expectedGrade = parts[0];
+    expectedSubject = parts.slice(1).join(" ");
+  }
+
+  const displayClassName = expectedGrade && expectedSubject
+    ? `${expectedGrade} ${expectedSubject.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}`
+    : extractedClassId.split("-").map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 
   useEffect(() => {
     if (!user || !targetClassTag) return;
     setIsLoading(true);
 
-    // 1. Listen to class sessions
+    // 1. Listen to class sessions with STRICT classroom filtering
     const sessionsQuery = collection(db, "sessions");
     const unsubSessions = onSnapshot(sessionsQuery, (snap) => {
       const allSessions = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
       const relevantSessions = allSessions.filter((s) => {
-        const matchesClassTag = s.classId === targetClassTag || s.classId === extractedClassId;
-        const matchesTeacher = extractedTeacherId ? (s.teacherId === extractedTeacherId) : true;
         const hasVocab = s.vocabularyWords && s.vocabularyWords.trim().length > 0;
-        return (matchesClassTag || matchesTeacher) && hasVocab;
+        if (!hasVocab) return false;
+
+        const sessionClassTag = `${s.teacherId}_${s.classId}`;
+        const matchesTag = s.classId === targetClassTag || s.classId === extractedClassId || sessionClassTag === targetClassTag;
+
+        const sessionGrade = s.gradeLevel || s.grade;
+        const matchesGrade = expectedGrade ? norm(sessionGrade) === norm(expectedGrade) : true;
+        const matchesSubject = expectedSubject ? norm(s.subject) === norm(expectedSubject) : true;
+        const matchesTeacher = extractedTeacherId ? norm(s.teacherId) === norm(extractedTeacherId) : true;
+
+        const matchesGradeAndSubject = matchesGrade && matchesSubject && matchesTeacher;
+
+        // STRICT: Must match direct classId tag OR match ALL (grade + subject + teacher) together!
+        return matchesTag || matchesGradeAndSubject;
       });
 
       relevantSessions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
@@ -67,7 +93,7 @@ export default function StudentVocabHistory() {
       setIsLoading(false);
     });
 
-    // 2. Listen to student vocab submissions
+    // 2. Listen to student vocab submissions for this student
     const vocabSubQuery = query(
       collection(db, "vocab_submissions"),
       where("studentId", "==", user.id)
@@ -97,7 +123,7 @@ export default function StudentVocabHistory() {
       unsubSessions();
       unsubSubmissions();
     };
-  }, [user, targetClassTag]);
+  }, [user, targetClassTag, extractedClassId, expectedGrade, expectedSubject, extractedTeacherId]);
 
   // Filter for past assignments (date < todayStr)
   const pastSessions = vocabSessions.filter((s) => {
@@ -131,7 +157,7 @@ export default function StudentVocabHistory() {
         </button>
       </div>
 
-      {/* Hero Header */}
+      {/* Hero Header Sync */}
       <div className="relative overflow-hidden rounded-3xl bg-slate-950 dark:bg-slate-900 p-6 sm:p-8 text-white shadow-xl border border-slate-800">
         <div className="absolute right-0 top-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -141,10 +167,10 @@ export default function StudentVocabHistory() {
               <span>Vocabulary & Homework Archive</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-bold font-heading tracking-tight">
-              {displayTitle} History Log
+              History: {displayClassName}
             </h1>
             <p className="text-xs text-slate-400 mt-1 max-w-lg">
-              Review your past vocabulary sentence assignments, teacher grading feedback, and locked missed deadlines.
+              Review past vocabulary sentence assignments, teacher grading feedback, and locked missed deadlines specifically for <strong className="text-slate-200">{displayClassName}</strong>.
             </p>
           </div>
         </div>
@@ -160,10 +186,10 @@ export default function StudentVocabHistory() {
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 font-heading">
-                Past Vocabulary Homework
+                Past Vocabulary Homework ({displayClassName})
               </h2>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                Assignments created prior to today ({todayStr}).
+                Assignments logged prior to today ({todayStr}).
               </p>
             </div>
           </div>
@@ -332,7 +358,7 @@ export default function StudentVocabHistory() {
           <div className="py-12 text-center text-slate-400 dark:text-slate-500 text-xs flex flex-col items-center justify-center space-y-2">
             <History className="h-8 w-8 text-slate-300 dark:text-slate-600" />
             <span className="font-bold text-slate-700 dark:text-slate-300">No Past Assignments Found</span>
-            <span className="text-slate-400 max-w-sm">No vocabulary history records match the selected date range filter.</span>
+            <span className="text-slate-400 max-w-sm">No vocabulary history records match {displayClassName} for the selected time range.</span>
           </div>
         )}
       </div>
