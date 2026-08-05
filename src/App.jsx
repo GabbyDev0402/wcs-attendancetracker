@@ -11,6 +11,7 @@ import TeacherRoster from './pages/TeacherRoster';
 import WeeklyLessonReport from './pages/WeeklyLessonReport';
 import StudentDashboard from './pages/StudentDashboard';
 import StudentClassDashboard from './pages/StudentClassDashboard';
+import StudentVocabHistory from './pages/StudentVocabHistory';
 import StudentExamSession from './pages/StudentExamSession';
 import ClassDashboard from './pages/ClassDashboard';
 
@@ -118,6 +119,7 @@ export default function App() {
           >
             <Route index element={<StudentDashboard />} />
             <Route path="class/:classId" element={<StudentClassDashboard />} />
+            <Route path="class/:classId/history" element={<StudentVocabHistory />} />
             <Route path="class/:classId/exam/:examId" element={<StudentExamSession />} />
           </Route>
 
