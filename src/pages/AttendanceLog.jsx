@@ -332,7 +332,9 @@ export default function AttendanceLog() {
     return combinedNames.includes(searchQuery.toLowerCase());
   });
 
-  const isFutureDate = date > today;
+  // TODO: REVERT - TEMPORARY TIME TRAVEL TEST
+  // const isFutureDate = date > today;
+  const isFutureDate = false;
   const isRosterEmpty = activeRoster.length === 0;
 
   // Stats for the active session
@@ -412,10 +414,11 @@ export default function AttendanceLog() {
         <div className="flex-1 min-w-[150px]">
           <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">Date</label>
           <div className="relative">
+            {/* TODO: REVERT - TEMPORARY TIME TRAVEL TEST */}
             <input
               type="date"
               value={date}
-              max={today}
+              // max={today}
               onChange={(e) => setDate(e.target.value)}
               className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
             />
