@@ -1197,7 +1197,7 @@ export default function ClassDashboard() {
               <input
                 type="date"
                 value={attendanceDate}
-                /* max={todayStr} TODO: REVERT - TEMPORARY TIME TRAVEL TEST */
+                max={todayStr}
                 onChange={(e) => setAttendanceDate(e.target.value)}
                 className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
               />
