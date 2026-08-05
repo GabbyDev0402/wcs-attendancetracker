@@ -1125,11 +1125,10 @@ export default function ClassDashboard() {
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center">
             <div className="flex-1 min-w-[180px]">
               <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading">Session Date</label>
-              {/* TODO: REVERT - TEMPORARY TIME TRAVEL TEST */}
               <input
                 type="date"
                 value={attendanceDate}
-                // max={todayStr}
+                max={todayStr}
                 onChange={(e) => setAttendanceDate(e.target.value)}
                 className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
               />
