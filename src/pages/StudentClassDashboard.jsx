@@ -28,6 +28,7 @@ export default function StudentClassDashboard() {
   const [teacherName, setTeacherName] = useState("");
   const [vocabSessions, setVocabSessions] = useState([]);
   const [vocabSubmissionsMap, setVocabSubmissionsMap] = useState({});
+  const [vocabSubmissionsList, setVocabSubmissionsList] = useState([]);
   const [vocabInputs, setVocabInputs] = useState({});
   const [isSubmittingVocab, setIsSubmittingVocab] = useState({});
   const [vocabSuccessMsg, setVocabSuccessMsg] = useState({});
@@ -95,21 +96,24 @@ export default function StudentClassDashboard() {
       setIsLoading(false);
     });
 
-    // 2. Real-time Vocab Submissions Listener for Student
+    // 2. Real-time Vocab Submissions Listener for Student (Strict Date Filtering)
     const vocabSubQuery = query(
       collection(db, "vocab_submissions"),
       where("studentId", "==", user.id)
     );
 
     const unsubSubmissions = onSnapshot(vocabSubQuery, (subSnap) => {
+      const list = subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setVocabSubmissionsList(list);
+
       const submissionsMap = {};
-      subSnap.docs.forEach((doc) => {
-        const data = doc.data();
-        const sessionKey = `${data.rawClassId || data.classId}-${data.date}`;
-        submissionsMap[sessionKey] = data;
-        submissionsMap[data.classId] = data;
-        if (data.rawClassId) {
-          submissionsMap[data.rawClassId] = data;
+      list.forEach((data) => {
+        const sessionDate = data.date || (data.createdAt ? data.createdAt.split("T")[0] : "");
+        if (sessionDate) {
+          if (data.sessionId) submissionsMap[`${data.sessionId}`] = data;
+          if (data.classId) submissionsMap[`${data.classId}-${sessionDate}`] = data;
+          if (data.rawClassId) submissionsMap[`${data.rawClassId}-${sessionDate}`] = data;
+          submissionsMap[`${user.id}-${data.rawClassId || data.classId}-${sessionDate}`] = data;
         }
       });
       setVocabSubmissionsMap(submissionsMap);
@@ -200,6 +204,7 @@ export default function StudentClassDashboard() {
         studentName: formatStudentName(user),
         classId: fullClassTag,
         rawClassId: classId,
+        sessionId: session.id || `${extractedClassId}-${sessionDate}`,
         teacherId: session.teacherId || extractedTeacherId || "",
         date: sessionDate,
         sentences: inputVal.trim(),
@@ -212,21 +217,19 @@ export default function StudentClassDashboard() {
       await setDoc(doc(db, "vocab_submissions", subDocId), payload);
       setVocabSubmissionsMap((prev) => ({ 
         ...prev, 
-        [sessionKey]: payload,
-        [classId]: payload 
+        [sessionKey]: payload
       }));
       setVocabSuccessMsg((prev) => ({ 
         ...prev, 
-        [sessionKey]: "Vocabulary sentences submitted!",
-        [classId]: "Vocabulary sentences submitted!" 
+        [sessionKey]: "Vocabulary sentences submitted!"
       }));
       setTimeout(() => {
-        setVocabSuccessMsg((prev) => ({ ...prev, [sessionKey]: "", [classId]: "" }));
+        setVocabSuccessMsg((prev) => ({ ...prev, [sessionKey]: "" }));
       }, 3000);
     } catch (e) {
       alert("Failed to submit vocabulary sentences: " + e.message);
     } finally {
-      setIsSubmittingVocab((prev) => ({ ...prev, [sessionKey]: false, [classId]: false }));
+      setIsSubmittingVocab((prev) => ({ ...prev, [sessionKey]: false }));
     }
   };
 
@@ -366,10 +369,23 @@ export default function StudentClassDashboard() {
           ) : vocabSessions.length > 0 ? (
             <div className="space-y-6">
               {vocabSessions.map((session) => {
-                const sessionKey = `${session.classId}-${session.date}`;
-                const submission = vocabSubmissionsMap[sessionKey] || vocabSubmissionsMap[session.classId];
-                const wordsList = session.vocabularyWords.split(",").map((w) => w.trim());
                 const sessionDate = session.date || todayStr;
+                const sessionKey = `${session.classId}-${sessionDate}`;
+                const rawClassSlug = session.classId ? (session.classId.includes("_") ? session.classId.split("_")[1] : session.classId) : extractedClassId;
+
+                // Strict date matching: submission MUST match sessionDate!
+                const mySubmissionToday = vocabSubmissionsList.find(sub => 
+                  sub.date === sessionDate && (
+                    (sub.sessionId && session.id && sub.sessionId === session.id) || 
+                    sub.classId === session.classId || 
+                    sub.rawClassId === rawClassSlug || 
+                    sub.rawClassId === extractedClassId ||
+                    sub.classId === targetClassTag
+                  )
+                ) || vocabSubmissionsMap[session.id] || vocabSubmissionsMap[`${session.classId}-${sessionDate}`] || vocabSubmissionsMap[`${rawClassSlug}-${sessionDate}`] || vocabSubmissionsMap[`${extractedClassId}-${sessionDate}`];
+
+                const submission = mySubmissionToday;
+                const wordsList = session.vocabularyWords.split(",").map((w) => w.trim());
                 const isPastDue = sessionDate < todayStr;
 
                 return (

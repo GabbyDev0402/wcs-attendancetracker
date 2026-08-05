@@ -53,11 +53,17 @@ export default function StudentDashboard() {
     if (!user) return;
     setIsLoading(true);
 
-    // 1. Real-time Daily Diary Listener
-    const diaryDocId = `${user.id}-${todayStr}`;
-    const unsubDiary = onSnapshot(doc(db, "diaries", diaryDocId), (docSnap) => {
-      if (docSnap.exists()) {
-        setTodayDiary(docSnap.data());
+    // 1. Real-time Daily Diary Listener (Strict Today's Date Filter)
+    const diaryQuery = query(
+      collection(db, "diaries"),
+      where("studentId", "==", user.id)
+    );
+    const unsubDiary = onSnapshot(diaryQuery, (snap) => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const foundToday = docs.find(d => d.date === todayStr);
+
+      if (foundToday && foundToday.date === todayStr) {
+        setTodayDiary(foundToday);
       } else {
         setTodayDiary(null);
       }
