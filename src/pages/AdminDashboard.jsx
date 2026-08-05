@@ -123,7 +123,8 @@ export default function AdminDashboard() {
       v.teacherId === teacher.id || (v.classId && teacherClassSlugs.includes(v.classId))
     ).length;
 
-    const pendingDiariesCount = pendingDiariesList.filter(d => d.mathTeacherId === teacher.id).length;
+    const teacherUid = teacher.id || teacher.uid;
+    const pendingDiariesCount = pendingDiariesList.filter(d => d.mathTeacherId === teacherUid).length;
     const totalPending = pendingVocabsCount + pendingDiariesCount;
 
     let badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800";

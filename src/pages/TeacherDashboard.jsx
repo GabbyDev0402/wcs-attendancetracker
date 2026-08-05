@@ -84,19 +84,19 @@ export default function TeacherDashboard() {
   useEffect(() => {
     if (!isMathTeacher || !user) return;
 
-    setIsPendingDiariesLoading(true);
-    setIsGradedDiariesLoading(true);
+    const currentTeacherUid = user.id || user.uid;
 
-    // 1. Pending Diaries Listener
+    // 1. Pending Diaries Listener (Strict Math Teacher Isolation)
     const qPending = query(
       collection(db, "diaries"),
-      where("status", "==", "pending")
+      where("status", "==", "pending"),
+      where("mathTeacherId", "==", currentTeacherUid)
     );
 
     const unsubPending = onSnapshot(qPending, (snap) => {
       const items = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(d => d.mathTeacherId === user.id || d.mathTeacherId === "unassigned" || !d.mathTeacherId);
+        .filter(d => d.mathTeacherId === currentTeacherUid);
       setPendingDiaries(items);
       setIsPendingDiariesLoading(false);
     }, (e) => {
@@ -104,16 +104,17 @@ export default function TeacherDashboard() {
       setIsPendingDiariesLoading(false);
     });
 
-    // 2. Graded Diaries Archive Listener
+    // 2. Graded Diaries Archive Listener (Strict Math Teacher Isolation)
     const qGraded = query(
       collection(db, "diaries"),
-      where("status", "==", "graded")
+      where("status", "==", "graded"),
+      where("mathTeacherId", "==", currentTeacherUid)
     );
 
     const unsubGraded = onSnapshot(qGraded, (snap) => {
       let items = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(d => d.mathTeacherId === user.id || d.mathTeacherId === "unassigned" || !d.mathTeacherId);
+        .filter(d => d.mathTeacherId === currentTeacherUid);
 
       if (gradedDiaryDateFilter) {
         items = items.filter(d => d.date === gradedDiaryDateFilter);

@@ -214,10 +214,20 @@ export default function StudentDashboard() {
 
     setIsSubmittingDiary(true);
     try {
-      const mathClassTag = (user?.enrolledClasses || []).find(tag => tag.toLowerCase().includes('math'));
-      const mathTeacherId = mathClassTag 
-        ? mathClassTag.split('_')[0] 
-        : ((user?.enrolledTeachers && user.enrolledTeachers[0]) || user?.mathTeacherId || user?.teacherId || 'unassigned');
+      // Extract Math Teacher ID strictly from the student's enrolled Math class tag (e.g. TeacherUID_Grade8-Math)
+      let mathTeacherId = 'unassigned';
+
+      if (Array.isArray(user?.enrolledClasses)) {
+        const mathClassTag = user.enrolledClasses.find(tag => (tag || '').toLowerCase().includes('math'));
+        if (mathClassTag && mathClassTag.includes('_')) {
+          mathTeacherId = mathClassTag.split('_')[0];
+        }
+      }
+
+      // Failsafe fallback: check if student profile explicitly defines mathTeacherId
+      if (mathTeacherId === 'unassigned' && user?.mathTeacherId) {
+        mathTeacherId = user.mathTeacherId;
+      }
 
       const docId = `${user.id}-${todayStr}`;
       const payload = {
