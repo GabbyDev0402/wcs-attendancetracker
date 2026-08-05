@@ -47,10 +47,8 @@ export default function Navbar() {
   const navItems = user?.role === "teacher" 
     ? [
         { name: "Dashboard", path: "/teacher", icon: CalendarCheck },
-        { name: "Take Attendance", path: "/teacher/log", icon: ClipboardCheck },
         { name: "Lesson Reports", path: "/teacher/lesson-reports", icon: BookOpen },
-        { name: "Monthly Reports", path: "/teacher/reports", icon: BarChart3 },
-        { name: "Student Roster", path: "/teacher/roster", icon: Users }
+        { name: "Monthly Reports", path: "/teacher/reports", icon: BarChart3 }
       ]
     : user?.role === "admin"
     ? [

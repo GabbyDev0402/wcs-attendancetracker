@@ -138,9 +138,6 @@ export default function App() {
             {/* Google Classroom Portal dynamic route */}
             <Route path="class/:classId" element={<ClassDashboard />} />
             
-            {/* Log attendance roster */}
-            <Route path="log" element={<AttendanceLog />} />
-            
             {/* Weekly lesson reports (Primary & Aliases) */}
             <Route path="lesson-reports" element={<WeeklyLessonReport />} />
             <Route path="lessons" element={<WeeklyLessonReport />} />
@@ -148,9 +145,6 @@ export default function App() {
             
             {/* Monthly reports */}
             <Route path="reports" element={<MonthlyReports />} />
-
-            {/* Student roster management */}
-            <Route path="roster" element={<TeacherRoster />} />
           </Route>
 
           {/* Wildcard Fallback */}
