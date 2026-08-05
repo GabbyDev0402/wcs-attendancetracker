@@ -41,7 +41,9 @@ import {
   Trash2,
   Plus,
   ListChecks,
-  ShieldCheck
+  ShieldCheck,
+  AlertTriangle,
+  Flag
 } from "lucide-react";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
@@ -73,13 +75,23 @@ export default function ClassDashboard() {
   const [enrollError, setEnrollError] = useState("");
   const [isEnrolling, setIsEnrolling] = useState(false);
 
+  // Safe helper to normalize vocabularyWords into an array of strings
+  const parseVocabArray = (rawVocab) => {
+    if (Array.isArray(rawVocab)) return rawVocab.filter(Boolean);
+    if (typeof rawVocab === "string" && rawVocab.trim()) {
+      return rawVocab.split(",").map(w => w.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
   // Attendance State (Tab 2)
   const todayStr = new Date().toLocaleDateString("en-CA");
   const [attendanceDate, setAttendanceDate] = useState(todayStr);
   const [attendance, setAttendance] = useState({});
   const [topic, setTopic] = useState("");
   const [pages, setPages] = useState("");
-  const [vocabularyWords, setVocabularyWords] = useState("");
+  const [vocabularyWords, setVocabularyWords] = useState([]); // array of strings
+  const [newVocabWordInput, setNewVocabWordInput] = useState("");
   const [attendanceSearchQuery, setAttendanceSearchQuery] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
@@ -97,6 +109,7 @@ export default function ClassDashboard() {
   const [isPendingVocabLoading, setIsPendingVocabLoading] = useState(false);
   const [selectedVocabSub, setSelectedVocabSub] = useState(null);
   const [vocabFeedbackInput, setVocabFeedbackInput] = useState("");
+  const [modalSentences, setModalSentences] = useState([]); // micro-grading array
   const [isVocabModalOpen, setIsVocabModalOpen] = useState(false);
   const [isGradingVocab, setIsGradingVocab] = useState(false);
 
@@ -321,7 +334,7 @@ export default function ClassDashboard() {
         setAttendance(parsedRecords);
         setTopic(data.topic || "");
         setPages(data.pages || data.page || "");
-        setVocabularyWords(data.vocabularyWords || "");
+        setVocabularyWords(parseVocabArray(data.vocabularyWords));
       } else {
         // Direct document ID lookup fallback
         const docId = `${classId}-${attendanceDate}`;
@@ -345,7 +358,7 @@ export default function ClassDashboard() {
           setAttendance(parsedRecords);
           setTopic(data.topic || "");
           setPages(data.pages || data.page || "");
-          setVocabularyWords(data.vocabularyWords || "");
+          setVocabularyWords(parseVocabArray(data.vocabularyWords));
         } else {
           setExistingSessionId(null);
           const defaultState = {};
@@ -355,7 +368,7 @@ export default function ClassDashboard() {
           setAttendance(defaultState);
           setTopic("");
           setPages("");
-          setVocabularyWords("");
+          setVocabularyWords([]);
         }
       }
     } catch (err) {
@@ -363,6 +376,20 @@ export default function ClassDashboard() {
     } finally {
       setIsAttendanceLoading(false);
     }
+  };
+
+  const handleAddVocabWord = () => {
+    const trimmed = newVocabWordInput.trim();
+    if (trimmed) {
+      if (!vocabularyWords.includes(trimmed)) {
+        setVocabularyWords(prev => [...prev, trimmed]);
+      }
+      setNewVocabWordInput("");
+    }
+  };
+
+  const handleRemoveVocabWord = (indexToRemove) => {
+    setVocabularyWords(prev => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const handleStatusChange = (studentId, status) => {
@@ -426,7 +453,7 @@ export default function ClassDashboard() {
         topic: topic.trim(),
         page: pages.trim(),
         pages: pages.trim(),
-        vocabularyWords: vocabularyWords.trim(),
+        vocabularyWords: Array.isArray(vocabularyWords) ? vocabularyWords : parseVocabArray(vocabularyWords),
         records: recordsArray,
         updatedAt: new Date().toISOString()
       };
@@ -643,6 +670,26 @@ export default function ClassDashboard() {
   const handleOpenVocabModal = (sub) => {
     setSelectedVocabSub(sub);
     setVocabFeedbackInput(sub.feedback || "");
+
+    let parsedSentences = [];
+    if (Array.isArray(sub.sentences)) {
+      parsedSentences = sub.sentences.map(item => ({
+        word: item.word || "Word",
+        sentence: item.sentence || "",
+        status: item.status || "correct"
+      }));
+    } else if (typeof sub.sentences === "string") {
+      const lines = sub.sentences.split("\n").filter(Boolean);
+      parsedSentences = lines.map((line) => {
+        const parts = line.split(":");
+        if (parts.length >= 2) {
+          return { word: parts[0].trim(), sentence: parts.slice(1).join(":").trim(), status: "correct" };
+        }
+        return { word: "Sentence", sentence: line.trim(), status: "correct" };
+      });
+    }
+
+    setModalSentences(parsedSentences);
     setIsVocabModalOpen(true);
   };
 
@@ -657,13 +704,17 @@ export default function ClassDashboard() {
 
       await updateDoc(docRef, {
         status: "graded",
-        feedback: vocabFeedbackInput.trim()
+        sentences: modalSentences,
+        feedback: vocabFeedbackInput.trim(),
+        gradedAt: new Date().toISOString(),
+        gradedBy: user.id
       });
 
-      alert("Feedback Updated!");
+      alert("Feedback & Micro-grades Updated!");
       setIsVocabModalOpen(false);
       setSelectedVocabSub(null);
       setVocabFeedbackInput("");
+      setModalSentences([]);
     } catch (err) {
       alert("Failed to save grade feedback: " + err.message);
     } finally {
@@ -1191,14 +1242,56 @@ export default function ClassDashboard() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Vocabulary Words</label>
-                <input
-                  type="text"
-                  value={vocabularyWords}
-                  onChange={(e) => setVocabularyWords(e.target.value)}
-                  placeholder="e.g. Numerator, Denominator"
-                  className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
-                />
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-heading">
+                  Vocabulary Words ({vocabularyWords.length})
+                </label>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={newVocabWordInput}
+                      onChange={(e) => setNewVocabWordInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddVocabWord();
+                        }
+                      }}
+                      placeholder="Type a word & press Add..."
+                      className="flex-1 text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddVocabWord}
+                      className="inline-flex items-center space-x-1 px-3 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all cursor-pointer shrink-0"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Add Word</span>
+                    </button>
+                  </div>
+
+                  {vocabularyWords.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {vocabularyWords.map((word, idx) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-bold text-xs border border-brand-100 dark:border-brand-800/60 shadow-2xs"
+                        >
+                          <span>{word}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveVocabWord(idx)}
+                            className="p-0.5 rounded-full hover:bg-brand-200/50 dark:hover:bg-brand-800/50 text-brand-500 dark:text-brand-400 cursor-pointer"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic">No vocabulary words added yet for this session.</p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1677,13 +1770,67 @@ export default function ClassDashboard() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                Submitted Sentences
+            {/* Sentences Micro-Grading List */}
+            <div className="space-y-3">
+              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider font-heading">
+                Micro-Grade Student Sentences ({modalSentences.length})
               </label>
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                {selectedVocabSub.sentences}
-              </div>
+              {modalSentences.length > 0 ? (
+                <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                  {modalSentences.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-2xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                          Word: <strong className="text-brand-600 dark:text-brand-400 font-black ml-1 text-sm">{item.word}</strong>
+                        </span>
+
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalSentences(prev => prev.map((s, i) => i === idx ? { ...s, status: "correct" } : s));
+                            }}
+                            className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              item.status === "correct"
+                                ? "bg-emerald-600 text-white shadow-xs"
+                                : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-emerald-600"
+                            }`}
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            <span>Correct</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalSentences(prev => prev.map((s, i) => i === idx ? { ...s, status: "needs_review" } : s));
+                            }}
+                            className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              item.status === "needs_review"
+                                ? "bg-amber-500 text-white shadow-xs"
+                                : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-amber-600"
+                            }`}
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            <span>Needs Review</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                        "{item.sentence}"
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                  {typeof selectedVocabSub.sentences === "string" ? selectedVocabSub.sentences : "No sentences submitted."}
+                </div>
+              )}
             </div>
 
             <form onSubmit={handleGradeVocabSubmit} className="space-y-4">

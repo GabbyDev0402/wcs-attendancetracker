@@ -299,12 +299,52 @@ export default function StudentVocabHistory() {
                     /* Read-only Submitted View */
                     <div className="space-y-4 pt-2">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
                           Your Submitted Sentences
                         </label>
-                        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                          {submission.sentences}
-                        </div>
+                        {Array.isArray(submission.sentences) ? (
+                          <div className="space-y-3">
+                            {submission.sentences.map((item, idx) => {
+                              const isNeedsReview = item.status === "needs_review" || item.status === "flagged";
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`p-4 rounded-2xl border transition-colors space-y-1.5 ${
+                                    isNeedsReview
+                                      ? "bg-amber-50/90 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/80 shadow-2xs"
+                                      : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                      Word: <strong className="text-teal-600 dark:text-teal-400 font-black">{item.word}</strong>
+                                    </span>
+                                    {submission.status === "graded" && (
+                                      isNeedsReview ? (
+                                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                          <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                                          <span>Needs Review</span>
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
+                                          <CheckCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                                          <span>Correct</span>
+                                        </span>
+                                      )
+                                    )}
+                                  </div>
+                                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                                    "{item.sentence}"
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                            {submission.sentences}
+                          </div>
+                        )}
                       </div>
 
                       {submission.feedback ? (

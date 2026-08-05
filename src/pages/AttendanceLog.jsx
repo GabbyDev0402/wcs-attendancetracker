@@ -15,6 +15,7 @@ import {
   Clock,
   Sparkles,
   BookOpen,
+  Plus,
   ShieldCheck
 } from "lucide-react";
 
@@ -33,10 +34,20 @@ export default function AttendanceLog() {
   const [isSavingAttendance, setIsSavingAttendance] = useState(false);
   const [existingSessionId, setExistingSessionId] = useState(null);
 
+  // Safe helper to normalize vocabularyWords into an array of strings
+  const parseVocabArray = (rawVocab) => {
+    if (Array.isArray(rawVocab)) return rawVocab.filter(Boolean);
+    if (typeof rawVocab === "string" && rawVocab.trim()) {
+      return rawVocab.split(",").map(w => w.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
   // Lesson Details State
   const [topic, setTopic] = useState("");
   const [pages, setPages] = useState("");
-  const [vocabularyWords, setVocabularyWords] = useState("");
+  const [vocabularyWords, setVocabularyWords] = useState([]);
+  const [newVocabWordInput, setNewVocabWordInput] = useState("");
   
   const [classList, setClassList] = useState([]);
   const [activeClass, setActiveClass] = useState(null);
@@ -202,7 +213,7 @@ export default function AttendanceLog() {
             setAttendance(parsedRecords);
             setTopic(data.topic || "");
             setPages(data.pages || data.page || "");
-            setVocabularyWords(data.vocabularyWords || "");
+            setVocabularyWords(parseVocabArray(data.vocabularyWords));
           } else {
             setExistingSessionId(null);
             const defaultState = {};
@@ -212,7 +223,7 @@ export default function AttendanceLog() {
             setAttendance(defaultState);
             setTopic("");
             setPages("");
-            setVocabularyWords("");
+            setVocabularyWords([]);
           }
         }
       } catch (err) {
@@ -269,6 +280,20 @@ export default function AttendanceLog() {
     if (saveSuccess) setSaveSuccess(false);
   };
 
+  const handleAddVocabWord = () => {
+    const trimmed = newVocabWordInput.trim();
+    if (trimmed) {
+      if (!vocabularyWords.includes(trimmed)) {
+        setVocabularyWords(prev => [...prev, trimmed]);
+      }
+      setNewVocabWordInput("");
+    }
+  };
+
+  const handleRemoveVocabWord = (indexToRemove) => {
+    setVocabularyWords(prev => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
   const handleSave = async () => {
     if (!selectedClassId || !activeClass || isSavingAttendance) return;
     
@@ -297,7 +322,7 @@ export default function AttendanceLog() {
         topic: topic.trim(),
         page: pages.trim(),
         pages: pages.trim(),
-        vocabularyWords: vocabularyWords.trim(),
+        vocabularyWords: Array.isArray(vocabularyWords) ? vocabularyWords : parseVocabArray(vocabularyWords),
         records: recordsArray,
         updatedAt: new Date().toISOString()
       };
@@ -486,18 +511,62 @@ export default function AttendanceLog() {
 
             <div>
               <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 font-heading transition-colors">
-                Vocabulary Words
+                Vocabulary Words ({vocabularyWords.length})
               </label>
-              <input
-                type="text"
-                value={vocabularyWords}
-                onChange={(e) => {
-                  setVocabularyWords(e.target.value);
-                  if (saveSuccess) setSaveSuccess(false);
-                }}
-                placeholder="e.g. Wander, Ache, Growl"
-                className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
-              />
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={newVocabWordInput}
+                    onChange={(e) => setNewVocabWordInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddVocabWord();
+                        if (saveSuccess) setSaveSuccess(false);
+                      }
+                    }}
+                    placeholder="Type a word & press Add..."
+                    className="flex-1 text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleAddVocabWord();
+                      if (saveSuccess) setSaveSuccess(false);
+                    }}
+                    className="inline-flex items-center space-x-1 px-3 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all cursor-pointer shrink-0"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Add Word</span>
+                  </button>
+                </div>
+
+                {vocabularyWords.length > 0 ? (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {vocabularyWords.map((word, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-bold text-xs border border-brand-100 dark:border-brand-800/60 shadow-2xs"
+                      >
+                        <span>{word}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleRemoveVocabWord(idx);
+                            if (saveSuccess) setSaveSuccess(false);
+                          }}
+                          className="p-0.5 rounded-full hover:bg-brand-200/50 dark:hover:bg-brand-800/50 text-brand-500 dark:text-brand-400 cursor-pointer"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 italic">No vocabulary words added yet for this session.</p>
+                )}
+              </div>
             </div>
           </div>
         </div>

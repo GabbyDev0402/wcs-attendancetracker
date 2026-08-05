@@ -24,6 +24,15 @@ export default function StudentClassDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   
+  // Safe helper to normalize vocabularyWords into an array of strings
+  const parseVocabArray = (rawVocab) => {
+    if (Array.isArray(rawVocab)) return rawVocab.filter(Boolean);
+    if (typeof rawVocab === "string" && rawVocab.trim()) {
+      return rawVocab.split(",").map(w => w.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
   const todayStr = new Date().toLocaleDateString("en-CA");
 
   const [activeTab, setActiveTab] = useState("vocab");
@@ -179,12 +188,32 @@ export default function StudentClassDashboard() {
     const classId = session.classId;
     const sessionDate = session.date || todayStr;
     const sessionKey = `${classId}-${sessionDate}`;
-    const inputVal = vocabInputs[sessionKey] || vocabInputs[classId];
-
-    if (!inputVal || !inputVal.trim()) return;
+    const wordsList = parseVocabArray(session.vocabularyWords);
+    const sessionInputState = vocabInputs[sessionKey] || {};
 
     if (sessionDate < todayStr) {
       alert("Submission locked: The deadline for this assignment has passed.");
+      return;
+    }
+
+    // Build structured sentences array of objects
+    const sentencesArray = wordsList.map((word) => {
+      let sentText = "";
+      if (typeof sessionInputState === "object") {
+        sentText = sessionInputState[word] || "";
+      } else if (typeof sessionInputState === "string") {
+        sentText = sessionInputState;
+      }
+      return {
+        word,
+        sentence: sentText.trim(),
+        status: "pending"
+      };
+    });
+
+    const isAnyEmpty = sentencesArray.some(s => !s.sentence);
+    if (isAnyEmpty) {
+      alert("Please write a complete sentence for every assigned vocabulary word before submitting.");
       return;
     }
 
@@ -192,7 +221,7 @@ export default function StudentClassDashboard() {
     try {
       const fullClassTag = targetClassTag || (extractedTeacherId ? `${extractedTeacherId}_${extractedClassId}` : classId);
       const subDocId = `${user.id}-${extractedClassId}-${sessionDate}`;
-      
+
       const payload = {
         studentId: user.id,
         studentName: formatStudentName(user),
@@ -201,7 +230,7 @@ export default function StudentClassDashboard() {
         sessionId: session.id || `${extractedClassId}-${sessionDate}`,
         teacherId: session.teacherId || extractedTeacherId || "",
         date: sessionDate,
-        sentences: inputVal.trim(),
+        sentences: sentencesArray,
         status: "pending",
         feedback: "",
         academicYear: "SY 2026-2027",
@@ -209,12 +238,12 @@ export default function StudentClassDashboard() {
       };
 
       await setDoc(doc(db, "vocab_submissions", subDocId), payload);
-      setVocabSubmissionsMap((prev) => ({ 
-        ...prev, 
+      setVocabSubmissionsMap((prev) => ({
+        ...prev,
         [sessionKey]: payload
       }));
-      setVocabSuccessMsg((prev) => ({ 
-        ...prev, 
+      setVocabSuccessMsg((prev) => ({
+        ...prev,
         [sessionKey]: "Vocabulary sentences submitted!"
       }));
       setTimeout(() => {
@@ -223,7 +252,7 @@ export default function StudentClassDashboard() {
     } catch (e) {
       alert("Failed to submit vocabulary sentences: " + e.message);
     } finally {
-      setIsSubmittingVocab((prev) => ({ ...prev, [sessionKey]: false }));
+      setIsSubmittingVocab((prev) => ({ ...prev, [sessionKey]: false, [classId]: false }));
     }
   };
 
@@ -378,7 +407,7 @@ export default function StudentClassDashboard() {
               ) || vocabSubmissionsMap[session.id] || vocabSubmissionsMap[`${session.classId}-${sessionDate}`];
 
               const submission = mySubmissionToday;
-              const wordsList = session.vocabularyWords.split(",").map((w) => w.trim());
+              const wordsList = parseVocabArray(session.vocabularyWords);
 
               return (
                 <div
@@ -432,7 +461,7 @@ export default function StudentClassDashboard() {
                   {/* Assigned Vocabulary Words Chips */}
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
-                      Assigned Vocabulary Words
+                      Assigned Vocabulary Words ({wordsList.length})
                     </label>
                     <div className="flex flex-wrap gap-2">
                       {wordsList.map((word, idx) => (
@@ -450,12 +479,52 @@ export default function StudentClassDashboard() {
                     /* Read-only Submission View */
                     <div className="space-y-4 pt-2">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
                           Your Submitted Sentences
                         </label>
-                        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                          {submission.sentences}
-                        </div>
+                        {Array.isArray(submission.sentences) ? (
+                          <div className="space-y-3">
+                            {submission.sentences.map((item, idx) => {
+                              const isNeedsReview = item.status === "needs_review" || item.status === "flagged";
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`p-4 rounded-2xl border transition-colors space-y-1.5 ${
+                                    isNeedsReview
+                                      ? "bg-amber-50/90 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/80 shadow-2xs"
+                                      : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                      Word: <strong className="text-brand-600 dark:text-brand-400 font-black">{item.word}</strong>
+                                    </span>
+                                    {submission.status === "graded" && (
+                                      isNeedsReview ? (
+                                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                          <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                                          <span>Needs Review</span>
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
+                                          <CheckCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                                          <span>Correct</span>
+                                        </span>
+                                      )
+                                    )}
+                                  </div>
+                                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                                    "{item.sentence}"
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                            {submission.sentences}
+                          </div>
+                        )}
                       </div>
 
                       {submission.feedback ? (
@@ -482,27 +551,53 @@ export default function StudentClassDashboard() {
                         </div>
                       )}
 
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                          Write your vocabulary sentences (one or more sentences incorporating the target words)
+                      <div className="space-y-3">
+                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider font-heading">
+                          Write a sentence for each assigned vocabulary word:
                         </label>
-                        <textarea
-                          rows={4}
-                          value={vocabInputs[sessionKey] || ""}
-                          onChange={(e) =>
-                            setVocabInputs((prev) => ({ ...prev, [sessionKey]: e.target.value }))
-                          }
-                          placeholder="e.g. 1. The students will wander through the forest. 2. He had an ache in his leg after running..."
-                          className="w-full text-xs font-medium text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                        />
+
+                        {wordsList.map((word, wIdx) => (
+                          <div
+                            key={wIdx}
+                            className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <span className="flex items-center justify-center h-6 w-6 rounded-lg bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 text-xs font-black">
+                                {wIdx + 1}
+                              </span>
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                                Target Word: <strong className="text-brand-600 dark:text-brand-400 font-extrabold text-sm ml-1">{word}</strong>
+                              </span>
+                            </div>
+                            <textarea
+                              rows={2}
+                              value={vocabInputs[sessionKey]?.[word] || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setVocabInputs((prev) => ({
+                                  ...prev,
+                                  [sessionKey]: {
+                                    ...(prev[sessionKey] || {}),
+                                    [word]: val
+                                  }
+                                }));
+                              }}
+                              placeholder={`Write a sentence using the word "${word}"...`}
+                              className="w-full text-xs font-medium text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-800/50 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
+                            />
+                          </div>
+                        ))}
                       </div>
 
-                      <div className="flex justify-end">
+                      <div className="flex justify-end pt-2">
                         <button
                           type="button"
                           onClick={() => handleSubmitVocab(session)}
-                          disabled={isSubmittingVocab[sessionKey] || !(vocabInputs[sessionKey] || "").trim()}
-                          className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                          disabled={
+                            isSubmittingVocab[sessionKey] ||
+                            wordsList.some((w) => !(vocabInputs[sessionKey]?.[w] || "").trim())
+                          }
+                          className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
                         >
                           <Send className="h-3.5 w-3.5" />
                           <span>{isSubmittingVocab[sessionKey] ? "Submitting..." : "Submit Sentences"}</span>
