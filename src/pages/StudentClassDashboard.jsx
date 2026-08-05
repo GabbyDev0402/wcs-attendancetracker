@@ -15,14 +15,25 @@ import {
   AlertTriangle,
   Lock,
   FileText,
-  GraduationCap
+  GraduationCap,
+  History
 } from "lucide-react";
 
 export default function StudentClassDashboard() {
   const { classId: rawClassParam } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const todayStr = new Date().toLocaleDateString("en-CA");
+  
+  const getTodayManila = () => {
+    const now = new Date();
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(now);
+  };
+  const todayStr = getTodayManila();
 
   const [activeTab, setActiveTab] = useState("vocab");
   const [teacherName, setTeacherName] = useState("");
@@ -33,7 +44,7 @@ export default function StudentClassDashboard() {
   const [isSubmittingVocab, setIsSubmittingVocab] = useState({});
   const [vocabSuccessMsg, setVocabSuccessMsg] = useState({});
   const [isLoading, setIsLoading] = useState(true);
-  const [vocabDateFilter, setVocabDateFilter] = useState("");
+  const [historyRange, setHistoryRange] = useState("7days"); // "7days" | "30days" | "all"
 
   // Exams State (Tab 2)
   const [examsList, setExamsList] = useState([]);
@@ -127,7 +138,7 @@ export default function StudentClassDashboard() {
       unsubSessions();
       unsubSubmissions();
     };
-  }, [user, targetClassTag, vocabDateFilter]);
+  }, [user, targetClassTag]);
 
   // Load Published Exams & Student Submissions for this classroom
   const loadExamsData = async () => {
@@ -323,245 +334,413 @@ export default function StudentClassDashboard() {
 
       {/* Tab Content: Vocabularies & Homework */}
       {activeTab === "vocab" && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
-          <div className="border-b border-slate-100 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-3 bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 rounded-2xl">
-                <FileText className="h-6 w-6" />
+        <div className="space-y-8">
+          {/* SECTION 1: TODAY'S VOCABULARY ASSIGNMENT */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-2xl">
+                  <Sparkles className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+                      Today's Vocabulary Assignment
+                    </h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800 uppercase tracking-wider">
+                      Active Today
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    Complete your vocabulary sentence assignment for {displayTitle} before today's deadline.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
-                  Vocabulary Assignments & Homework
-                </h2>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  Complete vocabulary sentence assignments for {displayTitle} before the daily deadline.
-                </p>
+            </div>
+
+            {isLoading ? (
+              <div className="py-8 flex justify-center items-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
               </div>
-            </div>
-            
-            {/* Calendar Picker for filtering */}
-            <div className="flex items-center space-x-2">
-              <label htmlFor="vocabDateFilter" className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                Filter by Date:
-              </label>
-              <input
-                type="date"
-                id="vocabDateFilter"
-                value={vocabDateFilter}
-                onChange={(e) => setVocabDateFilter(e.target.value)}
-                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              />
-              {vocabDateFilter && (
-                <button
-                  onClick={() => setVocabDateFilter("")}
-                  className="text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-          </div>
-
-          {isLoading ? (
-            <div className="py-12 flex justify-center items-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
-            </div>
-          ) : vocabSessions.length > 0 ? (
-            <div className="space-y-6">
-              {vocabSessions.map((session) => {
-                const sessionDate = session.date || todayStr;
-                const sessionKey = `${session.classId}-${sessionDate}`;
-                const rawClassSlug = session.classId ? (session.classId.includes("_") ? session.classId.split("_")[1] : session.classId) : extractedClassId;
-
-                // Strict date matching: submission MUST match sessionDate!
-                const mySubmissionToday = vocabSubmissionsList.find(sub => 
-                  sub.date === sessionDate && (
-                    (sub.sessionId && session.id && sub.sessionId === session.id) || 
-                    sub.classId === session.classId || 
-                    sub.rawClassId === rawClassSlug || 
-                    sub.rawClassId === extractedClassId ||
-                    sub.classId === targetClassTag
-                  )
-                ) || vocabSubmissionsMap[session.id] || vocabSubmissionsMap[`${session.classId}-${sessionDate}`] || vocabSubmissionsMap[`${rawClassSlug}-${sessionDate}`] || vocabSubmissionsMap[`${extractedClassId}-${sessionDate}`];
-
-                const submission = mySubmissionToday;
-                const wordsList = session.vocabularyWords.split(",").map((w) => w.trim());
-                const isPastDue = sessionDate < todayStr;
-
+            ) : (() => {
+              const todaySession = vocabSessions.find(s => (s.date || todayStr) === todayStr && s.vocabularyWords && s.vocabularyWords.trim());
+              
+              if (!todaySession) {
                 return (
-                  <div
-                    key={sessionKey}
-                    className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 space-y-5 transition-colors"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200/60 dark:border-slate-700/60 pb-3">
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider">
-                            {session.gradeLevel || session.grade || "Classroom"} — {session.subject || "Subject"}
-                          </span>
-                          <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                            Date: {sessionDate}
-                          </span>
-                        </div>
-                        {session.topic && (
-                          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1">
-                            Lesson Topic: {session.topic}
-                          </h3>
-                        )}
-                      </div>
+                  <div className="py-10 px-6 text-center space-y-3 bg-slate-50/50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                    <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-full w-fit mx-auto">
+                      <CheckCircle className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Vocabulary Assigned for Today</h3>
+                    <p className="text-xs text-slate-400 dark:text-slate-500 max-w-md mx-auto">
+                      Your teacher hasn't posted a vocabulary assignment for today ({todayStr}) yet. Check back after your class session or review your past homework history below.
+                    </p>
+                  </div>
+                );
+              }
 
-                      {submission ? (
-                        <div className="flex items-center space-x-2 shrink-0">
-                          {submission.status === "pending" && (
-                            <button
-                              onClick={() => handleUnsubmitVocab(session, submission)}
-                              className="text-xs font-bold text-red-500 hover:text-red-700 underline transition-colors cursor-pointer"
-                            >
-                              Unsubmit
-                            </button>
-                          )}
-                          <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 ${
-                            submission.status === "graded"
-                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
-                              : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800"
-                          }`}>
-                            {submission.status === "graded" ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
-                            <span className="capitalize">{submission.status === "graded" ? "Graded & Reviewed" : "Pending Review"}</span>
-                          </span>
-                        </div>
-                      ) : isPastDue ? (
-                        <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
-                          <AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
-                          <span>⚠️ Missed Deadline</span>
+              const session = todaySession;
+              const sessionDate = session.date || todayStr;
+              const sessionKey = `${session.classId}-${sessionDate}`;
+              const rawClassSlug = session.classId ? (session.classId.includes("_") ? session.classId.split("_")[1] : session.classId) : extractedClassId;
+
+              const mySubmissionToday = vocabSubmissionsList.find(sub => 
+                sub.date === sessionDate && (
+                  (sub.sessionId && session.id && sub.sessionId === session.id) || 
+                  sub.classId === session.classId || 
+                  sub.rawClassId === rawClassSlug || 
+                  sub.rawClassId === extractedClassId ||
+                  sub.classId === targetClassTag
+                )
+              ) || vocabSubmissionsMap[session.id] || vocabSubmissionsMap[`${session.classId}-${sessionDate}`];
+
+              const submission = mySubmissionToday;
+              const wordsList = session.vocabularyWords.split(",").map((w) => w.trim());
+
+              return (
+                <div
+                  key={sessionKey}
+                  className="bg-slate-50/50 dark:bg-slate-800/40 border border-brand-200 dark:border-brand-800/60 rounded-2xl p-6 space-y-5 transition-colors shadow-xs"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200/60 dark:border-slate-700/60 pb-3">
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider">
+                          {session.gradeLevel || session.grade || "Classroom"} — {session.subject || "Subject"}
                         </span>
-                      ) : (
-                        <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
-                          <Clock className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
-                          <span>Due Today</span>
+                        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                          Date: {sessionDate}
                         </span>
+                      </div>
+                      {session.topic && (
+                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1">
+                          Lesson Topic: {session.topic}
+                        </h3>
                       )}
                     </div>
 
-                    {/* Assigned Vocabulary Words Chips */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
-                        Assigned Vocabulary Words
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {wordsList.map((word, idx) => (
-                          <span
-                            key={idx}
-                            className="px-3 py-1 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-bold text-xs border border-brand-100 dark:border-brand-800/60 shadow-2xs"
-                          >
-                            {word}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
                     {submission ? (
-                      /* Read-only Submission View */
-                      <div className="space-y-4 pt-2">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                            Your Submitted Sentences
-                          </label>
-                          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                            {submission.sentences}
-                          </div>
-                        </div>
-
-                        {submission.feedback ? (
-                          <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 space-y-2">
-                            <div className="flex items-center space-x-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                              <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                              <span>Teacher Feedback:</span>
-                            </div>
-                            <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-200 pl-6 leading-relaxed">
-                              "{submission.feedback}"
-                            </p>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-slate-400 italic">No feedback provided yet. Your teacher will review your sentences shortly.</p>
-                        )}
-                      </div>
-                    ) : isPastDue ? (
-                      /* Locked View for Missed Deadline */
-                      <div className="space-y-4 pt-2">
-                        <div>
-                          <label className="block text-[10px] font-bold text-red-500 dark:text-red-400 uppercase tracking-wider mb-1.5 flex items-center space-x-1">
-                            <Lock className="h-3 w-3" />
-                            <span>Submission Locked (Deadline Passed)</span>
-                          </label>
-                          <textarea
-                            rows={4}
-                            disabled={true}
-                            value=""
-                            placeholder="Submission locked: The deadline for this assignment has passed."
-                            className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-slate-100 dark:bg-slate-800/50 cursor-not-allowed opacity-60 text-slate-500 outline-none transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                          />
-                        </div>
-
-                        <div className="flex justify-end">
+                      <div className="flex items-center space-x-2 shrink-0">
+                        {submission.status === "pending" && (
                           <button
-                            type="button"
-                            disabled={true}
-                            className="inline-flex items-center space-x-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 px-5 py-2 text-xs font-bold cursor-not-allowed opacity-60"
+                            onClick={() => handleUnsubmitVocab(session, submission)}
+                            className="text-xs font-bold text-red-500 hover:text-red-700 underline transition-colors cursor-pointer"
                           >
-                            <Lock className="h-3.5 w-3.5" />
-                            <span>Locked (Missed Deadline)</span>
+                            Unsubmit
                           </button>
-                        </div>
+                        )}
+                        <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 ${
+                          submission.status === "graded"
+                            ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
+                            : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800"
+                        }`}>
+                          {submission.status === "graded" ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                          <span className="capitalize">{submission.status === "graded" ? "Graded & Reviewed" : "Pending Review"}</span>
+                        </span>
                       </div>
                     ) : (
-                      /* Active Sentences Submission Form */
-                      <div className="space-y-4 pt-2">
-                        {vocabSuccessMsg[sessionKey] && (
-                          <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
-                            <Sparkles className="h-4 w-4" />
-                            <span>{vocabSuccessMsg[sessionKey]}</span>
+                      <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
+                        <Clock className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
+                        <span>Due Today</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Assigned Vocabulary Words Chips */}
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+                      Assigned Vocabulary Words
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {wordsList.map((word, idx) => (
+                        <span
+                          key={idx}
+                          className="px-3 py-1 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-bold text-xs border border-brand-100 dark:border-brand-800/60 shadow-2xs"
+                        >
+                          {word}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {submission ? (
+                    /* Read-only Submission View */
+                    <div className="space-y-4 pt-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                          Your Submitted Sentences
+                        </label>
+                        <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                          {submission.sentences}
+                        </div>
+                      </div>
+
+                      {submission.feedback ? (
+                        <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 space-y-2">
+                          <div className="flex items-center space-x-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                            <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                            <span>Teacher Feedback:</span>
+                          </div>
+                          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-200 pl-6 leading-relaxed">
+                            "{submission.feedback}"
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">No feedback provided yet. Your teacher will review your sentences shortly.</p>
+                      )}
+                    </div>
+                  ) : (
+                    /* Active Sentences Submission Form */
+                    <div className="space-y-4 pt-2">
+                      {vocabSuccessMsg[sessionKey] && (
+                        <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
+                          <Sparkles className="h-4 w-4" />
+                          <span>{vocabSuccessMsg[sessionKey]}</span>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                          Write your vocabulary sentences (one or more sentences incorporating the target words)
+                        </label>
+                        <textarea
+                          rows={4}
+                          value={vocabInputs[sessionKey] || ""}
+                          onChange={(e) =>
+                            setVocabInputs((prev) => ({ ...prev, [sessionKey]: e.target.value }))
+                          }
+                          placeholder="e.g. 1. The students will wander through the forest. 2. He had an ache in his leg after running..."
+                          className="w-full text-xs font-medium text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                        />
+                      </div>
+
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleSubmitVocab(session)}
+                          disabled={isSubmittingVocab[sessionKey] || !(vocabInputs[sessionKey] || "").trim()}
+                          className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          <span>{isSubmittingVocab[sessionKey] ? "Submitting..." : "Submit Sentences"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* SECTION 2: VOCABULARY & HOMEWORK HISTORY */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-3 bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 rounded-2xl">
+                  <History className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+                    Vocabulary & Homework History
+                  </h2>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    Review past assignments, graded feedback, and missed deadlines.
+                  </p>
+                </div>
+              </div>
+
+              {/* History Date Range Filter */}
+              <div className="flex items-center space-x-2">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                  Filter History:
+                </label>
+                <select
+                  value={historyRange}
+                  onChange={(e) => setHistoryRange(e.target.value)}
+                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-brand-500 cursor-pointer"
+                >
+                  <option value="7days">Last 7 Days</option>
+                  <option value="30days">Last 30 Days</option>
+                  <option value="all">All History</option>
+                </select>
+              </div>
+            </div>
+
+            {isLoading ? (
+              <div className="py-8 flex justify-center items-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
+              </div>
+            ) : (() => {
+              const pastSessions = vocabSessions.filter((s) => {
+                const sDate = s.date || todayStr;
+                if (sDate >= todayStr) return false;
+
+                if (historyRange === "7days") {
+                  const d7 = new Date();
+                  d7.setDate(d7.getDate() - 7);
+                  const cutoff = d7.toISOString().split("T")[0];
+                  return sDate >= cutoff;
+                } else if (historyRange === "30days") {
+                  const d30 = new Date();
+                  d30.setDate(d30.getDate() - 30);
+                  const cutoff = d30.toISOString().split("T")[0];
+                  return sDate >= cutoff;
+                }
+                return true;
+              });
+
+              if (pastSessions.length === 0) {
+                return (
+                  <div className="py-10 text-center space-y-2">
+                    <History className="h-8 w-8 text-slate-300 dark:text-slate-600 mx-auto" />
+                    <p className="text-xs font-bold text-slate-600 dark:text-slate-400">No Past Assignments Found</p>
+                    <p className="text-[10px] text-slate-400">No vocabulary history records match the selected date range ({historyRange}).</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-6">
+                  {pastSessions.map((session) => {
+                    const sessionDate = session.date || todayStr;
+                    const sessionKey = `${session.classId}-${sessionDate}`;
+                    const rawClassSlug = session.classId ? (session.classId.includes("_") ? session.classId.split("_")[1] : session.classId) : extractedClassId;
+
+                    const mySubmission = vocabSubmissionsList.find(sub => 
+                      sub.date === sessionDate && (
+                        (sub.sessionId && session.id && sub.sessionId === session.id) || 
+                        sub.classId === session.classId || 
+                        sub.rawClassId === rawClassSlug || 
+                        sub.rawClassId === extractedClassId ||
+                        sub.classId === targetClassTag
+                      )
+                    ) || vocabSubmissionsMap[session.id] || vocabSubmissionsMap[`${session.classId}-${sessionDate}`];
+
+                    const submission = mySubmission;
+                    const wordsList = session.vocabularyWords ? session.vocabularyWords.split(",").map((w) => w.trim()) : [];
+
+                    return (
+                      <div
+                        key={sessionKey}
+                        className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 space-y-5 transition-colors"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200/60 dark:border-slate-700/60 pb-3">
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-xs font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider">
+                                {session.gradeLevel || session.grade || "Classroom"} — {session.subject || "Subject"}
+                              </span>
+                              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                Date: {sessionDate}
+                              </span>
+                            </div>
+                            {session.topic && (
+                              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1">
+                                Lesson Topic: {session.topic}
+                              </h3>
+                            )}
+                          </div>
+
+                          {submission ? (
+                            <div className="flex items-center space-x-2 shrink-0">
+                              <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 ${
+                                submission.status === "graded"
+                                  ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
+                                  : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800"
+                              }`}>
+                                {submission.status === "graded" ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                                <span className="capitalize">{submission.status === "graded" ? "Graded & Reviewed" : "Pending Review"}</span>
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
+                              <AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
+                              <span>⚠️ Missed Deadline</span>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Assigned Vocabulary Words Chips */}
+                        {wordsList.length > 0 && (
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+                              Assigned Vocabulary Words
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              {wordsList.map((word, idx) => (
+                                <span
+                                  key={idx}
+                                  className="px-3 py-1 rounded-xl bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-bold text-xs border border-brand-100 dark:border-brand-800/60 shadow-2xs"
+                                >
+                                  {word}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         )}
 
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                            Write your vocabulary sentences (one or more sentences incorporating the target words)
-                          </label>
-                          <textarea
-                            rows={4}
-                            value={vocabInputs[sessionKey] || ""}
-                            onChange={(e) =>
-                              setVocabInputs((prev) => ({ ...prev, [sessionKey]: e.target.value }))
-                            }
-                            placeholder="e.g. 1. The students will wander through the forest. 2. He had an ache in his leg after running..."
-                            className="w-full text-xs font-medium text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                          />
-                        </div>
+                        {submission ? (
+                          /* Read-only Past Submission View */
+                          <div className="space-y-4 pt-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                                Your Submitted Sentences
+                              </label>
+                              <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                                {submission.sentences}
+                              </div>
+                            </div>
 
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => handleSubmitVocab(session)}
-                            disabled={isSubmittingVocab[sessionKey] || !(vocabInputs[sessionKey] || "").trim()}
-                            className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2 text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
-                          >
-                            <Send className="h-3.5 w-3.5" />
-                            <span>{isSubmittingVocab[sessionKey] ? "Submitting..." : "Submit Sentences"}</span>
-                          </button>
-                        </div>
+                            {submission.feedback ? (
+                              <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 space-y-2">
+                                <div className="flex items-center space-x-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                  <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                                  <span>Teacher Feedback:</span>
+                                </div>
+                                <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-200 pl-6 leading-relaxed">
+                                  "{submission.feedback}"
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-400 italic">No feedback provided yet. Your teacher will review your sentences shortly.</p>
+                            )}
+                          </div>
+                        ) : (
+                          /* Locked View for Missed Deadline */
+                          <div className="space-y-4 pt-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-red-500 dark:text-red-400 uppercase tracking-wider mb-1.5 flex items-center space-x-1">
+                                <Lock className="h-3 w-3" />
+                                <span>Submission Locked (Deadline Passed)</span>
+                              </label>
+                              <textarea
+                                rows={4}
+                                disabled={true}
+                                value=""
+                                placeholder="Submission locked: The deadline for this assignment has passed."
+                                className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-slate-100 dark:bg-slate-800/50 cursor-not-allowed opacity-60 text-slate-500 outline-none transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                              />
+                            </div>
+
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                disabled={true}
+                                className="inline-flex items-center space-x-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 px-5 py-2 text-xs font-bold cursor-not-allowed opacity-60"
+                              >
+                                <Lock className="h-3.5 w-3.5" />
+                                <span>Locked (Missed Deadline)</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="py-12 text-center text-slate-400 dark:text-slate-500 text-xs flex flex-col items-center justify-center space-y-2">
-              <BookOpen className="h-8 w-8 text-slate-300 dark:text-slate-600" />
-              <span className="font-bold text-slate-700 dark:text-slate-300">No Vocabulary Assignments Found</span>
-              <span className="text-slate-400">When your instructor logs vocabulary words for this class, they will appear here.</span>
-            </div>
-          )}
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
       {activeTab === "exams" && (
