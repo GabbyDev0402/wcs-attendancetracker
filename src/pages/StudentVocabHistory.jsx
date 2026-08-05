@@ -19,6 +19,15 @@ export default function StudentVocabHistory() {
   const { user } = useAuth();
   const todayStr = new Date().toLocaleDateString("en-CA");
 
+  // Safe helper to normalize vocabularyWords into an array of strings
+  const parseVocabArray = (rawVocab) => {
+    if (Array.isArray(rawVocab)) return rawVocab.filter(Boolean);
+    if (typeof rawVocab === "string" && rawVocab.trim()) {
+      return rawVocab.split(",").map(w => w.trim()).filter(Boolean);
+    }
+    return [];
+  };
+
   const [vocabSessions, setVocabSessions] = useState([]);
   const [vocabSubmissionsMap, setVocabSubmissionsMap] = useState({});
   const [vocabSubmissionsList, setVocabSubmissionsList] = useState([]);
@@ -68,7 +77,7 @@ export default function StudentVocabHistory() {
       const allSessions = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
       const relevantSessions = allSessions.filter((s) => {
-        const hasVocab = s.vocabularyWords && s.vocabularyWords.trim().length > 0;
+        const hasVocab = s.vocabularyWords && (Array.isArray(s.vocabularyWords) ? s.vocabularyWords.length > 0 : typeof s.vocabularyWords === 'string' && s.vocabularyWords.trim().length > 0);
         if (!hasVocab) return false;
 
         const sessionClassTag = `${s.teacherId}_${s.classId}`;
@@ -234,7 +243,7 @@ export default function StudentVocabHistory() {
               ) || vocabSubmissionsMap[session.id] || vocabSubmissionsMap[`${session.classId}-${sessionDate}`];
 
               const submission = mySubmission;
-              const wordsList = session.vocabularyWords ? session.vocabularyWords.split(",").map((w) => w.trim()) : [];
+              const wordsList = parseVocabArray(session.vocabularyWords);
 
               return (
                 <div

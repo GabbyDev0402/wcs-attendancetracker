@@ -583,7 +583,7 @@ export default function StudentDashboard() {
                 });
 
                 // Step C: Check if teacher assigned vocabulary words for today
-                const hasVocabs = !!(todaySession?.vocabularyWords && todaySession.vocabularyWords.trim().length > 0);
+                const hasVocabs = !!(todaySession?.vocabularyWords && (Array.isArray(todaySession.vocabularyWords) ? todaySession.vocabularyWords.length > 0 : typeof todaySession.vocabularyWords === 'string' && todaySession.vocabularyWords.trim().length > 0));
 
                 // Step D: Check if student already submitted today's assignment
                 const hasSubmitted = todayVocabSubmissions.some((sub) => {

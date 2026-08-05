@@ -79,7 +79,7 @@ export default function StudentClassDashboard() {
       const rawSessions = sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       const relevantSessions = rawSessions.filter((s) => {
-        const hasVocab = s.vocabularyWords && s.vocabularyWords.trim().length > 0;
+        const hasVocab = s.vocabularyWords && (Array.isArray(s.vocabularyWords) ? s.vocabularyWords.length > 0 : typeof s.vocabularyWords === 'string' && s.vocabularyWords.trim().length > 0);
         const sessionClassTag = `${s.teacherId}_${s.classId}`;
 
         const matchesExactTag = sessionClassTag === targetClassTag;
@@ -375,7 +375,11 @@ export default function StudentClassDashboard() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-600"></div>
               </div>
             ) : (() => {
-              const todaySession = vocabSessions.find(s => (s.date || todayStr) === todayStr && s.vocabularyWords && s.vocabularyWords.trim());
+              const todaySession = vocabSessions.find(s => {
+                const isToday = (s.date || todayStr) === todayStr;
+                const hasVocab = s.vocabularyWords && (Array.isArray(s.vocabularyWords) ? s.vocabularyWords.length > 0 : typeof s.vocabularyWords === 'string' && s.vocabularyWords.trim().length > 0);
+                return isToday && hasVocab;
+              });
               
               if (!todaySession) {
                 return (

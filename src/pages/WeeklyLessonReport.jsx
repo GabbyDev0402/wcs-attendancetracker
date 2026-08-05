@@ -296,7 +296,9 @@ export default function WeeklyLessonReport() {
                       </td>
 
                       <td className="p-3 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 transition-colors">
-                        {session.vocabularyWords || <span className="text-slate-300 dark:text-slate-600 italic">-</span>}
+                        {Array.isArray(session.vocabularyWords)
+                          ? (session.vocabularyWords.length > 0 ? session.vocabularyWords.join(", ") : <span className="text-slate-300 dark:text-slate-600 italic">-</span>)
+                          : (session.vocabularyWords || <span className="text-slate-300 dark:text-slate-600 italic">-</span>)}
                       </td>
                     </tr>
                   ));

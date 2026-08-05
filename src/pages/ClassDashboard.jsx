@@ -1736,8 +1736,10 @@ export default function ClassDashboard() {
                       <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Vocabulary</span>
                         {(() => {
-                          const vocabList = parseVocabArray(session?.vocabularyWords || session?.vocabularies);
-                          return vocabList.length > 0 ? (
+                          const vocabRaw = session?.vocabularyWords || session?.vocabularies;
+                          const hasVocabs = vocabRaw && (Array.isArray(vocabRaw) ? vocabRaw.length > 0 : typeof vocabRaw === 'string' && vocabRaw.trim().length > 0);
+                          const vocabList = parseVocabArray(vocabRaw);
+                          return hasVocabs ? (
                             <div className="flex flex-wrap gap-1.5">
                               {vocabList.map((word, wIdx) => (
                                 <span key={wIdx} className="text-xs font-semibold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-md border border-brand-100 dark:border-brand-800">
@@ -1747,9 +1749,7 @@ export default function ClassDashboard() {
                             </div>
                           ) : (
                             <span className="text-xs text-slate-400 dark:text-slate-500 italic">
-                              {Array.isArray(session?.vocabularyWords)
-                                ? (session.vocabularyWords.length > 0 ? session.vocabularyWords.join(', ') : 'None')
-                                : (session?.vocabularyWords || 'None')}
+                              No vocabulary words logged
                             </span>
                           );
                         })()}
