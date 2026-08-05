@@ -84,6 +84,24 @@ export default function ClassDashboard() {
     return [];
   };
 
+  // Safe helper to format sentences (array or string) into preview text for cards
+  const formatSentencesText = (rawSentences) => {
+    if (!rawSentences) return "No sentences submitted.";
+    if (typeof rawSentences === "string") return rawSentences;
+    if (Array.isArray(rawSentences)) {
+      return rawSentences
+        .map(s => {
+          if (typeof s === "object" && s) {
+            return `${s.word || 'Word'}: ${s.sentence || ''}`;
+          }
+          return String(s);
+        })
+        .filter(Boolean)
+        .join(" | ");
+    }
+    return String(rawSentences);
+  };
+
   // Attendance State (Tab 2)
   const todayStr = new Date().toLocaleDateString("en-CA");
   const [attendanceDate, setAttendanceDate] = useState(todayStr);
@@ -1478,15 +1496,15 @@ export default function ClassDashboard() {
                 </div>
               </div>
               <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3 py-1 rounded-xl border border-amber-200 dark:border-amber-800">
-                {pendingVocabSubmissions.length} Pending Review
+                {pendingVocabSubmissions?.length || 0} Pending Review
               </span>
             </div>
 
             {isPendingVocabLoading ? (
               <div className="py-8 text-center text-xs text-slate-400">Loading pending submissions...</div>
-            ) : pendingVocabSubmissions.length > 0 ? (
+            ) : (pendingVocabSubmissions?.length || 0) > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {pendingVocabSubmissions.map((item) => (
+                {pendingVocabSubmissions?.map((item) => (
                   <div key={item.id} className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-sm text-slate-800 dark:text-slate-100">{item.studentName}</span>
@@ -1494,7 +1512,7 @@ export default function ClassDashboard() {
                     </div>
 
                     <div className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60 line-clamp-3 italic">
-                      "{item.sentences}"
+                      "{formatSentencesText(item?.sentences)}"
                     </div>
 
                     <div className="flex justify-end pt-1">
@@ -1555,9 +1573,9 @@ export default function ClassDashboard() {
 
             {isGradedVocabLoading ? (
               <div className="py-8 text-center text-xs text-slate-400">Loading graded submissions archive...</div>
-            ) : gradedVocabSubmissions.length > 0 ? (
+            ) : (gradedVocabSubmissions?.length || 0) > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {gradedVocabSubmissions.map((item) => (
+                {gradedVocabSubmissions?.map((item) => (
                   <div key={item.id} className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-sm text-slate-800 dark:text-slate-100">{item.studentName}</span>
@@ -1572,7 +1590,7 @@ export default function ClassDashboard() {
                     <div className="space-y-1.5">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Submitted Sentences:</span>
                       <div className="text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-700/60 line-clamp-2 italic">
-                        "{item.sentences}"
+                        "{formatSentencesText(item?.sentences)}"
                       </div>
                     </div>
 
@@ -1682,18 +1700,17 @@ export default function ClassDashboard() {
               <div className="py-16 text-center text-slate-400 text-xs">
                 Loading classroom lesson logs...
               </div>
-            ) : classSessionsHistory.length > 0 ? (
+            ) : (classSessionsHistory?.length || 0) > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {classSessionsHistory.map((session, index) => {
-                  const displayPages = session.pages || session.page;
-                  const displayTopic = session.topic ? session.topic : "No topic logged";
-                  const vocabWords = session.vocabularyWords || session.vocabularies;
+                {classSessionsHistory?.map((session, index) => {
+                  const displayPages = session?.pages || session?.page;
+                  const displayTopic = session?.topic ? session.topic : "No topic logged";
 
                   return (
                     <div key={index} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
                       <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
                         <span className="text-xs font-bold text-brand-600 dark:text-brand-400 font-mono">
-                          📅 {session.date}
+                          📅 {session?.date}
                         </span>
                         <div className="flex items-center space-x-2">
                           <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-300">
@@ -1718,17 +1735,24 @@ export default function ClassDashboard() {
 
                       <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">Vocabulary</span>
-                        {vocabWords && vocabWords.trim().length > 0 ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {vocabWords.split(",").map((word, wIdx) => (
-                              <span key={wIdx} className="text-xs font-semibold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-md border border-brand-100 dark:border-brand-800">
-                                {word.trim()}
-                              </span>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-slate-400 dark:text-slate-500 italic">No vocabulary words logged</span>
-                        )}
+                        {(() => {
+                          const vocabList = parseVocabArray(session?.vocabularyWords || session?.vocabularies);
+                          return vocabList.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {vocabList.map((word, wIdx) => (
+                                <span key={wIdx} className="text-xs font-semibold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-md border border-brand-100 dark:border-brand-800">
+                                  {word}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400 dark:text-slate-500 italic">
+                              {Array.isArray(session?.vocabularyWords)
+                                ? (session.vocabularyWords.length > 0 ? session.vocabularyWords.join(', ') : 'None')
+                                : (session?.vocabularyWords || 'None')}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   );
@@ -1773,9 +1797,9 @@ export default function ClassDashboard() {
             {/* Sentences Micro-Grading List */}
             <div className="space-y-3">
               <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider font-heading">
-                Micro-Grade Student Sentences ({modalSentences.length})
+                Micro-Grade Student Sentences ({modalSentences?.length || 0})
               </label>
-              {modalSentences.length > 0 ? (
+              {Array.isArray(modalSentences) && modalSentences.length > 0 ? (
                 <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
                   {modalSentences.map((item, idx) => (
                     <div
@@ -1784,17 +1808,17 @@ export default function ClassDashboard() {
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                          Word: <strong className="text-brand-600 dark:text-brand-400 font-black ml-1 text-sm">{item.word}</strong>
+                          Word: <strong className="text-brand-600 dark:text-brand-400 font-black ml-1 text-sm">{item?.word || "Word"}</strong>
                         </span>
 
                         <div className="flex items-center space-x-1.5 shrink-0">
                           <button
                             type="button"
                             onClick={() => {
-                              setModalSentences(prev => prev.map((s, i) => i === idx ? { ...s, status: "correct" } : s));
+                              setModalSentences(prev => prev?.map((s, i) => i === idx ? { ...s, status: "correct" } : s));
                             }}
                             className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                              item.status === "correct"
+                              item?.status === "correct"
                                 ? "bg-emerald-600 text-white shadow-xs"
                                 : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-emerald-600"
                             }`}
@@ -1806,10 +1830,10 @@ export default function ClassDashboard() {
                           <button
                             type="button"
                             onClick={() => {
-                              setModalSentences(prev => prev.map((s, i) => i === idx ? { ...s, status: "needs_review" } : s));
+                              setModalSentences(prev => prev?.map((s, i) => i === idx ? { ...s, status: "needs_review" } : s));
                             }}
                             className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                              item.status === "needs_review"
+                              item?.status === "needs_review"
                                 ? "bg-amber-500 text-white shadow-xs"
                                 : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-amber-600"
                             }`}
@@ -1821,14 +1845,14 @@ export default function ClassDashboard() {
                       </div>
 
                       <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                        "{item.sentence}"
+                        "{item?.sentence || ""}"
                       </p>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                  {typeof selectedVocabSub.sentences === "string" ? selectedVocabSub.sentences : "No sentences submitted."}
+                  {typeof selectedVocabSub?.sentences === "string" ? selectedVocabSub.sentences : formatSentencesText(selectedVocabSub?.sentences)}
                 </div>
               )}
             </div>
