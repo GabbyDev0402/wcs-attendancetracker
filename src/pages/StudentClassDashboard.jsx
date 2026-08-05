@@ -95,6 +95,8 @@ export default function StudentClassDashboard() {
       setIsLoading(false);
     });
 
+    const normSlug = (str) => (str || "").toString().toLowerCase().replace(/[^a-z0-9]/g, "");
+
     // 2. Real-time Vocab Submissions Listener for Student
     const vocabSubQuery = query(
       collection(db, "vocab_submissions"),
@@ -105,20 +107,24 @@ export default function StudentClassDashboard() {
       const submissionsMap = {};
       subSnap.docs.forEach((docSnap) => {
         const data = docSnap.data();
-        const dateStr = data.date || "";
-        if (!dateStr) return;
+        const docWithId = { id: docSnap.id, ...data };
+        const dateStr = data.date || (data.createdAt ? data.createdAt.split("T")[0] : "");
 
         const rawClass = data.rawClassId || (data.classId && data.classId.includes("_") ? data.classId.split("_")[1] : data.classId) || "";
 
-        if (data.classId) {
-          submissionsMap[`${data.classId}-${dateStr}`] = data;
+        const slug1 = normSlug(data.classId);
+        const slug2 = normSlug(rawClass);
+        const slug3 = normSlug(targetClassTag);
+
+        if (dateStr) {
+          if (slug1) submissionsMap[`${slug1}-${dateStr}`] = docWithId;
+          if (slug2) submissionsMap[`${slug2}-${dateStr}`] = docWithId;
+          if (slug3) submissionsMap[`${slug3}-${dateStr}`] = docWithId;
         }
-        if (rawClass) {
-          submissionsMap[`${rawClass}-${dateStr}`] = data;
-          if (extractedTeacherId) {
-            submissionsMap[`${extractedTeacherId}_${rawClass}-${dateStr}`] = data;
-          }
-        }
+
+        // Safe fallback for legacy documents without explicit dates
+        if (slug1 && !submissionsMap[slug1]) submissionsMap[slug1] = docWithId;
+        if (slug2 && !submissionsMap[slug2]) submissionsMap[slug2] = docWithId;
       });
       setVocabSubmissionsMap(submissionsMap);
     }, (e) => {
@@ -380,14 +386,25 @@ export default function StudentClassDashboard() {
             <div className="space-y-6">
               {vocabSessions.map((session) => {
                 const sessionDate = session.date || todayStr;
-                const rawClassSlug = session.classId ? (session.classId.includes("_") ? session.classId.split("_")[1] : session.classId) : extractedClassId;
-                const fullTagSlug = `${session.teacherId || extractedTeacherId}_${rawClassSlug}`;
-                
-                const sessionKey = `${session.classId}-${sessionDate}`;
-                const rawSessionKey = `${rawClassSlug}-${sessionDate}`;
-                const fullTagKey = `${fullTagSlug}-${sessionDate}`;
+                const normSlug = (str) => (str || "").toString().toLowerCase().replace(/[^a-z0-9]/g, "");
 
-                const submission = vocabSubmissionsMap[sessionKey] || vocabSubmissionsMap[rawSessionKey] || vocabSubmissionsMap[fullTagKey];
+                const rawClassSlug = session.classId ? (session.classId.includes("_") ? session.classId.split("_")[1] : session.classId) : extractedClassId;
+
+                const slug1 = normSlug(session.classId);
+                const slug2 = normSlug(rawClassSlug);
+                const slug3 = normSlug(extractedClassId);
+                const slug4 = normSlug(targetClassTag);
+
+                const sessionKey = `${session.classId}-${sessionDate}`;
+
+                const submission = 
+                  vocabSubmissionsMap[`${slug1}-${sessionDate}`] ||
+                  vocabSubmissionsMap[`${slug2}-${sessionDate}`] ||
+                  vocabSubmissionsMap[`${slug3}-${sessionDate}`] ||
+                  vocabSubmissionsMap[`${slug4}-${sessionDate}`] ||
+                  vocabSubmissionsMap[sessionKey] ||
+                  (sessionDate === todayStr ? null : (vocabSubmissionsMap[slug1] || vocabSubmissionsMap[slug2]));
+
                 const wordsList = session.vocabularyWords.split(",").map((w) => w.trim());
                 const isPastDue = sessionDate < todayStr;
 

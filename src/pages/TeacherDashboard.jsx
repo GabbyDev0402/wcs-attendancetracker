@@ -52,7 +52,7 @@ export default function TeacherDashboard() {
 
   // Graded Diaries Archive State
   const [gradedDiaries, setGradedDiaries] = useState([]);
-  const [gradedDiaryDateFilter, setGradedDiaryDateFilter] = useState(todayStr);
+  const [gradedDiaryDateFilter, setGradedDiaryDateFilter] = useState("");
   const [isGradedDiariesLoading, setIsGradedDiariesLoading] = useState(false);
 
   // Parse classes from teacher assignments
