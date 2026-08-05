@@ -20,16 +20,29 @@ import {
   FileText,
   Calendar,
   Eye,
+  Bell,
   X
 } from "lucide-react";
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const todayStr = new Date().toLocaleDateString("en-CA");
 
-  // Attendance State
+  const getTodayManila = () => {
+    const now = new Date();
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).format(now);
+  };
+  const todayStr = getTodayManila();
+
+  // Attendance & Sessions State
   const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [allSessionsList, setAllSessionsList] = useState([]);
+  const [todayVocabSubmissions, setTodayVocabSubmissions] = useState([]);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [attendanceStats, setAttendanceStats] = useState({
     present: 0,
@@ -93,6 +106,7 @@ export default function StudentDashboard() {
 
     const unsubSessions = onSnapshot(sessionsQuery, (snap) => {
       const fetchedSessions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllSessionsList(fetchedSessions);
 
       // Map to deduplicate session logs by unique key: (classSlug + date)
       const sessionMap = new Map();
@@ -174,9 +188,22 @@ export default function StudentDashboard() {
       setIsLoading(false);
     });
 
+    // 3. Real-time Student Vocab Submissions Listener (For Card Notification Badges)
+    const vocabSubQuery = query(
+      collection(db, "vocab_submissions"),
+      where("studentId", "==", user.id)
+    );
+    const unsubSubmissions = onSnapshot(vocabSubQuery, (subSnap) => {
+      const list = subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTodayVocabSubmissions(list);
+    }, (err) => {
+      console.warn("Error listening to student vocab submissions:", err);
+    });
+
     return () => {
       unsubDiary();
       unsubSessions();
+      unsubSubmissions();
     };
   }, [user]);
 
@@ -510,19 +537,96 @@ export default function StudentDashboard() {
 
                 const title = parseClassTitle(classTag);
 
+                // Calculate Notification Badge State
+                let extractedTeacherId = "";
+                let extractedClassId = classTag;
+
+                if (classTag.includes("_")) {
+                  const parts = classTag.split("_");
+                  extractedTeacherId = parts[0];
+                  extractedClassId = parts[1];
+                }
+
+                let expectedGrade = "";
+                let expectedSubject = "";
+
+                if (extractedClassId.startsWith("grade-")) {
+                  const match = extractedClassId.match(/^grade-(\d+)-(.*)$/i);
+                  if (match) {
+                    expectedGrade = `Grade ${match[1]}`;
+                    expectedSubject = match[2].replace(/-/g, " ");
+                  }
+                } else if (extractedClassId.includes("-")) {
+                  const parts = extractedClassId.split("-");
+                  expectedGrade = parts[0];
+                  expectedSubject = parts.slice(1).join(" ");
+                }
+
+                const norm = (s) => (s || "").toString().toLowerCase().trim();
+
+                // Step B: Find today's session for this specific classroom
+                const todaySession = allSessionsList.find((s) => {
+                  const sessionDate = s.date || "";
+                  if (sessionDate !== todayStr) return false;
+
+                  const sessionClassTag = `${s.teacherId}_${s.classId}`;
+                  const matchesTag = s.classId === classTag || s.classId === extractedClassId || sessionClassTag === classTag;
+
+                  const sessionGrade = s.gradeLevel || s.grade;
+                  const matchesGrade = expectedGrade ? norm(sessionGrade) === norm(expectedGrade) : true;
+                  const matchesSubject = expectedSubject ? norm(s.subject) === norm(expectedSubject) : true;
+                  const matchesTeacher = extractedTeacherId ? norm(s.teacherId) === norm(extractedTeacherId) : true;
+
+                  const matchesGradeAndSubject = matchesGrade && matchesSubject && matchesTeacher;
+
+                  return matchesTag || matchesGradeAndSubject;
+                });
+
+                // Step C: Check if teacher assigned vocabulary words for today
+                const hasVocabs = !!(todaySession?.vocabularyWords && todaySession.vocabularyWords.trim().length > 0);
+
+                // Step D: Check if student already submitted today's assignment
+                const hasSubmitted = todayVocabSubmissions.some((sub) => {
+                  const subDate = sub.date || (sub.createdAt ? sub.createdAt.split("T")[0] : "");
+                  if (subDate !== todayStr) return false;
+
+                  const matchesSessionId = todaySession?.id && sub.sessionId === todaySession.id;
+                  const matchesClassTag = sub.classId === classTag || sub.rawClassId === extractedClassId || sub.classId === extractedClassId;
+
+                  return matchesSessionId || matchesClassTag;
+                });
+
+                const showNotification = hasVocabs && !hasSubmitted;
+
                 return (
                   <div
                     key={classTag || index}
-                    className="group bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 rounded-2xl p-6 flex flex-col justify-between space-y-5 hover:border-brand-500/50 dark:hover:border-brand-400/50 hover:shadow-md transition-all"
+                    className={`group bg-slate-50/50 dark:bg-slate-800/40 border rounded-2xl p-6 flex flex-col justify-between space-y-5 transition-all hover:shadow-md ${
+                      showNotification 
+                        ? "border-amber-300 dark:border-amber-700/80 shadow-xs" 
+                        : "border-slate-200/80 dark:border-slate-700/60 hover:border-brand-500/50 dark:hover:border-brand-400/50"
+                    }`}
                   >
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <div className="p-2.5 rounded-xl bg-brand-100/60 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 group-hover:scale-105 transition-transform">
+                        <div className={`p-2.5 rounded-xl transition-transform group-hover:scale-105 ${
+                          showNotification 
+                            ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400"
+                            : "bg-brand-100/60 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400"
+                        }`}>
                           <GraduationCap className="h-5 w-5" />
                         </div>
-                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-2.5 py-1 rounded-lg border border-brand-100 dark:border-brand-800/50">
-                          Active Classroom
-                        </span>
+
+                        {showNotification ? (
+                          <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 ring-1 ring-amber-300 dark:ring-amber-800 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-amber-200 dark:border-amber-800">
+                            <Bell className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 animate-bounce" />
+                            <span>New Vocab Due</span>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-2.5 py-1 rounded-lg border border-brand-100 dark:border-brand-800/50">
+                            Active Classroom
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -537,7 +641,11 @@ export default function StudentDashboard() {
 
                     <button
                       onClick={() => navigate(`/student/class/${encodeURIComponent(classTag)}`)}
-                      className="w-full py-2.5 rounded-xl bg-slate-950 dark:bg-brand-600 hover:bg-brand-600 dark:hover:bg-brand-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-xs"
+                      className={`w-full py-2.5 rounded-xl text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-xs ${
+                        showNotification
+                          ? "bg-amber-600 hover:bg-amber-700"
+                          : "bg-slate-950 dark:bg-brand-600 hover:bg-brand-600 dark:hover:bg-brand-500"
+                      }`}
                     >
                       <span>Enter Classroom</span>
                       <span>➔</span>
