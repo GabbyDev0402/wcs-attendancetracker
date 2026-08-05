@@ -102,7 +102,7 @@ export default function ClassDashboard() {
 
   // Graded Vocab Submissions Archive State (Tab 3 Middle Section)
   const [gradedVocabSubmissions, setGradedVocabSubmissions] = useState([]);
-  const [gradedVocabDateFilter, setGradedVocabDateFilter] = useState("");
+  const [gradedVocabDateFilter, setGradedVocabDateFilter] = useState(todayStr);
   const [isGradedVocabLoading, setIsGradedVocabLoading] = useState(false);
 
   // Exams State (Tab 4)
