@@ -11,7 +11,9 @@ import {
   AlertTriangle, 
   Lock, 
   MessageSquare,
-  Lightbulb
+  Lightbulb,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 
 export default function StudentVocabHistory() {
@@ -28,6 +30,195 @@ export default function StudentVocabHistory() {
     }
     return [];
   };
+
+// Sub-Component for Collapsible Accordion History Cards
+function HistoryCardItem({ session, submission, wordsList, sessionDate }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl transition-all shadow-2xs overflow-hidden">
+      {/* Card Header Bar (Always Visible & Clickable) */}
+      <div
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/70 transition-colors select-none"
+      >
+        <div className="space-y-1">
+          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+            <span className="text-xs font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider">
+              {session.gradeLevel || session.grade || "Classroom"} — {session.subject || "Subject"}
+            </span>
+            <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+              📅 Date: {sessionDate}
+            </span>
+          </div>
+          {session.topic && (
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+              Lesson Topic: {session.topic}
+            </h3>
+          )}
+        </div>
+
+        <div className="flex items-center space-x-3 shrink-0">
+          {submission ? (
+            <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 ${
+              submission.status === "graded"
+                ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
+                : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800"
+            }`}>
+              {submission.status === "graded" ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+              <span className="capitalize">{submission.status === "graded" ? "Graded & Reviewed" : "Pending Review"}</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
+              <AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
+              <span>⚠️ Missed Deadline</span>
+            </span>
+          )}
+
+          <button
+            type="button"
+            className="inline-flex items-center space-x-1.5 text-xs font-bold text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 bg-white dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xs transition-colors shrink-0"
+          >
+            <span>{isExpanded ? "Hide Details" : "View Details"}</span>
+            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded Accordion Content */}
+      {isExpanded && (
+        <div className="px-5 pb-6 pt-3 border-t border-slate-200/60 dark:border-slate-700/60 space-y-5 animate-fade-in">
+          {/* Assigned Vocabulary Words */}
+          {wordsList.length > 0 && (
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+                Assigned Vocabulary Words
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {wordsList.map((word, idx) => (
+                  <span
+                    key={idx}
+                    className="px-3 py-1 rounded-xl bg-teal-50 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 font-bold text-xs border border-teal-100 dark:border-teal-800/60 shadow-2xs"
+                  >
+                    {word}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {submission ? (
+            /* Read-only Submitted View */
+            <div className="space-y-4 pt-1">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
+                  Your Submitted Sentences
+                </label>
+                {Array.isArray(submission.sentences) ? (
+                  <div className="space-y-3">
+                    {submission.sentences.map((item, idx) => {
+                      const isNeedsReview = item.status === "needs_review" || item.status === "flagged";
+                      return (
+                        <div
+                          key={idx}
+                          className={`p-4 rounded-2xl border transition-colors space-y-1.5 ${
+                            isNeedsReview
+                              ? "bg-amber-50/90 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/80 shadow-2xs"
+                              : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                              Word: <strong className="text-teal-600 dark:text-teal-400 font-black">{item.word}</strong>
+                            </span>
+                            {submission.status === "graded" && (
+                              isNeedsReview ? (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                  <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                                  <span>Needs Review</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
+                                  <CheckCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                                  <span>Correct</span>
+                                </span>
+                              )
+                            )}
+                          </div>
+                          <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                            "{item?.sentence || ""}"
+                          </p>
+
+                          {isNeedsReview && item?.correction && (
+                            <div className="mt-2.5 p-3 rounded-xl bg-amber-100/80 dark:bg-amber-900/50 border border-amber-300/80 dark:border-amber-700/80 text-amber-900 dark:text-amber-100 space-y-1">
+                              <div className="flex items-center space-x-1.5 text-xs font-bold text-amber-800 dark:text-amber-200">
+                                <Lightbulb className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                <span>Teacher Note / Correction:</span>
+                              </div>
+                              <p className="text-xs font-medium pl-5 leading-relaxed">
+                                "{item.correction}"
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                    {submission.sentences}
+                  </div>
+                )}
+              </div>
+
+              {submission.feedback ? (
+                <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 space-y-2">
+                  <div className="flex items-center space-x-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                    <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Teacher Feedback:</span>
+                  </div>
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-200 pl-6 leading-relaxed">
+                    "{submission.feedback}"
+                  </p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">No feedback provided yet. Your teacher will review your sentences shortly.</p>
+              )}
+            </div>
+          ) : (
+            /* Locked View for Missed Deadline */
+            <div className="space-y-4 pt-1">
+              <div>
+                <label className="block text-[10px] font-bold text-red-500 dark:text-red-400 uppercase tracking-wider mb-1.5 flex items-center space-x-1">
+                  <Lock className="h-3 w-3" />
+                  <span>Submission Locked (Deadline Passed)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  disabled={true}
+                  value=""
+                  placeholder="Submission locked: The deadline for this assignment has passed."
+                  className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-slate-100 dark:bg-slate-800/50 cursor-not-allowed opacity-60 text-slate-500 outline-none transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  disabled={true}
+                  className="inline-flex items-center space-x-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 px-5 py-2 text-xs font-bold cursor-not-allowed opacity-60"
+                >
+                  <Lock className="h-3.5 w-3.5" />
+                  <span>Locked (Missed Deadline)</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
   const [vocabSessions, setVocabSessions] = useState([]);
   const [vocabSubmissionsMap, setVocabSubmissionsMap] = useState({});
@@ -247,172 +438,13 @@ export default function StudentVocabHistory() {
               const wordsList = parseVocabArray(session.vocabularyWords);
 
               return (
-                <div
+                <HistoryCardItem
                   key={sessionKey}
-                  className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 space-y-5 transition-colors"
-                >
-                  {/* Card Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200/60 dark:border-slate-700/60 pb-3">
-                    <div>
-                      <div className="flex items-center space-x-2">
-                        <span className="text-xs font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wider">
-                          {session.gradeLevel || session.grade || "Classroom"} — {session.subject || "Subject"}
-                        </span>
-                        <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                          Date: {sessionDate}
-                        </span>
-                      </div>
-                      {session.topic && (
-                        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1">
-                          Lesson Topic: {session.topic}
-                        </h3>
-                      )}
-                    </div>
-
-                    {submission ? (
-                      <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 ${
-                        submission.status === "graded"
-                          ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
-                          : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800"
-                      }`}>
-                        {submission.status === "graded" ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
-                        <span className="capitalize">{submission.status === "graded" ? "Graded & Reviewed" : "Pending Review"}</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl text-xs font-bold shrink-0 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800">
-                        <AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
-                        <span>⚠️ Missed Deadline</span>
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Assigned Vocabulary Words */}
-                  {wordsList.length > 0 && (
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
-                        Assigned Vocabulary Words
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {wordsList.map((word, idx) => (
-                          <span
-                            key={idx}
-                            className="px-3 py-1 rounded-xl bg-teal-50 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 font-bold text-xs border border-teal-100 dark:border-teal-800/60 shadow-2xs"
-                          >
-                            {word}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {submission ? (
-                    /* Read-only Submitted View */
-                    <div className="space-y-4 pt-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2">
-                          Your Submitted Sentences
-                        </label>
-                        {Array.isArray(submission.sentences) ? (
-                          <div className="space-y-3">
-                            {submission.sentences.map((item, idx) => {
-                              const isNeedsReview = item.status === "needs_review" || item.status === "flagged";
-                              return (
-                                <div
-                                  key={idx}
-                                  className={`p-4 rounded-2xl border transition-colors space-y-1.5 ${
-                                    isNeedsReview
-                                      ? "bg-amber-50/90 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/80 shadow-2xs"
-                                      : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700"
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
-                                      Word: <strong className="text-teal-600 dark:text-teal-400 font-black">{item.word}</strong>
-                                    </span>
-                                    {submission.status === "graded" && (
-                                      isNeedsReview ? (
-                                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                                          <AlertTriangle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-                                          <span>Needs Review</span>
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700">
-                                          <CheckCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                                          <span>Correct</span>
-                                        </span>
-                                      )
-                                    )}
-                                  </div>
-                                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                                    "{item?.sentence || ""}"
-                                  </p>
-
-                                  {isNeedsReview && item?.correction && (
-                                    <div className="mt-2.5 p-3 rounded-xl bg-amber-100/80 dark:bg-amber-900/50 border border-amber-300/80 dark:border-amber-700/80 text-amber-900 dark:text-amber-100 space-y-1">
-                                      <div className="flex items-center space-x-1.5 text-xs font-bold text-amber-800 dark:text-amber-200">
-                                        <Lightbulb className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                                        <span>Teacher Note / Correction:</span>
-                                      </div>
-                                      <p className="text-xs font-medium pl-5 leading-relaxed">
-                                        "{item.correction}"
-                                      </p>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                            {submission.sentences}
-                          </div>
-                        )}
-                      </div>
-
-                      {submission.feedback ? (
-                        <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 space-y-2">
-                          <div className="flex items-center space-x-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
-                            <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                            <span>Teacher Feedback:</span>
-                          </div>
-                          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-200 pl-6 leading-relaxed">
-                            "{submission.feedback}"
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-400 italic">No feedback provided yet. Your teacher will review your sentences shortly.</p>
-                      )}
-                    </div>
-                  ) : (
-                    /* Locked View for Missed Deadline */
-                    <div className="space-y-4 pt-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-red-500 dark:text-red-400 uppercase tracking-wider mb-1.5 flex items-center space-x-1">
-                          <Lock className="h-3 w-3" />
-                          <span>Submission Locked (Deadline Passed)</span>
-                        </label>
-                        <textarea
-                          rows={3}
-                          disabled={true}
-                          value=""
-                          placeholder="Submission locked: The deadline for this assignment has passed."
-                          className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-slate-100 dark:bg-slate-800/50 cursor-not-allowed opacity-60 text-slate-500 outline-none transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500"
-                        />
-                      </div>
-
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          disabled={true}
-                          className="inline-flex items-center space-x-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 px-5 py-2 text-xs font-bold cursor-not-allowed opacity-60"
-                        >
-                          <Lock className="h-3.5 w-3.5" />
-                          <span>Locked (Missed Deadline)</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  session={session}
+                  submission={submission}
+                  wordsList={wordsList}
+                  sessionDate={sessionDate}
+                />
               );
             })}
           </div>
