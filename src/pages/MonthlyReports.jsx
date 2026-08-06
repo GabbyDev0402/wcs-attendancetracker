@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams, useLocation, Link } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
@@ -20,9 +20,10 @@ import {
 export default function MonthlyReports() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   
   const classId = searchParams.get("classId") || "";
-  const [selectedClassId, setSelectedClassId] = useState(classId);
+  const [selectedClassId, setSelectedClassId] = useState(location.state?.preselectedClass || classId);
   const now = new Date();
   const currentMonthVal = (now.getMonth() + 1).toString().padStart(2, "0");
   const currentYearVal = now.getFullYear().toString();
@@ -70,17 +71,29 @@ export default function MonthlyReports() {
     });
 
     setClassList(teacherClasses);
-    if (classId) {
-      const matched = teacherClasses.find(c => c.tag === classId || c.slug === classId || c.tag === `${user.id}_${classId}`);
+
+    const preselected = location.state?.preselectedClass || classId || "";
+
+    if (preselected) {
+      const matched = teacherClasses.find(c => c.tag === preselected || c.slug === preselected || c.tag === `${user.id}_${preselected}` || c.id === preselected);
       if (matched) {
         setSelectedClassId(matched.tag);
       } else {
-        setSelectedClassId(classId);
+        setSelectedClassId(preselected);
       }
     } else if (teacherClasses.length > 0 && !selectedClassId) {
       setSelectedClassId(teacherClasses[0].tag);
     }
-  }, [user, classId]);
+  }, [user, classId, location.state]);
+
+  // Listen for navigation state preselectedClass
+  useEffect(() => {
+    if (location.state?.preselectedClass) {
+      const target = location.state.preselectedClass;
+      const matched = classList.find(c => c.tag === target || c.slug === target || c.id === target || c.tag === `${user?.id}_${target}`);
+      setSelectedClassId(matched ? matched.tag : target);
+    }
+  }, [location.state, classList, user]);
 
   // Sync active class information
   useEffect(() => {

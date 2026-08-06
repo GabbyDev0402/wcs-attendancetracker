@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 export default function TeacherDashboard() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [teacherClasses, setTeacherClasses] = useState([]);
   const [atRiskStudents, setAtRiskStudents] = useState([]);
@@ -406,6 +407,7 @@ export default function TeacherDashboard() {
               className: sClass,
               grade: sGrade,
               classId: student.classId || "",
+              enrolledClasses: student.enrolledClasses || [],
               attendanceRate: rate,
               streak: maxConsecutiveAbsences,
               reason: reasonText,
@@ -913,14 +915,19 @@ export default function TeacherDashboard() {
                             <span className={isCritical ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-500"}>
                               {student.reason}
                             </span>
-                            <Link 
-                              to={`/teacher/log?classId=${student.classId}`}
-                              className={`hover:underline ${
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const teacherUid = user?.id || user?.uid || "";
+                                const targetClassTag = student.enrolledClasses?.find(tag => (tag || "").startsWith(teacherUid)) || student.classId;
+                                navigate("/teacher/reports", { state: { preselectedClass: targetClassTag } });
+                              }}
+                              className={`cursor-pointer hover:underline text-[10px] font-bold ${
                                 isCritical ? "text-red-700 dark:text-red-400" : "text-amber-850 dark:text-amber-400"
                               }`}
                             >
                               View Logs
-                            </Link>
+                            </button>
                           </div>
                         </div>
                       );
