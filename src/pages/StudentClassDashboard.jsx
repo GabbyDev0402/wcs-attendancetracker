@@ -16,7 +16,8 @@ import {
   Lock,
   FileText,
   GraduationCap,
-  History
+  History,
+  Lightbulb
 } from "lucide-react";
 
 export default function StudentClassDashboard() {
@@ -518,8 +519,20 @@ export default function StudentClassDashboard() {
                                     )}
                                   </div>
                                   <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                                    "{item.sentence}"
+                                    "{item?.sentence || ""}"
                                   </p>
+
+                                  {isNeedsReview && item?.correction && (
+                                    <div className="mt-2.5 p-3 rounded-xl bg-amber-100/80 dark:bg-amber-900/50 border border-amber-300/80 dark:border-amber-700/80 text-amber-900 dark:text-amber-100 space-y-1">
+                                      <div className="flex items-center space-x-1.5 text-xs font-bold text-amber-800 dark:text-amber-200">
+                                        <Lightbulb className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                        <span>Teacher Note / Correction:</span>
+                                      </div>
+                                      <p className="text-xs font-medium pl-5 leading-relaxed">
+                                        "{item.correction}"
+                                      </p>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}

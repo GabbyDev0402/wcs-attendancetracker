@@ -692,23 +692,28 @@ export default function ClassDashboard() {
     let parsedSentences = [];
     if (Array.isArray(sub.sentences)) {
       parsedSentences = sub.sentences.map(item => ({
-        word: item.word || "Word",
-        sentence: item.sentence || "",
-        status: item.status || "correct"
+        word: (typeof item === "object" && item?.word) ? item.word : "Word",
+        sentence: (typeof item === "object" && item?.sentence) ? item.sentence : (typeof item === "string" ? item : ""),
+        status: (typeof item === "object" && item?.status) ? item.status : "correct",
+        correction: (typeof item === "object" && item?.correction) ? item.correction : ""
       }));
     } else if (typeof sub.sentences === "string") {
       const lines = sub.sentences.split("\n").filter(Boolean);
       parsedSentences = lines.map((line) => {
         const parts = line.split(":");
         if (parts.length >= 2) {
-          return { word: parts[0].trim(), sentence: parts.slice(1).join(":").trim(), status: "correct" };
+          return { word: parts[0].trim(), sentence: parts.slice(1).join(":").trim(), status: "correct", correction: "" };
         }
-        return { word: "Sentence", sentence: line.trim(), status: "correct" };
+        return { word: "Sentence", sentence: line.trim(), status: "correct", correction: "" };
       });
     }
 
     setModalSentences(parsedSentences);
     setIsVocabModalOpen(true);
+  };
+
+  const handleCorrectionChange = (idx, newText) => {
+    setModalSentences(prev => prev?.map((s, i) => i === idx ? { ...s, correction: newText } : s));
   };
 
   const handleGradeVocabSubmit = async (e) => {
@@ -1847,6 +1852,21 @@ export default function ClassDashboard() {
                       <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
                         "{item?.sentence || ""}"
                       </p>
+
+                      {item?.status === "needs_review" && (
+                        <div className="pt-1 space-y-1">
+                          <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                            Specific Correction / Hint:
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={item?.correction || ""}
+                            onChange={(e) => handleCorrectionChange(idx, e.target.value)}
+                            placeholder="Enter specific correction or hint..."
+                            className="w-full text-xs font-medium bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-amber-900 dark:text-amber-100 placeholder-amber-400/80 rounded-xl p-2.5 outline-none focus:border-amber-400 transition-colors"
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
