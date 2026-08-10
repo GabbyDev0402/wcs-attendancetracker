@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot, addDoc } from "firebase/firestore";
 import { formatStudentName } from "../utils/helpers";
 import { 
   ArrowLeft,
@@ -17,7 +17,9 @@ import {
   FileText,
   GraduationCap,
   History,
-  Lightbulb
+  Lightbulb,
+  FolderKanban,
+  ExternalLink
 } from "lucide-react";
 
 export default function StudentClassDashboard() {
@@ -50,6 +52,12 @@ export default function StudentClassDashboard() {
   const [examsList, setExamsList] = useState([]);
   const [examSubmissionsMap, setExamSubmissionsMap] = useState({});
   const [isExamsLoading, setIsExamsLoading] = useState(false);
+
+  // Tasks State (Tab 3)
+  const [tasksList, setTasksList] = useState([]);
+  const [taskSubmissionsMap, setTaskSubmissionsMap] = useState({});
+  const [isTasksLoading, setIsTasksLoading] = useState(false);
+  const [isMarkingDone, setIsMarkingDone] = useState({});
 
   const targetClassTag = decodeURIComponent(rawClassParam || "");
   let extractedTeacherId = "";
@@ -126,6 +134,7 @@ export default function StudentClassDashboard() {
     });
 
     loadExamsData();
+    loadTasksData();
 
     return () => {
       unsubSessions();
@@ -168,6 +177,72 @@ export default function StudentClassDashboard() {
       console.error("Error loading exams in student portal:", e);
     } finally {
       setIsExamsLoading(false);
+    }
+  };
+
+  // Load Published Tasks & Student Task Submissions
+  const loadTasksData = async () => {
+    if (!user || !targetClassTag) return;
+    setIsTasksLoading(true);
+    try {
+      const tasksSnap = await getDocs(collection(db, "tasks"));
+      const allTasks = tasksSnap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
+
+      const relevantTasks = allTasks.filter((tk) => {
+        const isPublished = tk.status === "published";
+        const matchesClassTag = tk.classId === targetClassTag || tk.classId === extractedClassId;
+        const matchesTeacher = extractedTeacherId ? (tk.teacherId === extractedTeacherId) : true;
+        return isPublished && (matchesClassTag || matchesTeacher);
+      });
+
+      setTasksList(relevantTasks);
+
+      const subSnap = await getDocs(
+        query(collection(db, "task_submissions"), where("studentId", "==", user.id))
+      );
+
+      const subsMap = {};
+      subSnap.docs.forEach((doc) => {
+        const data = doc.data();
+        if (data.taskId) {
+          subsMap[data.taskId] = { id: doc.id, firestoreId: doc.id, ...data };
+        }
+      });
+
+      setTaskSubmissionsMap(subsMap);
+    } catch (e) {
+      console.error("Error loading tasks in student portal:", e);
+    } finally {
+      setIsTasksLoading(false);
+    }
+  };
+
+  const handleMarkExternalTaskDone = async (task) => {
+    const taskId = task.firestoreId || task.id;
+    setIsMarkingDone(prev => ({ ...prev, [taskId]: true }));
+    try {
+      const payload = {
+        taskId: taskId,
+        taskTitle: task.title || "Task",
+        classId: targetClassTag,
+        studentId: user.id,
+        studentName: formatStudentName(user),
+        status: "turned_in",
+        score: 0,
+        maxScore: Number(task.maxScore || task.totalPoints || 50),
+        mode: "external",
+        submittedAt: new Date().toISOString()
+      };
+
+      const docRef = await addDoc(collection(db, "task_submissions"), payload);
+      setTaskSubmissionsMap(prev => ({
+        ...prev,
+        [taskId]: { firestoreId: docRef.id, ...payload }
+      }));
+    } catch (e) {
+      alert("Failed to mark task as done: " + e.message);
+    } finally {
+      setIsMarkingDone(prev => ({ ...prev, [taskId]: false }));
     }
   };
 
@@ -340,6 +415,23 @@ export default function StudentClassDashboard() {
           {examsList.length > 0 && (
             <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-bold border border-brand-100 dark:border-brand-800">
               {examsList.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab("tasks")}
+          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
+            activeTab === "tasks"
+              ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          }`}
+        >
+          <FolderKanban className="h-4 w-4" />
+          <span>Assignments & Tasks</span>
+          {tasksList.length > 0 && (
+            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-bold border border-brand-100 dark:border-brand-800">
+              {tasksList.length}
             </span>
           )}
         </button>
@@ -756,6 +848,142 @@ export default function StudentClassDashboard() {
               <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
               <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Active Exams</p>
               <p className="text-xs text-slate-400">There are no published exams currently assigned to this classroom portal.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab Content: Assignments & Tasks */}
+      {activeTab === "tasks" && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-4">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+              Classroom Assignments & Tasks
+            </h2>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+              Complete written tasks, performance tasks, external Google Forms, and in-app worksheets.
+            </p>
+          </div>
+
+          {isTasksLoading ? (
+            <div className="py-12 text-center text-slate-400 text-sm">Loading tasks...</div>
+          ) : tasksList.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {tasksList.map((task) => {
+                const taskId = task.firestoreId || task.id;
+                const sub = taskSubmissionsMap[taskId];
+                const isSubmitted = !!sub;
+
+                return (
+                  <div
+                    key={taskId}
+                    className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{task.title}</h3>
+                          <div className="flex items-center space-x-2 mt-1 flex-wrap gap-y-1">
+                            <span className={`inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                              task.category === "Performance Task"
+                                ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
+                                : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
+                            }`}>
+                              {task.category || "Written Task"}
+                            </span>
+                            <span className="inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                              {task.quarter || "1st Quarter"}
+                            </span>
+                          </div>
+                        </div>
+
+                        {isSubmitted ? (
+                          <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 ${
+                            sub.status === "graded"
+                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
+                              : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800"
+                          }`}>
+                            {sub.status === "graded" ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
+                            <span className="capitalize">{sub.status === "graded" ? "Graded" : "Turned In"}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
+                            <Clock className="h-3.5 w-3.5" />
+                            <span>Assigned</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {task.description && (
+                        <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                          {task.description}
+                        </p>
+                      )}
+
+                      <div className="flex items-center space-x-4 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
+                        <span>Due: {task.dueDate || "No Due Date"}</span>
+                        <span>• Max: {task.totalPoints || task.maxScore || 50} pts</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+                      {isSubmitted ? (
+                        <div className="flex items-center justify-between w-full">
+                          <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Score: <span className="font-extrabold text-brand-600 dark:text-brand-400">{sub.status === "graded" ? `${sub.score} / ${sub.maxScore || task.totalPoints || 50} pts` : `Awaiting Grade (${sub.maxScore || task.totalPoints || 50} max)`}</span>
+                          </div>
+                          <button
+                            disabled={true}
+                            className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold cursor-not-allowed opacity-75"
+                          >
+                            Submitted ✅
+                          </button>
+                        </div>
+                      ) : task.mode === "external" ? (
+                        <div className="flex items-center justify-between w-full gap-2">
+                          {task.externalUrl ? (
+                            <a
+                              href={task.externalUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center space-x-1 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors"
+                            >
+                              <span>Open Link ↗</span>
+                            </a>
+                          ) : <div />}
+
+                          <button
+                            onClick={() => handleMarkExternalTaskDone(task)}
+                            disabled={isMarkingDone[taskId]}
+                            className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                          >
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            <span>{isMarkingDone[taskId] ? "Marking..." : "Mark as Done"}</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            In-App Quiz
+                          </span>
+                          <button
+                            onClick={() => navigate(`/student/class/${encodeURIComponent(targetClassTag)}/task/${taskId}`)}
+                            className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                          >
+                            <span>Start Task ➔</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="py-12 text-center space-y-2">
+              <FolderKanban className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Assignments or Tasks</p>
+              <p className="text-xs text-slate-400">There are no tasks or quizzes currently assigned to this classroom portal.</p>
             </div>
           )}
         </div>

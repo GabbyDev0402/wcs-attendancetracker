@@ -173,6 +173,19 @@ export default function ClassDashboard() {
   const [taskMaxScore, setTaskMaxScore] = useState(50);
   const [taskQuestions, setTaskQuestions] = useState([]);
 
+  // Task Submissions & Grading State
+  const [taskSubmissions, setTaskSubmissions] = useState([]);
+  const [isTaskSubmissionsLoading, setIsTaskSubmissionsLoading] = useState(false);
+  const [isGradingExternalTaskModalOpen, setIsGradingExternalTaskModalOpen] = useState(false);
+  const [selectedExternalTaskSub, setSelectedExternalTaskSub] = useState(null);
+  const [externalTaskScoreInput, setExternalTaskScoreInput] = useState("");
+  const [isSavingExternalTaskGrade, setIsSavingExternalTaskGrade] = useState(false);
+
+  const [isGradingQuizModalOpen, setIsGradingQuizModalOpen] = useState(false);
+  const [selectedQuizSub, setSelectedQuizSub] = useState(null);
+  const [manualQuizSubjScores, setManualQuizSubjScores] = useState({});
+  const [isSavingQuizGrade, setIsSavingQuizGrade] = useState(false);
+
   // Parse Class metadata from teacher's assignments
   useEffect(() => {
     if (!user || !classId) return;
@@ -977,10 +990,13 @@ export default function ClassDashboard() {
   };
 
   // -------------------------------------------------------------
-  // TAB 5: TASKS & ASSIGNMENTS LOGIC (E-CLASS RECORD PHASE 1)
+  // TAB 5: TASKS & ASSIGNMENTS LOGIC (E-CLASS RECORD PHASE 1 & PHASE 2)
   // -------------------------------------------------------------
   useEffect(() => {
-    if (activeTab === "tasks") loadTasks();
+    if (activeTab === "tasks") {
+      loadTasks();
+      loadTaskSubmissions();
+    }
   }, [activeTab, classId, user]);
 
   const loadTasks = async () => {
@@ -1000,6 +1016,102 @@ export default function ClassDashboard() {
       console.error("Error loading tasks:", e);
     } finally {
       setIsTasksLoading(false);
+    }
+  };
+
+  const loadTaskSubmissions = async () => {
+    if (!classId || !user) return;
+    setIsTaskSubmissionsLoading(true);
+    try {
+      const tag = `${user.id}_${classId}`;
+      const q = query(
+        collection(db, "task_submissions"),
+        where("classId", "==", tag)
+      );
+      const snap = await getDocs(q);
+      const items = snap.docs.map(d => ({ id: d.id, firestoreId: d.id, ...d.data() }));
+      items.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+      setTaskSubmissions(items);
+    } catch (e) {
+      console.error("Error loading task submissions:", e);
+    } finally {
+      setIsTaskSubmissionsLoading(false);
+    }
+  };
+
+  const handleOpenExternalTaskGradingModal = (sub) => {
+    setSelectedExternalTaskSub(sub);
+    setExternalTaskScoreInput(sub.score !== undefined ? sub.score.toString() : "");
+    setIsGradingExternalTaskModalOpen(true);
+  };
+
+  const handleSaveExternalTaskGrade = async (e) => {
+    e.preventDefault();
+    if (!selectedExternalTaskSub) return;
+    const scoreVal = Number(externalTaskScoreInput) || 0;
+    const maxVal = Number(selectedExternalTaskSub.maxScore) || 50;
+
+    if (scoreVal < 0 || scoreVal > maxVal) {
+      alert(`Please enter a score between 0 and ${maxVal}.`);
+      return;
+    }
+
+    setIsSavingExternalTaskGrade(true);
+    try {
+      const subDocId = selectedExternalTaskSub.firestoreId || selectedExternalTaskSub.id;
+      await updateDoc(doc(db, "task_submissions", subDocId), {
+        score: scoreVal,
+        status: "graded"
+      });
+
+      setIsGradingExternalTaskModalOpen(false);
+      setSelectedExternalTaskSub(null);
+      setExternalTaskScoreInput("");
+      loadTaskSubmissions();
+    } catch (err) {
+      alert("Failed to save grade: " + err.message);
+    } finally {
+      setIsSavingExternalTaskGrade(false);
+    }
+  };
+
+  const handleOpenQuizGradingModal = (sub) => {
+    setSelectedQuizSub(sub);
+    if (sub.subjScoresDetail) {
+      setManualQuizSubjScores(sub.subjScoresDetail);
+    } else {
+      setManualQuizSubjScores({});
+    }
+    setIsGradingQuizModalOpen(true);
+  };
+
+  const handleFinalizeQuizGrade = async () => {
+    if (!selectedQuizSub) return;
+    setIsSavingQuizGrade(true);
+    try {
+      const calculatedSubjScore = Object.values(manualQuizSubjScores).reduce(
+        (sum, pts) => sum + (Number(pts) || 0),
+        0
+      );
+      const objScore = Number(selectedQuizSub.objScore) || 0;
+      const totalFinalScore = objScore + calculatedSubjScore;
+
+      const subDocId = selectedQuizSub.firestoreId || selectedQuizSub.id;
+      await updateDoc(doc(db, "task_submissions", subDocId), {
+        subjScore: calculatedSubjScore,
+        subjScoresDetail: manualQuizSubjScores,
+        score: totalFinalScore,
+        status: "graded"
+      });
+
+      setIsGradingQuizModalOpen(false);
+      setSelectedQuizSub(null);
+      setManualQuizSubjScores({});
+      loadTaskSubmissions();
+    } catch (err) {
+      alert("Failed to save quiz grade: " + err.message);
+    } finally {
+      setIsSavingQuizGrade(false);
     }
   };
 
@@ -2637,6 +2749,111 @@ export default function ClassDashboard() {
                   <p className="text-xs text-slate-400 dark:text-slate-500">Click "Create New Task" to build your first written task, performance task, or quiz for this classroom.</p>
                 </div>
               )}
+
+              {/* ── Student Submissions Table Section ── */}
+              <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">
+                      Student Task Submissions
+                    </h3>
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                      Review and grade student submissions for external links and in-app quizzes.
+                    </p>
+                  </div>
+
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                    Total Submissions: {taskSubmissions.length}
+                  </span>
+                </div>
+
+                {isTaskSubmissionsLoading ? (
+                  <div className="py-8 text-center text-slate-400 text-xs">Loading task submissions...</div>
+                ) : taskSubmissions.length > 0 ? (
+                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold border-b border-slate-100 dark:border-slate-800">
+                          <tr>
+                            <th className="p-3.5">Student Name</th>
+                            <th className="p-3.5">Task Title</th>
+                            <th className="p-3.5">Mode</th>
+                            <th className="p-3.5">Submitted Date</th>
+                            <th className="p-3.5">Status</th>
+                            <th className="p-3.5">Score / Grade</th>
+                            <th className="p-3.5 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-200">
+                          {taskSubmissions.map((sub) => {
+                            const subId = sub.firestoreId || sub.id;
+                            const isGraded = sub.status === "graded";
+
+                            return (
+                              <tr key={subId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                                <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100">
+                                  {sub.studentName || "Student"}
+                                </td>
+                                <td className="p-3.5 font-semibold">
+                                  {sub.taskTitle || "Task"}
+                                </td>
+                                <td className="p-3.5">
+                                  <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    sub.mode === "external"
+                                      ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                                      : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                                  }`}>
+                                    {sub.mode === "external" ? "External Link" : "In-App Quiz"}
+                                  </span>
+                                </td>
+                                <td className="p-3.5 font-mono text-[11px] text-slate-500">
+                                  {sub.submittedAt ? sub.submittedAt.split("T")[0] : "—"}
+                                </td>
+                                <td className="p-3.5">
+                                  <span className={`inline-flex px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${
+                                    isGraded
+                                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300"
+                                      : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
+                                  }`}>
+                                    {isGraded ? "Graded" : (sub.status === "turned_in" ? "Turned In" : "Pending Review")}
+                                  </span>
+                                </td>
+                                <td className="p-3.5 font-extrabold text-slate-900 dark:text-slate-100">
+                                  {isGraded
+                                    ? `${sub.score} / ${sub.maxScore || 50} pts`
+                                    : `— / ${sub.maxScore || 50} pts`
+                                  }
+                                </td>
+                                <td className="p-3.5 text-right">
+                                  {sub.mode === "external" || sub.status === "turned_in" ? (
+                                    <button
+                                      onClick={() => handleOpenExternalTaskGradingModal(sub)}
+                                      className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-2xs transition-all cursor-pointer"
+                                    >
+                                      <span>{isGraded ? "Edit Grade" : "Enter Grade"}</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleOpenQuizGradingModal(sub)}
+                                      className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all cursor-pointer"
+                                    >
+                                      <span>{isGraded ? "Review Grade" : "Review & Grade"}</span>
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center text-slate-400 text-xs italic bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl">
+                    No student submissions logged yet for this classroom.
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             /* ── Task Builder Studio View ── */
@@ -2992,6 +3209,251 @@ export default function ClassDashboard() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── External Link Task Grade Entry Modal ── */}
+      {isGradingExternalTaskModalOpen && selectedExternalTaskSub && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
+                Enter Grade for External Task
+              </h3>
+              <button
+                onClick={() => {
+                  setIsGradingExternalTaskModalOpen(false);
+                  setSelectedExternalTaskSub(null);
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+              <p>Student: <strong className="text-slate-900 dark:text-white">{selectedExternalTaskSub.studentName}</strong></p>
+              <p>Task: <strong className="text-slate-900 dark:text-white">{selectedExternalTaskSub.taskTitle}</strong></p>
+              <p>Max Possible Score: <strong className="text-brand-600 dark:text-brand-400">{selectedExternalTaskSub.maxScore || 50} pts</strong></p>
+            </div>
+
+            <form onSubmit={handleSaveExternalTaskGrade} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Input Score (Max: {selectedExternalTaskSub.maxScore || 50} pts) *
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max={selectedExternalTaskSub.maxScore || 50}
+                  value={externalTaskScoreInput}
+                  onChange={(e) => setExternalTaskScoreInput(e.target.value)}
+                  placeholder="e.g. 85"
+                  className="w-full text-base font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-brand-500"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsGradingExternalTaskModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingExternalTaskGrade}
+                  className="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md disabled:opacity-50"
+                >
+                  {isSavingExternalTaskGrade ? "Saving..." : "Save Grade"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Teacher In-App Quiz Review & Manual Grading Modal ── */}
+      {isGradingQuizModalOpen && selectedQuizSub && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="relative w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 font-heading">
+                  Quiz Review & Manual Grading
+                </h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  Student: <span className="font-bold text-slate-700 dark:text-slate-300">{selectedQuizSub.studentName}</span> • Quiz: <span className="font-bold text-slate-700 dark:text-slate-300">{selectedQuizSub.taskTitle || "Quiz"}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setIsGradingQuizModalOpen(false);
+                  setSelectedQuizSub(null);
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Sub Header Stats */}
+            <div className="px-6 py-3 bg-brand-50/50 dark:bg-brand-900/20 border-b border-brand-100/50 dark:border-brand-800/50 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
+              <div className="flex items-center space-x-4">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Auto Obj Score:</span>{" "}
+                  <span className="font-bold text-brand-700 dark:text-brand-300">{selectedQuizSub.objScore || 0} pts</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Manual Subj Score:</span>{" "}
+                  <span className="font-bold text-amber-600 dark:text-amber-400">
+                    {Object.values(manualQuizSubjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} pts
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Total Score:</span>{" "}
+                  <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
+                    {(selectedQuizSub.objScore || 0) + Object.values(manualQuizSubjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} / {selectedQuizSub.maxScore || 0} pts
+                  </span>
+                </div>
+              </div>
+
+              <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${
+                selectedQuizSub.status === "graded" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
+              }`}>
+                {selectedQuizSub.status}
+              </span>
+            </div>
+
+            {/* Modal Answers Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              {(() => {
+                const targetTask = tasks.find(t => t.firestoreId === selectedQuizSub.taskId || t.id === selectedQuizSub.taskId);
+                const questions = targetTask?.questions || [];
+                const studentAnswers = selectedQuizSub.answers || {};
+
+                if (questions.length === 0) {
+                  return (
+                    <div className="py-8 text-center text-slate-400 text-xs italic">
+                      Question details not available for this quiz.
+                    </div>
+                  );
+                }
+
+                return questions.map((q, idx) => {
+                  const pts = Number(q.points) || 1;
+                  return (
+                    <div key={q.id || idx} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          {idx + 1}. {q.text}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">
+                          Max: {pts} pts
+                        </span>
+                      </div>
+
+                      {q.type === "essay" && (
+                        <div className="space-y-3 pt-1">
+                          <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                            "{studentAnswers[q.id] || "No response provided."}"
+                          </div>
+
+                          {q.rubric && (
+                            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 text-xs text-amber-800 dark:text-amber-300">
+                              <span className="font-bold">Grading Rubric / Reference: </span>"{q.rubric}"
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Award Points (Max: {pts} pts):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={pts}
+                              value={manualQuizSubjScores[q.id] ?? 0}
+                              onChange={(e) => {
+                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                setManualQuizSubjScores(prev => ({ ...prev, [q.id]: val }));
+                              }}
+                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {q.type === "vocabulary" && (
+                        <div className="space-y-3 pt-1">
+                          <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Submitted Definitions</span>
+                            {(q.vocabularyPairs || []).map((pair) => {
+                              const userAns = (studentAnswers[q.id] || {})[pair.id] || "—";
+                              return (
+                                <div key={pair.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg bg-slate-50 dark:bg-slate-900">
+                                  <span className="font-bold text-amber-700 dark:text-amber-400">{pair.word}:</span>
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">"{userAns}"</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Award Vocabulary Points (Max: {pts} pts):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={pts}
+                              value={manualQuizSubjScores[q.id] ?? 0}
+                              onChange={(e) => {
+                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                setManualQuizSubjScores(prev => ({ ...prev, [q.id]: val }));
+                              }}
+                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {q.type !== "essay" && q.type !== "vocabulary" && (
+                        <div className="text-xs text-slate-500 font-medium">
+                          Auto-graded Objective Question.
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-end space-x-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsGradingQuizModalOpen(false);
+                  setSelectedQuizSub(null);
+                }}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleFinalizeQuizGrade}
+                disabled={isSavingQuizGrade}
+                className="inline-flex items-center space-x-2 px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+              >
+                <CheckCircle className="h-4 w-4" />
+                <span>{isSavingQuizGrade ? "Saving Grade..." : "Finalize & Save Grade"}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
