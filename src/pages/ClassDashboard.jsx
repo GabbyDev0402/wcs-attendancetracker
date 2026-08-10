@@ -178,6 +178,7 @@ export default function ClassDashboard() {
   // Task Submissions & Grading State
   const [taskSubmissions, setTaskSubmissions] = useState([]);
   const [isTaskSubmissionsLoading, setIsTaskSubmissionsLoading] = useState(false);
+  const [tasksArchiveQuarter, setTasksArchiveQuarter] = useState("1st Quarter");
   const [isGradingExternalTaskModalOpen, setIsGradingExternalTaskModalOpen] = useState(false);
   const [selectedExternalTaskSub, setSelectedExternalTaskSub] = useState(null);
   const [externalTaskScoreInput, setExternalTaskScoreInput] = useState("");
@@ -1049,6 +1050,35 @@ export default function ClassDashboard() {
       console.error("Error loading task submissions:", e);
     } finally {
       setIsTaskSubmissionsLoading(false);
+    }
+  };
+
+  const handleDeleteTask = async (taskToDelete) => {
+    if (!taskToDelete) return;
+
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this task? All student submissions and grades for this task will be permanently lost."
+    );
+    if (!confirmed) return;
+
+    try {
+      const taskId = taskToDelete.firestoreId || taskToDelete.id;
+      
+      // Step A: Query task_submissions collection where taskId === taskId and delete each submission doc
+      const subsQ = query(collection(db, "task_submissions"), where("taskId", "==", taskId));
+      const subsSnap = await getDocs(subsQ);
+      const deletePromises = subsSnap.docs.map(docSnap => deleteDoc(doc(db, "task_submissions", docSnap.id)));
+      await Promise.all(deletePromises);
+
+      // Step B: Delete main task doc
+      await deleteDoc(doc(db, "tasks", taskId));
+
+      alert("Task and associated submissions deleted successfully.");
+      loadTasks();
+      loadTaskSubmissions();
+    } catch (e) {
+      console.error("Error deleting task:", e);
+      alert("Failed to delete task: " + e.message);
     }
   };
 
@@ -3008,23 +3038,32 @@ export default function ClassDashboard() {
                           </div>
                         </div>
 
-                        <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[10px] font-bold border shrink-0 ${
-                          task.mode === "external"
-                            ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
-                            : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
-                        }`}>
-                          {task.mode === "external" ? (
-                            <>
-                              <ExternalLink className="h-3 w-3" />
-                              <span>External Link</span>
-                            </>
-                          ) : (
-                            <>
-                              <ListChecks className="h-3 w-3" />
-                              <span>In-App Quiz</span>
-                            </>
-                          )}
-                        </span>
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[10px] font-bold border ${
+                            task.mode === "external"
+                              ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+                              : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+                          }`}>
+                            {task.mode === "external" ? (
+                              <>
+                                <ExternalLink className="h-3 w-3" />
+                                <span>External Link</span>
+                              </>
+                            ) : (
+                              <>
+                                <ListChecks className="h-3 w-3" />
+                                <span>In-App Quiz</span>
+                              </>
+                            )}
+                          </span>
+                          <button
+                            onClick={() => handleDeleteTask(task)}
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 transition-colors cursor-pointer"
+                            title="Delete Task"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       {task.description && (
@@ -3067,26 +3106,26 @@ export default function ClassDashboard() {
                 </div>
               )}
 
-              {/* ── Student Submissions Table Section ── */}
+              {/* ── Pending Submissions Section ── */}
               <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">
-                      Student Task Submissions
+                      Pending Submissions
                     </h3>
                     <p className="text-xs text-slate-400 dark:text-slate-500">
-                      Review and grade student submissions for external links and in-app quizzes.
+                      Submissions waiting to be scored or reviewed.
                     </p>
                   </div>
 
-                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                    Total Submissions: {taskSubmissions.length}
+                  <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3 py-1 rounded-lg border border-amber-100 dark:border-amber-800">
+                    {taskSubmissions.filter(s => s.status !== "graded").length} Pending
                   </span>
                 </div>
 
                 {isTaskSubmissionsLoading ? (
-                  <div className="py-8 text-center text-slate-400 text-xs">Loading task submissions...</div>
-                ) : taskSubmissions.length > 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-xs">Loading pending submissions...</div>
+                ) : taskSubmissions.filter(s => s.status !== "graded").length > 0 ? (
                   <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
@@ -3102,9 +3141,8 @@ export default function ClassDashboard() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-200">
-                          {taskSubmissions.map((sub) => {
+                          {taskSubmissions.filter(s => s.status !== "graded").map((sub) => {
                             const subId = sub.firestoreId || sub.id;
-                            const isGraded = sub.status === "graded";
 
                             return (
                               <tr key={subId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
@@ -3127,19 +3165,12 @@ export default function ClassDashboard() {
                                   {sub.submittedAt ? sub.submittedAt.split("T")[0] : "—"}
                                 </td>
                                 <td className="p-3.5">
-                                  <span className={`inline-flex px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${
-                                    isGraded
-                                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300"
-                                      : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
-                                  }`}>
-                                    {isGraded ? "Graded" : (sub.status === "turned_in" ? "Turned In" : "Pending Review")}
+                                  <span className="inline-flex px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
+                                    {sub.status === "turned_in" ? "Turned In" : "Pending Review"}
                                   </span>
                                 </td>
-                                <td className="p-3.5 font-extrabold text-slate-900 dark:text-slate-100">
-                                  {isGraded
-                                    ? `${sub.score} / ${sub.maxScore || 50} pts`
-                                    : `— / ${sub.maxScore || 50} pts`
-                                  }
+                                <td className="p-3.5 font-extrabold text-slate-400">
+                                  — / {sub.maxScore || 50} pts
                                 </td>
                                 <td className="p-3.5 text-right">
                                   {sub.mode === "external" || sub.status === "turned_in" ? (
@@ -3147,14 +3178,14 @@ export default function ClassDashboard() {
                                       onClick={() => handleOpenExternalTaskGradingModal(sub)}
                                       className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs shadow-2xs transition-all cursor-pointer"
                                     >
-                                      <span>{isGraded ? "Edit Grade" : "Enter Grade"}</span>
+                                      <span>Enter Grade</span>
                                     </button>
                                   ) : (
                                     <button
                                       onClick={() => handleOpenQuizGradingModal(sub)}
                                       className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-2xs transition-all cursor-pointer"
                                     >
-                                      <span>{isGraded ? "Review Grade" : "Review & Grade"}</span>
+                                      <span>Review & Grade</span>
                                     </button>
                                   )}
                                 </td>
@@ -3167,9 +3198,133 @@ export default function ClassDashboard() {
                   </div>
                 ) : (
                   <div className="py-8 text-center text-slate-400 text-xs italic bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl">
-                    No student submissions logged yet for this classroom.
+                    No pending submissions to review.
                   </div>
                 )}
+              </div>
+
+              {/* ── Quarterly Graded Archive Section ── */}
+              <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">
+                      Graded Archive
+                    </h3>
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                      Archived and graded task submissions organized by quarter.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quarter</label>
+                    <select
+                      value={tasksArchiveQuarter}
+                      onChange={(e) => setTasksArchiveQuarter(e.target.value)}
+                      className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
+                    >
+                      <option value="1st Quarter">1st Quarter</option>
+                      <option value="2nd Quarter">2nd Quarter</option>
+                      <option value="3rd Quarter">3rd Quarter</option>
+                      <option value="4th Quarter">4th Quarter</option>
+                    </select>
+                  </div>
+                </div>
+
+                {(() => {
+                  const gradedSubs = (taskSubmissions || []).filter(s => s.status === "graded");
+                  const quarterlyGradedSubs = gradedSubs.filter(sub => {
+                    const parentTask = (tasks || []).find(t => t.firestoreId === sub.taskId || t.id === sub.taskId);
+                    if (parentTask?.quarter) {
+                      return parentTask.quarter === tasksArchiveQuarter;
+                    }
+                    return true;
+                  });
+
+                  if (isTaskSubmissionsLoading) {
+                    return <div className="py-8 text-center text-slate-400 text-xs">Loading graded archive...</div>;
+                  }
+
+                  if (quarterlyGradedSubs.length === 0) {
+                    return (
+                      <div className="py-8 text-center text-slate-400 text-xs italic bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl">
+                        No graded task submissions found for {tasksArchiveQuarter}.
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold border-b border-slate-100 dark:border-slate-800">
+                            <tr>
+                              <th className="p-3.5">Student Name</th>
+                              <th className="p-3.5">Task Title</th>
+                              <th className="p-3.5">Mode</th>
+                              <th className="p-3.5">Submitted Date</th>
+                              <th className="p-3.5">Status</th>
+                              <th className="p-3.5">Score / Grade</th>
+                              <th className="p-3.5 text-right">Action</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-200">
+                            {quarterlyGradedSubs.map((sub) => {
+                              const subId = sub.firestoreId || sub.id;
+
+                              return (
+                                <tr key={subId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                                  <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100">
+                                    {sub.studentName || "Student"}
+                                  </td>
+                                  <td className="p-3.5 font-semibold">
+                                    {sub.taskTitle || "Task"}
+                                  </td>
+                                  <td className="p-3.5">
+                                    <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                                      sub.mode === "external"
+                                        ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                                        : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                                    }`}>
+                                      {sub.mode === "external" ? "External Link" : "In-App Quiz"}
+                                    </span>
+                                  </td>
+                                  <td className="p-3.5 font-mono text-[11px] text-slate-500">
+                                    {sub.submittedAt ? sub.submittedAt.split("T")[0] : "—"}
+                                  </td>
+                                  <td className="p-3.5">
+                                    <span className="inline-flex px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
+                                      Graded
+                                    </span>
+                                  </td>
+                                  <td className="p-3.5 font-extrabold text-slate-900 dark:text-slate-100">
+                                    {sub.score} / {sub.maxScore || 50} pts
+                                  </td>
+                                  <td className="p-3.5 text-right">
+                                    {sub.mode === "external" || sub.status === "turned_in" ? (
+                                      <button
+                                        onClick={() => handleOpenExternalTaskGradingModal(sub)}
+                                        className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
+                                      >
+                                        <span>Edit Grade</span>
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => handleOpenQuizGradingModal(sub)}
+                                        className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
+                                      >
+                                        <span>Review Grade</span>
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ) : (
