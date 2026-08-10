@@ -4,12 +4,12 @@ import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { formatStudentName, formatTime12Hour, formatScheduleString } from "../utils/helpers";
-import { 
-  Users, 
-  Calendar, 
-  BookOpen, 
-  CheckCircle2, 
-  Clock, 
+import {
+  Users,
+  Calendar,
+  BookOpen,
+  CheckCircle2,
+  Clock,
   ArrowRight,
   TrendingUp,
   AlertTriangle,
@@ -33,7 +33,7 @@ export default function TeacherDashboard() {
     averageAttendance: 0,
     pendingToday: 0
   });
-  
+
   const [todaySessions, setTodaySessions] = useState([]);
   const todayStr = new Date().toLocaleDateString("en-CA");
   const todayWeekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
@@ -59,7 +59,7 @@ export default function TeacherDashboard() {
   // Parse classes from teacher assignments
   useEffect(() => {
     if (!user) return;
-    
+
     const parsedClasses = (user.assignments || []).map((asg) => {
       const gradeVal = asg.grade || asg.gradeLevel || "Grade 1";
       const classSlug = `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
@@ -156,7 +156,7 @@ export default function TeacherDashboard() {
         if (isMySubmission && data.classId) {
           const cId = data.classId;
           const rawId = data.rawClassId || (cId.includes("_") ? cId.split("_")[1] : cId);
-          
+
           counts[cId] = (counts[cId] || 0) + 1;
           if (rawId && rawId !== cId) {
             counts[rawId] = (counts[rawId] || 0) + 1;
@@ -175,7 +175,7 @@ export default function TeacherDashboard() {
     return () => unsubPendingVocabs();
   }, [user]);
 
-  const loadPendingDiaries = () => {};
+  const loadPendingDiaries = () => { };
 
   const handleOpenDiaryModal = (diary) => {
     setSelectedDiary(diary);
@@ -191,7 +191,7 @@ export default function TeacherDashboard() {
     try {
       const docId = selectedDiary.id || `${selectedDiary.studentId}-${selectedDiary.date}`;
       const docRef = doc(db, "diaries", docId);
-      
+
       await updateDoc(docRef, {
         status: "graded",
         feedback: diaryFeedbackText.trim()
@@ -473,24 +473,22 @@ export default function TeacherDashboard() {
         <div className="flex space-x-3 border-b border-slate-200 dark:border-slate-800 pb-3">
           <button
             onClick={() => setActiveTeacherTab("overview")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTeacherTab === "overview"
-                ? "bg-slate-900 dark:bg-brand-600 text-white shadow-sm"
-                : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50"
-            }`}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTeacherTab === "overview"
+              ? "bg-slate-900 dark:bg-brand-600 text-white shadow-sm"
+              : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50"
+              }`}
           >
             Master Schedule & Overview
           </button>
           <button
             onClick={() => setActiveTeacherTab("diaries")}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTeacherTab === "diaries"
-                ? "bg-slate-900 dark:bg-brand-600 text-white shadow-sm"
-                : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50"
-            }`}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${activeTeacherTab === "diaries"
+              ? "bg-slate-900 dark:bg-brand-600 text-white shadow-sm"
+              : "bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50"
+              }`}
           >
             <BookOpen className="h-4 w-4 text-brand-400" />
-            <span>Diary Review Portal</span>
+            <span>Diary/Essay Review Portal</span>
             {pendingDiaries.length > 0 && (
               <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
                 {pendingDiaries.length}
@@ -506,10 +504,10 @@ export default function TeacherDashboard() {
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
-                Global Student Daily Diary Review
+                Global Student Daily Diary/Essay Review
               </h2>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                As a Math instructor, review and provide feedback on global daily student diary submissions.
+                As a Math instructor, review and provide feedback on global daily student diary or essay submissions.
               </p>
             </div>
             <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3.5 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800 shrink-0">
@@ -520,7 +518,7 @@ export default function TeacherDashboard() {
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">
             {isPendingDiariesLoading ? (
               <div className="py-16 text-center text-slate-400 text-xs">
-                Loading pending diary entries...
+                Loading pending diary/essay entries...
               </div>
             ) : pendingDiaries.length > 0 ? (
               <div className="overflow-x-auto">
@@ -529,7 +527,7 @@ export default function TeacherDashboard() {
                     <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                       <th className="px-6 py-3">Student Name</th>
                       <th className="px-6 py-3">Submission Date</th>
-                      <th className="px-6 py-3">Diary Entry Preview</th>
+                      <th className="px-6 py-3">Diary/Essay Entry Preview</th>
                       <th className="px-6 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -547,7 +545,7 @@ export default function TeacherDashboard() {
                             className="inline-flex items-center space-x-1.5 px-4 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
                           >
                             <Pencil className="h-3.5 w-3.5" />
-                            <span>Review Diary</span>
+                            <span>Review Diary/Essay</span>
                           </button>
                         </td>
                       </tr>
@@ -558,8 +556,8 @@ export default function TeacherDashboard() {
             ) : (
               <div className="py-16 text-center text-slate-400 text-sm flex flex-col items-center justify-center space-y-2">
                 <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-                <span className="font-bold text-slate-700 dark:text-slate-300">All student diaries reviewed!</span>
-                <span className="text-xs text-slate-400">There are no pending diary submissions awaiting grading.</span>
+                <span className="font-bold text-slate-700 dark:text-slate-300">All student diaries/essays reviewed!</span>
+                <span className="text-xs text-slate-400">There are no pending diary/essay submissions awaiting grading.</span>
               </div>
             )}
           </div>
@@ -569,10 +567,10 @@ export default function TeacherDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-heading">
-                  Graded Diaries Archive
+                  Graded Diaries/Essays Archive
                 </h2>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  View previously reviewed student daily diaries and edit teacher feedback.
+                  View previously reviewed student daily diaries/essays and edit teacher feedback.
                 </p>
               </div>
 
@@ -600,7 +598,7 @@ export default function TeacherDashboard() {
             </div>
 
             {isGradedDiariesLoading ? (
-              <div className="py-12 text-center text-xs text-slate-400">Loading graded diaries archive...</div>
+              <div className="py-12 text-center text-xs text-slate-400">Loading graded diaries/essays archive...</div>
             ) : gradedDiaries.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -640,7 +638,7 @@ export default function TeacherDashboard() {
               </div>
             ) : (
               <div className="py-12 text-center text-slate-400 text-xs italic">
-                No graded diaries found for the selected date filter.
+                No graded diaries/essays found for the selected date filter.
               </div>
             )}
           </div>
@@ -714,7 +712,7 @@ export default function TeacherDashboard() {
 
               {isDataLoading ? (
                 <div className="py-12 text-center text-slate-450 dark:text-slate-400 text-xs bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm transition-colors">
-                  Loading active master schedule from Firestore...
+                  Loading active master schedule...
                 </div>
               ) : todaysTimetable.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -742,8 +740,8 @@ export default function TeacherDashboard() {
                     const pendingVocabCount = pendingVocabsByClass[classTag] || pendingVocabsByClass[classItem.id] || 0;
 
                     return (
-                      <div 
-                        key={classItem.id} 
+                      <div
+                        key={classItem.id}
                         className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col justify-between hover:shadow-md transition-all duration-200 group text-left relative overflow-hidden"
                       >
                         <div className="absolute top-0 left-0 h-1 w-full bg-brand-500" />
@@ -768,7 +766,7 @@ export default function TeacherDashboard() {
                           <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
                             {classItem.name}
                           </h3>
-                          
+
                           <div className="flex flex-wrap items-center gap-2 mt-3">
                             <div className="flex items-center space-x-2 text-xs text-brand-600 dark:text-brand-400 font-bold bg-brand-50/60 dark:bg-brand-900/30 border border-brand-100/50 dark:border-brand-800/50 px-3 py-1.5 rounded-xl w-fit transition-colors">
                               <Clock className="h-3.5 w-3.5 text-brand-500 dark:text-brand-400 shrink-0" />
@@ -785,7 +783,7 @@ export default function TeacherDashboard() {
                         </div>
 
                         <div className="mt-8 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors">
-                          <Link 
+                          <Link
                             to={`/teacher/reports?classId=${classItem.id}`}
                             className="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all"
                           >
@@ -831,7 +829,7 @@ export default function TeacherDashboard() {
                         return matchesClassId || matchesGradeSubject;
                       });
                       return (
-                        <div 
+                        <div
                           key={classItem.id}
                           className="bg-slate-50/60 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800/60 rounded-xl p-4 flex items-center justify-between text-left hover:bg-white dark:hover:bg-slate-800 transition-all"
                         >
@@ -879,38 +877,36 @@ export default function TeacherDashboard() {
                     {atRiskStudents.map((student, index) => {
                       const isCritical = student.reason.startsWith("Critical");
                       return (
-                        <div 
-                          key={index} 
-                          className={`flex flex-col p-3 rounded-xl border text-left transition-all ${
-                            isCritical 
-                              ? "bg-red-50/50 dark:bg-red-900/20 border-red-100 dark:border-red-900/50" 
-                              : "bg-amber-50/50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/50"
-                          }`}
+                        <div
+                          key={index}
+                          className={`flex flex-col p-3 rounded-xl border text-left transition-all ${isCritical
+                            ? "bg-red-50/50 dark:bg-red-900/20 border-red-100 dark:border-red-900/50"
+                            : "bg-amber-50/50 dark:bg-amber-900/20 border-amber-100 dark:border-amber-900/50"
+                            }`}
                         >
                           <div className="flex justify-between items-start">
                             <span className="font-bold text-slate-850 dark:text-slate-200 text-xs truncate max-w-[150px]">
                               {student.name}
                             </span>
-                            <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider shrink-0 ${
-                              isCritical 
-                                ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400" 
-                                : "bg-amber-100 dark:bg-amber-900/50 text-amber-755 dark:text-amber-400"
-                            }`}>
+                            <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider shrink-0 ${isCritical
+                              ? "bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400"
+                              : "bg-amber-100 dark:bg-amber-900/50 text-amber-755 dark:text-amber-400"
+                              }`}>
                               {isCritical ? "Critical" : "Warning"}
                             </span>
                           </div>
-                          
+
                           <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold mt-1.5 flex items-center space-x-1">
                             <GraduationCap className="h-3 w-3 text-slate-400 shrink-0" />
                             <span className="truncate">{student.className}</span>
                           </span>
-                          
+
                           {student.communityCenter && (
                             <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium pl-4">
                               Center: {student.communityCenter}
                             </span>
                           )}
-                          
+
                           <div className="mt-2.5 pt-2 border-t border-slate-200/50 dark:border-slate-700/50 flex items-center justify-between text-[10px] font-bold">
                             <span className={isCritical ? "text-red-600 dark:text-red-400" : "text-amber-700 dark:text-amber-500"}>
                               {student.reason}
@@ -922,9 +918,8 @@ export default function TeacherDashboard() {
                                 const targetClassTag = student.enrolledClasses?.find(tag => (tag || "").startsWith(teacherUid)) || student.classId;
                                 navigate("/teacher/reports", { state: { preselectedClass: targetClassTag } });
                               }}
-                              className={`cursor-pointer hover:underline text-[10px] font-bold ${
-                                isCritical ? "text-red-700 dark:text-red-400" : "text-amber-850 dark:text-amber-400"
-                              }`}
+                              className={`cursor-pointer hover:underline text-[10px] font-bold ${isCritical ? "text-red-700 dark:text-red-400" : "text-amber-850 dark:text-amber-400"
+                                }`}
                             >
                               View Logs
                             </button>
@@ -961,7 +956,7 @@ export default function TeacherDashboard() {
               </div>
               <div>
                 <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading">
-                  Review Student Daily Diary
+                  Review Student Daily Diary/Essay
                 </h3>
                 <p className="text-xs text-slate-400">
                   Student: {selectedDiary.studentName} ({selectedDiary.date})
@@ -971,7 +966,7 @@ export default function TeacherDashboard() {
 
             <div>
               <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                Student Diary Entry
+                Student Diary/Essay Entry
               </label>
               <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
                 {selectedDiary.text}
