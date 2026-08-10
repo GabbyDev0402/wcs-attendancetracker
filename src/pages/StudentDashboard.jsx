@@ -21,6 +21,8 @@ import {
   Calendar,
   Eye,
   Bell,
+  FolderKanban,
+  Clipboard,
   X
 } from "lucide-react";
 
@@ -43,6 +45,8 @@ export default function StudentDashboard() {
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [allSessionsList, setAllSessionsList] = useState([]);
   const [todayVocabSubmissions, setTodayVocabSubmissions] = useState([]);
+  const [allTasks, setAllTasks] = useState([]);
+  const [myTaskSubmissions, setMyTaskSubmissions] = useState([]);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [attendanceStats, setAttendanceStats] = useState({
     present: 0,
@@ -200,10 +204,32 @@ export default function StudentDashboard() {
       console.warn("Error listening to student vocab submissions:", err);
     });
 
+    // 4. Real-time Tasks Listener
+    const unsubTasks = onSnapshot(collection(db, "tasks"), (tasksSnap) => {
+      const list = tasksSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
+      setAllTasks(list);
+    }, (err) => {
+      console.warn("Error listening to tasks:", err);
+    });
+
+    // 5. Real-time Student Task Submissions Listener
+    const taskSubQuery = query(
+      collection(db, "task_submissions"),
+      where("studentId", "==", user.id)
+    );
+    const unsubTaskSubs = onSnapshot(taskSubQuery, (subSnap) => {
+      const list = subSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
+      setMyTaskSubmissions(list);
+    }, (err) => {
+      console.warn("Error listening to student task submissions:", err);
+    });
+
     return () => {
       unsubDiary();
       unsubSessions();
       unsubSubmissions();
+      unsubTasks();
+      unsubTaskSubs();
     };
   }, [user]);
 
@@ -608,12 +634,28 @@ export default function StudentDashboard() {
 
                 const showNotification = hasVocabs && !hasSubmitted;
 
+                // Step E: Calculate Pending Tasks count for this specific classroom
+                const classTasks = (allTasks || []).filter(t => 
+                  t.classId === classTag || 
+                  t.classId === extractedClassId || 
+                  `${t.teacherId}_${t.classId}` === classTag
+                );
+
+                const pendingClassTasks = classTasks.filter(task => {
+                  const taskId = task.firestoreId || task.id;
+                  return !(myTaskSubmissions || []).some(sub => sub.taskId === taskId || sub.taskId === task.id);
+                });
+
+                const pendingTasksCount = pendingClassTasks.length;
+
                 return (
                   <div
                     key={classTag || index}
                     className={`group bg-slate-50/50 dark:bg-slate-800/40 border rounded-2xl p-6 flex flex-col justify-between space-y-5 transition-all hover:shadow-md ${
                       showNotification 
                         ? "border-amber-300 dark:border-amber-700/80 shadow-xs" 
+                        : pendingTasksCount > 0
+                        ? "border-blue-300 dark:border-blue-700/80 shadow-xs"
                         : "border-slate-200/80 dark:border-slate-700/60 hover:border-brand-500/50 dark:hover:border-brand-400/50"
                     }`}
                   >
@@ -622,21 +664,34 @@ export default function StudentDashboard() {
                         <div className={`p-2.5 rounded-xl transition-transform group-hover:scale-105 ${
                           showNotification 
                             ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400"
+                            : pendingTasksCount > 0
+                            ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400"
                             : "bg-brand-100/60 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400"
                         }`}>
                           <GraduationCap className="h-5 w-5" />
                         </div>
 
-                        {showNotification ? (
-                          <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 ring-1 ring-amber-300 dark:ring-amber-800 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-amber-200 dark:border-amber-800">
-                            <Bell className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 animate-bounce" />
-                            <span>New Vocab Due</span>
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-2.5 py-1 rounded-lg border border-brand-100 dark:border-brand-800/50">
-                            Active Classroom
-                          </span>
-                        )}
+                        <div className="flex flex-col items-end gap-1.5">
+                          {showNotification && (
+                            <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 ring-1 ring-amber-300 dark:ring-amber-800 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-amber-200 dark:border-amber-800">
+                              <Bell className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 animate-bounce" />
+                              <span>New Vocab Due</span>
+                            </span>
+                          )}
+
+                          {pendingTasksCount > 0 && (
+                            <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 ring-1 ring-blue-300 dark:ring-blue-800 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-blue-200 dark:border-blue-800 shadow-xs">
+                              <FolderKanban className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                              <span>{pendingTasksCount} Pending Task{pendingTasksCount > 1 ? "s" : ""}</span>
+                            </span>
+                          )}
+
+                          {!showNotification && pendingTasksCount === 0 && (
+                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-2.5 py-1 rounded-lg border border-brand-100 dark:border-brand-800/50">
+                              Active Classroom
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div>
