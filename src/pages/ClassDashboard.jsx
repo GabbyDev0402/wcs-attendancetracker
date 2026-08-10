@@ -197,6 +197,7 @@ export default function ClassDashboard() {
   const [allClassTaskSubs, setAllClassTaskSubs] = useState([]);
   const [allClassVocabSubs, setAllClassVocabSubs] = useState([]);
   const [allClassDiaries, setAllClassDiaries] = useState([]);
+  const [allClassSessions, setAllClassSessions] = useState([]);
 
   // Parse Class metadata from teacher's assignments
   useEffect(() => {
@@ -1161,6 +1162,12 @@ export default function ClassDashboard() {
       const diariesQ = query(collection(db, "diaries"), where("mathTeacherId", "==", user.id));
       const diariesSnap = await getDocs(diariesQ);
       setAllClassDiaries(diariesSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
+
+      const sessionsQ = query(collection(db, "sessions"), where("teacherId", "==", user.id));
+      const sessionsSnap = await getDocs(sessionsQ);
+      const rawSessions = sessionsSnap.docs.map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }));
+      const filteredSessions = rawSessions.filter(s => s.classId === classId || `${s.teacherId}_${s.classId}` === tag);
+      setAllClassSessions(filteredSessions);
     } catch (e) {
       console.error("Error loading E-Class Record data:", e);
     } finally {
@@ -1187,6 +1194,51 @@ export default function ClassDashboard() {
     if (title.includes("3rd") || title.includes("third")) return "3rd Quarter";
     if (title.includes("4th") || title.includes("fourth")) return "4th Quarter";
     return getQuarterFromDate(exam.createdAt || exam.date);
+  };
+
+  const isMathClass = (classId || "").toLowerCase().includes("math") ||
+                     (classInfo?.subject || "").toLowerCase().includes("math") ||
+                     (classInfo?.name || "").toLowerCase().includes("math");
+
+  const quarterlySessions = allClassSessions.filter(s => getQuarterFromDate(s.date || s.createdAt) === recordQuarter);
+
+  const expectedVocabSessions = quarterlySessions.filter(s => {
+    const v = s.vocabularyWords;
+    return v && (Array.isArray(v) ? v.length > 0 : typeof v === "string" && v.trim().length > 0);
+  });
+
+  const expectedVocabs = expectedVocabSessions.length;
+  const expectedDiaries = isMathClass ? quarterlySessions.length : 0;
+
+  const getStudentVocabAndDiaryPcts = (studentId) => {
+    const studentVocabs = allClassVocabSubs.filter(v => v.studentId === studentId);
+    const completedVocabs = expectedVocabSessions.filter(s => {
+      const sDate = s.date || (s.createdAt ? s.createdAt.split("T")[0] : "");
+      return studentVocabs.some(v => 
+        v.sessionId === s.id || 
+        v.date === sDate || 
+        v.date === s.date ||
+        (v.createdAt && v.createdAt.split("T")[0] === sDate)
+      );
+    }).length;
+
+    const vocabPct = expectedVocabs === 0 ? 100 : (completedVocabs / expectedVocabs) * 100;
+
+    let diaryPct = 100;
+    if (isMathClass) {
+      const studentDiaries = allClassDiaries.filter(d => d.studentId === studentId);
+      const completedDiaries = quarterlySessions.filter(s => {
+        const sDate = s.date || (s.createdAt ? s.createdAt.split("T")[0] : "");
+        return studentDiaries.some(d => 
+          d.date === sDate || 
+          d.date === s.date || 
+          (d.createdAt && d.createdAt.split("T")[0] === sDate)
+        );
+      }).length;
+      diaryPct = expectedDiaries === 0 ? 100 : (completedDiaries / expectedDiaries) * 100;
+    }
+
+    return { vocabPct, diaryPct, completedVocabs, completedDiaries };
   };
 
   const wwTaskItems = allClassTasks
@@ -1237,33 +1289,31 @@ export default function ClassDashboard() {
     }
   };
 
-  const getStudentVocabDiaryAvg = (studentId) => {
-    const studentVocabs = allClassVocabSubs.filter(v => {
-      if (v.studentId !== studentId) return false;
-      const qtr = getQuarterFromDate(v.date || v.createdAt);
-      return qtr === recordQuarter;
+  const getStudentPTPct = (studentId) => {
+    let ptPoints = 0;
+    let ptMax = 0;
+    ptItems.forEach(item => {
+      ptPoints += getStudentScoreForItem(studentId, item);
+      ptMax += item.maxScore;
     });
 
-    const studentDiaries = allClassDiaries.filter(d => {
-      if (d.studentId !== studentId) return false;
-      const qtr = getQuarterFromDate(d.date || d.createdAt);
-      return qtr === recordQuarter;
-    });
+    const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(studentId);
 
-    const totalCount = studentVocabs.length + studentDiaries.length;
-    if (totalCount === 0) return 100;
-
-    let earned = 0;
-    studentVocabs.forEach(v => {
-      if (v.status === "Graded" || v.status === "graded") earned += (v.score || 100);
-      else earned += 80;
-    });
-    studentDiaries.forEach(d => {
-      if (d.status === "Graded" || d.status === "graded") earned += (d.score || 100);
-      else earned += 80;
-    });
-
-    return earned / totalCount;
+    if (ptMax > 0) {
+      let combinedEarned = ptPoints + (vocabPct / 100 * 50);
+      let combinedMax = ptMax + 50;
+      if (isMathClass) {
+        combinedEarned += (diaryPct / 100 * 50);
+        combinedMax += 50;
+      }
+      return (combinedEarned / combinedMax) * 100;
+    } else {
+      if (isMathClass) {
+        return (vocabPct + diaryPct) / 2;
+      } else {
+        return vocabPct;
+      }
+    }
   };
 
   const calculateFinalQuarterGrade = (studentId) => {
@@ -1275,21 +1325,7 @@ export default function ClassDashboard() {
     });
     const wwPct = wwMax > 0 ? (wwPoints / wwMax) * 100 : 100;
 
-    let ptPoints = 0;
-    let ptMax = 0;
-    ptItems.forEach(item => {
-      ptPoints += getStudentScoreForItem(studentId, item);
-      ptMax += item.maxScore;
-    });
-    const vocabAvg = getStudentVocabDiaryAvg(studentId);
-    let ptPct = 100;
-    if (ptMax > 0) {
-      const combinedPTPoints = ptPoints + (vocabAvg / 100 * 50);
-      const combinedPTMax = ptMax + 50;
-      ptPct = (combinedPTPoints / combinedPTMax) * 100;
-    } else {
-      ptPct = vocabAvg;
-    }
+    const ptPct = getStudentPTPct(studentId);
 
     let qaPoints = 0;
     let qaMax = 0;
@@ -1314,7 +1350,7 @@ export default function ClassDashboard() {
     headers.push("\"WW Total Score\"", "\"WW %\"");
 
     ptItems.forEach(item => headers.push(`"PT: ${item.title.replace(/"/g, '""')} (${item.maxScore} pts)"`));
-    headers.push("\"Vocab/Diary Avg %\"", "\"PT Total Score\"", "\"PT %\"");
+    headers.push("\"VOCABULARY %\"", "\"DIARY %\"", "\"PT Total Score\"", "\"PT %\"");
 
     qaItems.forEach(item => headers.push(`"QA: ${item.title.replace(/"/g, '""')} (${item.maxScore} pts)"`));
     headers.push("\"QA Total Score\"", "\"QA %\"", "\"Final Quarter Grade\"");
@@ -1347,11 +1383,12 @@ export default function ClassDashboard() {
         totalPTMax += item.maxScore;
         row.push(score);
       });
-      const vocabDiaryAvg = getStudentVocabDiaryAvg(student.id);
-      row.push(`"${vocabDiaryAvg.toFixed(1)}%"`);
+      const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(student.id);
+      row.push(`"${vocabPct.toFixed(1)}%"`);
+      row.push(`"${isMathClass ? diaryPct.toFixed(1) + "%" : "N/A"}"`);
       row.push(studentPTPoints);
-      const ptPct = totalPTMax > 0 ? ((studentPTPoints / totalPTMax) * 100).toFixed(1) + "%" : "100%";
-      row.push(`"${ptPct}"`);
+      const ptPct = getStudentPTPct(student.id);
+      row.push(`"${ptPct.toFixed(1)}%"`);
 
       let studentQAPoints = 0;
       let totalQAMax = 0;
@@ -3547,7 +3584,7 @@ export default function ClassDashboard() {
                       <th colSpan={wwItems.length + 2} className="p-3 text-center bg-blue-900/60 text-blue-200">
                         Written Works (WW) — 40% Weight
                       </th>
-                      <th colSpan={ptItems.length + 3} className="p-3 text-center bg-purple-900/60 text-purple-200">
+                      <th colSpan={ptItems.length + 4} className="p-3 text-center bg-purple-900/60 text-purple-200">
                         Performance Tasks (PT) — 40% Weight
                       </th>
                       <th colSpan={qaItems.length > 0 ? qaItems.length + 2 : 2} className="p-3 text-center bg-teal-900/60 text-teal-200">
@@ -3580,7 +3617,8 @@ export default function ClassDashboard() {
                           <span className="text-[9px] text-purple-600 dark:text-purple-400 font-extrabold">({item.maxScore} pts)</span>
                         </th>
                       ))}
-                      <th className="p-2.5 text-center bg-purple-50/50 dark:bg-purple-950/20 min-w-[100px] text-teal-600 dark:text-teal-400">Vocab / Diaries</th>
+                      <th className="p-2.5 text-center bg-purple-50/50 dark:bg-purple-950/20 min-w-[100px] text-amber-600 dark:text-amber-400">VOCABULARY</th>
+                      <th className="p-2.5 text-center bg-purple-50/50 dark:bg-purple-950/20 min-w-[100px] text-teal-600 dark:text-teal-400">DIARY</th>
                       <th className="p-2.5 text-center bg-purple-100/70 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 font-extrabold min-w-[80px]">Total</th>
                       <th className="p-2.5 text-center bg-purple-200/70 dark:bg-purple-900/60 text-purple-900 dark:text-purple-200 font-extrabold min-w-[70px]">PT %</th>
 
@@ -3619,8 +3657,8 @@ export default function ClassDashboard() {
                         studentPTPoints += score;
                         totalPTMax += item.maxScore;
                       });
-                      const vocabDiaryAvg = getStudentVocabDiaryAvg(student.id);
-                      const ptPct = totalPTMax > 0 ? ((studentPTPoints / totalPTMax) * 100) : vocabDiaryAvg;
+                      const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(student.id);
+                      const ptPct = getStudentPTPct(student.id);
 
                       let studentQAPoints = 0;
                       let totalQAMax = 0;
@@ -3664,8 +3702,15 @@ export default function ClassDashboard() {
                               </td>
                             );
                           })}
+                          <td className="p-2.5 text-center font-bold text-amber-600 dark:text-amber-400 bg-purple-50/20">
+                            {vocabPct.toFixed(1)}%
+                          </td>
                           <td className="p-2.5 text-center font-bold text-teal-600 dark:text-teal-400 bg-purple-50/20">
-                            {vocabDiaryAvg.toFixed(1)}%
+                            {isMathClass ? (
+                              `${diaryPct.toFixed(1)}%`
+                            ) : (
+                              <span className="text-slate-400 font-normal">N/A</span>
+                            )}
                           </td>
                           <td className="p-2.5 text-center font-bold text-purple-700 dark:text-purple-400 bg-purple-50/30 dark:bg-purple-950/20">
                             {studentPTPoints} / {totalPTMax}
