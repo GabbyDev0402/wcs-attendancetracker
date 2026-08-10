@@ -43,7 +43,9 @@ import {
   ListChecks,
   ShieldCheck,
   AlertTriangle,
-  Flag
+  Flag,
+  FolderKanban,
+  ExternalLink
 } from "lucide-react";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
@@ -153,6 +155,23 @@ export default function ClassDashboard() {
   const [manualSubjScores, setManualSubjScores] = useState({});
   const [isSavingExamGrade, setIsSavingExamGrade] = useState(false);
   const [examGradeSuccessToast, setExamGradeSuccessToast] = useState(false);
+
+  // Tasks State (Tab 5 - E-Class Record Phase 1)
+  const [tasks, setTasks] = useState([]);
+  const [isTasksLoading, setIsTasksLoading] = useState(false);
+  const [isBuildingTask, setIsBuildingTask] = useState(false);
+  const [taskPublishSuccess, setTaskPublishSuccess] = useState(false);
+
+  // Task Form States
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [taskDueDate, setTaskDueDate] = useState("");
+  const [taskQuarter, setTaskQuarter] = useState("1st Quarter");
+  const [taskCategory, setTaskCategory] = useState("Written Task");
+  const [taskMode, setTaskMode] = useState("external");
+  const [taskExternalUrl, setTaskExternalUrl] = useState("");
+  const [taskMaxScore, setTaskMaxScore] = useState(50);
+  const [taskQuestions, setTaskQuestions] = useState([]);
 
   // Parse Class metadata from teacher's assignments
   useEffect(() => {
@@ -957,6 +976,179 @@ export default function ClassDashboard() {
     essay: { label: "Essay", color: "purple" }
   };
 
+  // -------------------------------------------------------------
+  // TAB 5: TASKS & ASSIGNMENTS LOGIC (E-CLASS RECORD PHASE 1)
+  // -------------------------------------------------------------
+  useEffect(() => {
+    if (activeTab === "tasks") loadTasks();
+  }, [activeTab, classId, user]);
+
+  const loadTasks = async () => {
+    if (!classId || !user) return;
+    setIsTasksLoading(true);
+    try {
+      const tag = `${user.id}_${classId}`;
+      const q = query(
+        collection(db, "tasks"),
+        where("classId", "==", tag)
+      );
+      const snap = await getDocs(q);
+      const items = snap.docs.map(d => ({ id: d.id, firestoreId: d.id, ...d.data() }));
+      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+      setTasks(items);
+    } catch (e) {
+      console.error("Error loading tasks:", e);
+    } finally {
+      setIsTasksLoading(false);
+    }
+  };
+
+  let nextTaskQId = taskQuestions.length > 0 ? Math.max(...taskQuestions.map(q => q.id)) + 1 : 1;
+
+  const addTaskQuestion = (type) => {
+    const base = { id: nextTaskQId, type, text: "", points: 1 };
+    let newQ;
+    switch (type) {
+      case "multipleChoice":
+        newQ = { ...base, options: ["", "", "", ""], correctOptionIndex: 0 };
+        break;
+      case "identification":
+        newQ = { ...base, correctAnswer: "" };
+        break;
+      case "vocabulary":
+        newQ = { ...base, vocabularyPairs: [{ id: "t-vp-1", word: "", definition: "" }] };
+        break;
+      case "essay":
+        newQ = { ...base, rubric: "", minWordCount: 50 };
+        break;
+      default:
+        return;
+    }
+    setTaskQuestions(prev => [...prev, newQ]);
+  };
+
+  const updateTaskQuestion = (qId, field, value) => {
+    setTaskQuestions(prev => prev.map(q => q.id === qId ? { ...q, [field]: value } : q));
+  };
+
+  const deleteTaskQuestion = (qId) => {
+    setTaskQuestions(prev => prev.filter(q => q.id !== qId));
+  };
+
+  const updateTaskOption = (qId, optIdx, value) => {
+    setTaskQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      const newOpts = [...q.options];
+      newOpts[optIdx] = value;
+      return { ...q, options: newOpts };
+    }));
+  };
+
+  const addTaskOption = (qId) => {
+    setTaskQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      return { ...q, options: [...q.options, ""] };
+    }));
+  };
+
+  const removeTaskOption = (qId, optIdx) => {
+    setTaskQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      const newOpts = q.options.filter((_, i) => i !== optIdx);
+      let corrIdx = q.correctOptionIndex;
+      if (optIdx === corrIdx) corrIdx = 0;
+      else if (optIdx < corrIdx) corrIdx--;
+      return { ...q, options: newOpts, correctOptionIndex: Math.min(corrIdx, newOpts.length - 1) };
+    }));
+  };
+
+  const addTaskVocabPair = (qId) => {
+    setTaskQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      const newId = `t-vp-${q.vocabularyPairs.length + 1}`;
+      return { ...q, vocabularyPairs: [...q.vocabularyPairs, { id: newId, word: "", definition: "" }] };
+    }));
+  };
+
+  const updateTaskVocabPair = (qId, pairId, field, value) => {
+    setTaskQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      return {
+        ...q,
+        vocabularyPairs: q.vocabularyPairs.map(p => p.id === pairId ? { ...p, [field]: value } : p)
+      };
+    }));
+  };
+
+  const removeTaskVocabPair = (qId, pairId) => {
+    setTaskQuestions(prev => prev.map(q => {
+      if (q.id !== qId) return q;
+      return { ...q, vocabularyPairs: q.vocabularyPairs.filter(p => p.id !== pairId) };
+    }));
+  };
+
+  const handlePublishTask = async () => {
+    if (!taskTitle.trim()) { alert("Please enter a task title."); return; }
+    if (!taskDueDate) { alert("Please select a due date."); return; }
+
+    if (taskMode === "external") {
+      if (!taskExternalUrl.trim()) { alert("Please enter the external Google Form/Doc URL."); return; }
+    } else if (taskMode === "inApp") {
+      if (taskQuestions.length === 0) { alert("Please add at least one question to the quiz."); return; }
+    }
+
+    try {
+      const tag = `${user.id}_${classId}`;
+      const totalPoints = taskMode === "external"
+        ? (Number(taskMaxScore) || 50)
+        : taskQuestions.reduce((sum, q) => sum + (q.points || 1), 0);
+
+      const payload = {
+        classId: tag,
+        teacherId: user.id,
+        academicYear: CURRENT_ACADEMIC_YEAR,
+        title: taskTitle.trim(),
+        description: taskDescription.trim(),
+        dueDate: taskDueDate,
+        quarter: taskQuarter,
+        category: taskCategory,
+        mode: taskMode,
+        totalPoints,
+        status: "published",
+        createdAt: new Date().toISOString()
+      };
+
+      if (taskMode === "external") {
+        payload.externalUrl = taskExternalUrl.trim();
+        payload.maxScore = Number(taskMaxScore) || 50;
+      } else {
+        payload.questions = taskQuestions;
+      }
+
+      await addDoc(collection(db, "tasks"), payload);
+
+      resetTaskBuilder();
+      setTaskPublishSuccess(true);
+      setTimeout(() => setTaskPublishSuccess(false), 3000);
+      loadTasks();
+    } catch (e) {
+      alert("Failed to publish task: " + e.message);
+    }
+  };
+
+  const resetTaskBuilder = () => {
+    setIsBuildingTask(false);
+    setTaskTitle("");
+    setTaskDescription("");
+    setTaskDueDate("");
+    setTaskQuarter("1st Quarter");
+    setTaskCategory("Written Task");
+    setTaskMode("external");
+    setTaskExternalUrl("");
+    setTaskMaxScore(50);
+    setTaskQuestions([]);
+  };
+
   // Filtered Roster lists
   const filteredClassStudents = classStudents.filter(s => {
     const search = rosterSearchQuery.toLowerCase();
@@ -1091,6 +1283,23 @@ export default function ClassDashboard() {
             {exams.length > 0 && (
               <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                 {exams.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => handleTabChange("tasks")}
+            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${
+              activeTab === "tasks"
+                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            <FolderKanban className="h-4.5 w-4.5" />
+            <span>Assignments & Tasks</span>
+            {tasks.length > 0 && (
+              <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                {tasks.length}
               </span>
             )}
           </button>
@@ -2308,6 +2517,479 @@ export default function ClassDashboard() {
                   </button>
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 5: ASSIGNMENTS & TASKS VIEW (E-CLASS RECORD PHASE 1) */}
+      {activeTab === "tasks" && (
+        <div className="space-y-6">
+          {taskPublishSuccess && (
+            <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
+              <Sparkles className="h-4 w-4" />
+              <span>Task / Quiz published successfully!</span>
+            </div>
+          )}
+
+          {!isBuildingTask ? (
+            /* ── Task List View ── */
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
+                    Assignments & Tasks Studio
+                  </h2>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    Manage written tasks, performance tasks, external Google Forms, and in-app quizzes.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsBuildingTask(true)}
+                  className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Create New Task</span>
+                </button>
+              </div>
+
+              {isTasksLoading ? (
+                <div className="py-16 text-center text-slate-400 text-sm">Loading tasks...</div>
+              ) : tasks.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {tasks.map((task) => (
+                    <div 
+                      key={task.firestoreId || task.id} 
+                      className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3.5 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{task.title}</h3>
+                          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                            <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${
+                              task.category === "Performance Task"
+                                ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
+                                : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
+                            }`}>
+                              {task.category || "Written Task"}
+                            </span>
+                            <span className="inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                              {task.quarter || "1st Quarter"}
+                            </span>
+                          </div>
+                        </div>
+
+                        <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[10px] font-bold border shrink-0 ${
+                          task.mode === "external"
+                            ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+                            : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+                        }`}>
+                          {task.mode === "external" ? (
+                            <>
+                              <ExternalLink className="h-3 w-3" />
+                              <span>External Link</span>
+                            </>
+                          ) : (
+                            <>
+                              <ListChecks className="h-3 w-3" />
+                              <span>In-App Quiz</span>
+                            </>
+                          )}
+                        </span>
+                      </div>
+
+                      {task.description && (
+                        <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                          {task.description}
+                        </p>
+                      )}
+
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                        <span className="inline-flex items-center space-x-1">
+                          <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Due: {task.dueDate || "No Due Date"}</span>
+                        </span>
+
+                        <span className="inline-flex items-center space-x-1 text-slate-700 dark:text-slate-200 font-extrabold">
+                          <Sparkles className="h-3.5 w-3.5 text-brand-500" />
+                          <span>{task.totalPoints || task.maxScore || 50} pts</span>
+                        </span>
+                      </div>
+
+                      {task.mode === "external" && task.externalUrl && (
+                        <a
+                          href={task.externalUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center space-x-1.5 text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline pt-1"
+                        >
+                          <span>Open Resource</span>
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                  <FolderKanban className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Tasks or Quizzes Created Yet</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">Click "Create New Task" to build your first written task, performance task, or quiz for this classroom.</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            /* ── Task Builder Studio View ── */
+            <div className="space-y-6">
+              {/* Builder Header */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={resetTaskBuilder}
+                  className="inline-flex items-center space-x-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  <span>Cancel</span>
+                </button>
+                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">Task & Quiz Builder Studio</h2>
+                <div />
+              </div>
+
+              {/* Core Information Card */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4 transition-colors">
+                <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">General Information & Grading Configuration</h3>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Task Title *</label>
+                    <input
+                      type="text"
+                      value={taskTitle}
+                      onChange={(e) => setTaskTitle(e.target.value)}
+                      placeholder="e.g., Written Work #1 — Short Essay on World Geography"
+                      className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Due Date *</label>
+                    <input
+                      type="date"
+                      value={taskDueDate}
+                      onChange={(e) => setTaskDueDate(e.target.value)}
+                      className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Grading Quarter *</label>
+                    <select
+                      value={taskQuarter}
+                      onChange={(e) => setTaskQuarter(e.target.value)}
+                      className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors cursor-pointer"
+                    >
+                      <option value="1st Quarter">1st Quarter</option>
+                      <option value="2nd Quarter">2nd Quarter</option>
+                      <option value="3rd Quarter">3rd Quarter</option>
+                      <option value="4th Quarter">4th Quarter</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Grading Category *</label>
+                    <select
+                      value={taskCategory}
+                      onChange={(e) => setTaskCategory(e.target.value)}
+                      className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors cursor-pointer"
+                    >
+                      <option value="Written Task">Written Task</option>
+                      <option value="Performance Task">Performance Task</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Instructions / Description</label>
+                  <textarea
+                    rows={3}
+                    value={taskDescription}
+                    onChange={(e) => setTaskDescription(e.target.value)}
+                    placeholder="Provide clear guidelines, submission expectations, or instructions for the students..."
+                    className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
+                  />
+                </div>
+              </div>
+
+              {/* Task Mode Selector */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4 transition-colors">
+                <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Select Task Mode</h3>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div
+                    onClick={() => setTaskMode("external")}
+                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start space-x-3 ${
+                      taskMode === "external"
+                        ? "border-brand-500 bg-brand-50/40 dark:bg-brand-900/30"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800/50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="taskMode"
+                      checked={taskMode === "external"}
+                      onChange={() => setTaskMode("external")}
+                      className="mt-1 accent-brand-600 cursor-pointer"
+                    />
+                    <div>
+                      <div className="flex items-center space-x-1.5 font-bold text-sm text-slate-800 dark:text-slate-100">
+                        <ExternalLink className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+                        <span>External Link (Google Forms / Docs)</span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        Link out to a Google Form, Google Docs, or external learning resource with a fixed maximum point score.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => setTaskMode("inApp")}
+                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start space-x-3 ${
+                      taskMode === "inApp"
+                        ? "border-brand-500 bg-brand-50/40 dark:bg-brand-900/30"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800/50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="taskMode"
+                      checked={taskMode === "inApp"}
+                      onChange={() => setTaskMode("inApp")}
+                      className="mt-1 accent-brand-600 cursor-pointer"
+                    />
+                    <div>
+                      <div className="flex items-center space-x-1.5 font-bold text-sm text-slate-800 dark:text-slate-100">
+                        <ListChecks className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        <span>In-App Quiz / Worksheet</span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        Build an interactive in-app quiz with Multiple Choice, Identification, Vocabulary Match, or Essays.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Conditional UI: External Link Mode */}
+                {taskMode === "external" && (
+                  <div className="pt-2 space-y-4 animate-fade-in border-t border-slate-100 dark:border-slate-800">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">External Resource URL *</label>
+                        <input
+                          type="url"
+                          value={taskExternalUrl}
+                          onChange={(e) => setTaskExternalUrl(e.target.value)}
+                          placeholder="https://docs.google.com/forms/d/e/.../viewform"
+                          className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Max Point Score *</label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={taskMaxScore}
+                          onChange={(e) => setTaskMaxScore(parseInt(e.target.value) || 50)}
+                          className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Conditional UI: In-App Quiz Mode */}
+              {taskMode === "inApp" && (
+                <div className="space-y-6 animate-fade-in">
+                  {/* Question Type Toolbar */}
+                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm transition-colors">
+                    <h3 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Add Quiz Question</h3>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => addTaskQuestion("multipleChoice")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors cursor-pointer">
+                        <Plus className="h-3.5 w-3.5" /><span>Multiple Choice</span>
+                      </button>
+                      <button onClick={() => addTaskQuestion("identification")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 dark:hover:bg-teal-900/50 transition-colors cursor-pointer">
+                        <Plus className="h-3.5 w-3.5" /><span>Identification</span>
+                      </button>
+                      <button onClick={() => addTaskQuestion("vocabulary")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors cursor-pointer">
+                        <Plus className="h-3.5 w-3.5" /><span>Vocabulary</span>
+                      </button>
+                      <button onClick={() => addTaskQuestion("essay")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors cursor-pointer">
+                        <Plus className="h-3.5 w-3.5" /><span>Essay</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Questions List */}
+                  {taskQuestions.length === 0 ? (
+                    <div className="py-12 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                      <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                      <p className="text-sm font-bold text-slate-600 dark:text-slate-300">No questions added yet</p>
+                      <p className="text-xs text-slate-400">Use the buttons above to add questions to this quiz.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {taskQuestions.map((q, idx) => {
+                        const typeInfo = questionTypeLabels[q.type] || { label: q.type, color: "slate" };
+                        return (
+                          <div key={q.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
+                            {/* Question Header */}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-3">
+                                <span className="flex items-center justify-center h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-600 dark:text-slate-300">
+                                  {idx + 1}
+                                </span>
+                                <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-${typeInfo.color}-50 dark:bg-${typeInfo.color}-900/30 text-${typeInfo.color}-700 dark:text-${typeInfo.color}-300 border border-${typeInfo.color}-100 dark:border-${typeInfo.color}-800`}>
+                                  {typeInfo.label}
+                                </span>
+                              </div>
+                              <div className="flex items-center space-x-3">
+                                <div className="flex items-center space-x-1.5">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase">PTS</label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={q.points}
+                                    onChange={(e) => updateTaskQuestion(q.id, "points", parseInt(e.target.value) || 1)}
+                                    className="w-14 text-xs font-bold text-center border border-slate-200 dark:border-slate-700 rounded-lg py-1 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                  />
+                                </div>
+                                <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors cursor-pointer">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Question Prompt */}
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt</label>
+                              <textarea
+                                rows={2}
+                                value={q.text}
+                                onChange={(e) => updateTaskQuestion(q.id, "text", e.target.value)}
+                                placeholder="Enter your question prompt here..."
+                                className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
+                              />
+                            </div>
+
+                            {/* Type-Specific Fields */}
+                            {q.type === "multipleChoice" && (
+                              <div className="space-y-3">
+                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select correct answer)</label>
+                                {q.options.map((opt, optIdx) => (
+                                  <div key={optIdx} className="flex items-center space-x-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateTaskQuestion(q.id, "correctOptionIndex", optIdx)}
+                                      className={`flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer ${
+                                        q.correctOptionIndex === optIdx
+                                          ? "border-emerald-500 bg-emerald-500"
+                                          : "border-slate-300 dark:border-slate-600 hover:border-brand-400"
+                                      }`}
+                                    >
+                                      {q.correctOptionIndex === optIdx && <Check className="h-3 w-3 text-white" />}
+                                    </button>
+                                    <input
+                                      type="text"
+                                      value={opt}
+                                      onChange={(e) => updateTaskOption(q.id, optIdx, e.target.value)}
+                                      placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
+                                      className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                                    />
+                                    {q.options.length > 2 && (
+                                      <button onClick={() => removeTaskOption(q.id, optIdx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
+                                    )}
+                                  </div>
+                                ))}
+                                <button onClick={() => addTaskOption(q.id)} className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer">+ Add Option</button>
+                              </div>
+                            )}
+
+                            {q.type === "identification" && (
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Exact Correct Answer</label>
+                                <input
+                                  type="text"
+                                  value={q.correctAnswer}
+                                  onChange={(e) => updateTaskQuestion(q.id, "correctAnswer", e.target.value)}
+                                  placeholder="The answer that will be auto-graded (case-insensitive)"
+                                  className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                                />
+                              </div>
+                            )}
+
+                            {q.type === "vocabulary" && (
+                              <div className="space-y-3">
+                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Word / Definition Pairs</label>
+                                {q.vocabularyPairs.map((pair) => (
+                                  <div key={pair.id} className="flex items-center space-x-2">
+                                    <input
+                                      type="text"
+                                      value={pair.word}
+                                      onChange={(e) => updateTaskVocabPair(q.id, pair.id, "word", e.target.value)}
+                                      placeholder="Word"
+                                      className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                    />
+                                    <span className="text-slate-400 text-xs font-bold">→</span>
+                                    <input
+                                      type="text"
+                                      value={pair.definition}
+                                      onChange={(e) => updateTaskVocabPair(q.id, pair.id, "definition", e.target.value)}
+                                      placeholder="Definition"
+                                      className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                    />
+                                    {q.vocabularyPairs.length > 1 && (
+                                      <button onClick={() => removeTaskVocabPair(q.id, pair.id)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
+                                    )}
+                                  </div>
+                                ))}
+                                <button onClick={() => addTaskVocabPair(q.id)} className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer">+ Add Word Pair</button>
+                              </div>
+                            )}
+
+                            {q.type === "essay" && (
+                              <div className="space-y-3">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Grading Rubric / Answer Key Notes</label>
+                                  <textarea
+                                    rows={2}
+                                    value={q.rubric}
+                                    onChange={(e) => updateTaskQuestion(q.id, "rubric", e.target.value)}
+                                    placeholder="Enter rubric or sample answer to assist manual grading..."
+                                    className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Publish Action Button */}
+              <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  onClick={handlePublishTask}
+                  className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 text-sm font-bold shadow-lg transition-all cursor-pointer"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  <span>Publish Task / Quiz</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
