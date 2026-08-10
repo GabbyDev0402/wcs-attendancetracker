@@ -1196,147 +1196,148 @@ export default function ClassDashboard() {
     return getQuarterFromDate(exam.createdAt || exam.date);
   };
 
-  const isMathClass = (classId || "").toLowerCase().includes("math") ||
-                     (classInfo?.subject || "").toLowerCase().includes("math") ||
-                     (classInfo?.name || "").toLowerCase().includes("math");
+  const isMathClass = (classId || "")?.toLowerCase()?.includes("math") ||
+                     (classInfo?.subject || "")?.toLowerCase()?.includes("math") ||
+                     (classInfo?.name || "")?.toLowerCase()?.includes("math") ||
+                     false;
 
-  const quarterlySessions = allClassSessions.filter(s => getQuarterFromDate(s.date || s.createdAt) === recordQuarter);
+  const quarterlySessions = (allClassSessions || []).filter(s => getQuarterFromDate(s?.date || s?.createdAt) === recordQuarter);
 
-  const expectedVocabSessions = quarterlySessions.filter(s => {
-    const v = s.vocabularyWords;
+  const expectedVocabSessions = (quarterlySessions || []).filter(s => {
+    const v = s?.vocabularyWords;
     return v && (Array.isArray(v) ? v.length > 0 : typeof v === "string" && v.trim().length > 0);
   });
+
+  const expectedVocabDates = (expectedVocabSessions || []).map(s => s?.date || (s?.createdAt ? s.createdAt.split("T")[0] : "")).filter(Boolean);
+  const quarterlySessionDates = (quarterlySessions || []).map(s => s?.date || (s?.createdAt ? s.createdAt.split("T")[0] : "")).filter(Boolean);
 
   const expectedVocabs = expectedVocabSessions.length;
   const expectedDiaries = isMathClass ? quarterlySessions.length : 0;
 
-  const getStudentVocabAndDiaryPcts = (studentId) => {
-    const studentVocabs = allClassVocabSubs.filter(v => v.studentId === studentId);
-    const completedVocabs = expectedVocabSessions.filter(s => {
-      const sDate = s.date || (s.createdAt ? s.createdAt.split("T")[0] : "");
-      return studentVocabs.some(v => 
-        v.sessionId === s.id || 
-        v.date === sDate || 
-        v.date === s.date ||
-        (v.createdAt && v.createdAt.split("T")[0] === sDate)
-      );
+  const getStudentVocabAndDiaryPcts = (studentObj) => {
+    const sUid = typeof studentObj === "object" ? (studentObj?.uid || studentObj?.id || "") : studentObj;
+
+    const completedVocabs = (allClassVocabSubs || []).filter(sub => {
+      const isStudentMatch = sub?.studentId === sUid || (typeof studentObj === "object" && (sub?.studentId === studentObj?.id || sub?.studentId === studentObj?.uid));
+      if (!isStudentMatch) return false;
+      const subDate = sub?.date || (sub?.createdAt ? sub.createdAt.split("T")[0] : "");
+      return expectedVocabDates.includes(subDate) || (sub?.sessionId && expectedVocabSessions.some(s => s.id === sub.sessionId || s.firestoreId === sub.sessionId));
     }).length;
 
-    const vocabPct = expectedVocabs === 0 ? 100 : (completedVocabs / expectedVocabs) * 100;
+    const vocabPct = expectedVocabs === 0 ? 100 : Math.min(100, (((completedVocabs || 0) / expectedVocabs) * 100));
 
     let diaryPct = 100;
+    let completedDiaries = 0;
     if (isMathClass) {
-      const studentDiaries = allClassDiaries.filter(d => d.studentId === studentId);
-      const completedDiaries = quarterlySessions.filter(s => {
-        const sDate = s.date || (s.createdAt ? s.createdAt.split("T")[0] : "");
-        return studentDiaries.some(d => 
-          d.date === sDate || 
-          d.date === s.date || 
-          (d.createdAt && d.createdAt.split("T")[0] === sDate)
-        );
+      completedDiaries = (allClassDiaries || []).filter(sub => {
+        const isStudentMatch = sub?.studentId === sUid || (typeof studentObj === "object" && (sub?.studentId === studentObj?.id || sub?.studentId === studentObj?.uid));
+        if (!isStudentMatch) return false;
+        const subDate = sub?.date || (sub?.createdAt ? sub.createdAt.split("T")[0] : "");
+        return quarterlySessionDates.includes(subDate);
       }).length;
-      diaryPct = expectedDiaries === 0 ? 100 : (completedDiaries / expectedDiaries) * 100;
+      diaryPct = expectedDiaries === 0 ? 100 : Math.min(100, (((completedDiaries || 0) / expectedDiaries) * 100));
     }
 
-    return { vocabPct, diaryPct, completedVocabs, completedDiaries };
+    return { vocabPct: Number(vocabPct || 0), diaryPct: Number(diaryPct || 0), completedVocabs, completedDiaries };
   };
 
-  const wwTaskItems = allClassTasks
-    .filter(t => t.quarter === recordQuarter && t.category === "Written Task")
+  const wwTaskItems = (allClassTasks || [])
+    .filter(t => t?.quarter === recordQuarter && t?.category === "Written Task")
     .map(t => ({
       id: t.firestoreId,
-      title: t.title,
+      title: t.title || "Written Task",
       type: "task",
       maxScore: Number(t.totalPoints || t.maxScore) || 50
     }));
 
-  const wwExamItems = allClassExams
-    .filter(e => getQuarterForExam(e) === recordQuarter && !(e.title || "").toLowerCase().includes("quarterly"))
+  const wwExamItems = (allClassExams || [])
+    .filter(e => getQuarterForExam(e) === recordQuarter && !(e?.title || "").toLowerCase().includes("quarterly"))
     .map(e => ({
       id: e.firestoreId,
-      title: e.title,
+      title: e.title || "Exam",
       type: "exam",
       maxScore: (e.questions || []).reduce((sum, q) => sum + (q.points || 1), 0) || 50
     }));
 
   const wwItems = [...wwTaskItems, ...wwExamItems];
 
-  const ptItems = allClassTasks
-    .filter(t => t.quarter === recordQuarter && t.category === "Performance Task")
+  const ptItems = (allClassTasks || [])
+    .filter(t => t?.quarter === recordQuarter && t?.category === "Performance Task")
     .map(t => ({
       id: t.firestoreId,
-      title: t.title,
+      title: t.title || "Performance Task",
       type: "task",
       maxScore: Number(t.totalPoints || t.maxScore) || 50
     }));
 
-  const qaItems = allClassExams
-    .filter(e => getQuarterForExam(e) === recordQuarter && (e.title || "").toLowerCase().includes("quarterly"))
+  const qaItems = (allClassExams || [])
+    .filter(e => getQuarterForExam(e) === recordQuarter && (e?.title || "").toLowerCase().includes("quarterly"))
     .map(e => ({
       id: e.firestoreId,
-      title: e.title,
+      title: e.title || "Quarterly Exam",
       type: "exam",
       maxScore: (e.questions || []).reduce((sum, q) => sum + (q.points || 1), 0) || 100
     }));
 
-  const getStudentScoreForItem = (studentId, item) => {
-    if (item.type === "task") {
-      const sub = allClassTaskSubs.find(s => s.studentId === studentId && s.taskId === item.id);
-      return sub && sub.score !== undefined ? Number(sub.score) : 0;
+  const getStudentScoreForItem = (studentObj, item) => {
+    const sUid = typeof studentObj === "object" ? (studentObj?.uid || studentObj?.id || "") : studentObj;
+    if (item?.type === "task") {
+      const sub = (allClassTaskSubs || []).find(s => s?.studentId === sUid && s?.taskId === item.id);
+      return sub && sub.score !== undefined ? Number(sub.score || 0) : 0;
     } else {
-      const sub = allClassExamSubs.find(s => s.studentId === studentId && s.examId === item.id);
-      return sub && (sub.score !== undefined || sub.objScore !== undefined) ? Number(sub.score ?? sub.objScore) : 0;
+      const sub = (allClassExamSubs || []).find(s => s?.studentId === sUid && s?.examId === item.id);
+      return sub && (sub.score !== undefined || sub.objScore !== undefined) ? Number(sub.score ?? sub.objScore ?? 0) : 0;
     }
   };
 
-  const getStudentPTPct = (studentId) => {
+  const getStudentPTPct = (studentObj) => {
     let ptPoints = 0;
     let ptMax = 0;
     ptItems.forEach(item => {
-      ptPoints += getStudentScoreForItem(studentId, item);
+      ptPoints += getStudentScoreForItem(studentObj, item);
       ptMax += item.maxScore;
     });
 
-    const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(studentId);
+    const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(studentObj);
 
     if (ptMax > 0) {
-      let combinedEarned = ptPoints + (vocabPct / 100 * 50);
+      let combinedEarned = ptPoints + ((vocabPct || 0) / 100 * 50);
       let combinedMax = ptMax + 50;
       if (isMathClass) {
-        combinedEarned += (diaryPct / 100 * 50);
+        combinedEarned += ((diaryPct || 0) / 100 * 50);
         combinedMax += 50;
       }
       return (combinedEarned / combinedMax) * 100;
     } else {
       if (isMathClass) {
-        return (vocabPct + diaryPct) / 2;
+        return ((vocabPct || 0) + (diaryPct || 0)) / 2;
       } else {
-        return vocabPct;
+        return vocabPct || 0;
       }
     }
   };
 
-  const calculateFinalQuarterGrade = (studentId) => {
+  const calculateFinalQuarterGrade = (studentObj) => {
     let wwPoints = 0;
     let wwMax = 0;
     wwItems.forEach(item => {
-      wwPoints += getStudentScoreForItem(studentId, item);
+      wwPoints += getStudentScoreForItem(studentObj, item);
       wwMax += item.maxScore;
     });
     const wwPct = wwMax > 0 ? (wwPoints / wwMax) * 100 : 100;
 
-    const ptPct = getStudentPTPct(studentId);
+    const ptPct = getStudentPTPct(studentObj);
 
     let qaPoints = 0;
     let qaMax = 0;
     qaItems.forEach(item => {
-      qaPoints += getStudentScoreForItem(studentId, item);
+      qaPoints += getStudentScoreForItem(studentObj, item);
       qaMax += item.maxScore;
     });
     const qaPct = qaMax > 0 ? (qaPoints / qaMax) * 100 : 100;
 
     const finalScore = (wwPct * 0.40) + (ptPct * 0.40) + (qaPct * 0.20);
-    return Math.min(100, Math.max(60, finalScore));
+    return Math.min(100, Math.max(60, Number(finalScore || 0)));
   };
 
   const handleExportCSV = () => {
@@ -1357,53 +1358,53 @@ export default function ClassDashboard() {
 
     let rows = [headers.join(",")];
 
-    classStudents.forEach(student => {
+    (classStudents || []).forEach(student => {
       let row = [
-        `"${(student.name || 'Student').replace(/"/g, '""')}"`,
-        `"${(student.studentCode || '').replace(/"/g, '""')}"`
+        `"${(student?.name || 'Student').replace(/"/g, '""')}"`,
+        `"${(student?.studentCode || '').replace(/"/g, '""')}"`
       ];
 
       let studentWWPoints = 0;
       let totalWWMax = 0;
       wwItems.forEach(item => {
-        const score = getStudentScoreForItem(student.id, item);
+        const score = getStudentScoreForItem(student, item);
         studentWWPoints += score;
         totalWWMax += item.maxScore;
         row.push(score);
       });
       row.push(studentWWPoints);
-      const wwPct = totalWWMax > 0 ? ((studentWWPoints / totalWWMax) * 100).toFixed(1) + "%" : "100%";
-      row.push(`"${wwPct}"`);
+      const wwPct = totalWWMax > 0 ? ((studentWWPoints / totalWWMax) * 100) : 100;
+      row.push(`"${Number(wwPct || 0).toFixed(1)}%"`);
 
       let studentPTPoints = 0;
       let totalPTMax = 0;
       ptItems.forEach(item => {
-        const score = getStudentScoreForItem(student.id, item);
+        const score = getStudentScoreForItem(student, item);
         studentPTPoints += score;
         totalPTMax += item.maxScore;
         row.push(score);
       });
-      const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(student.id);
-      row.push(`"${vocabPct.toFixed(1)}%"`);
-      row.push(`"${isMathClass ? diaryPct.toFixed(1) + "%" : "N/A"}"`);
+      const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(student);
+      row.push(`"${Number(vocabPct || 0).toFixed(1)}%"`);
+      row.push(`"${isMathClass ? Number(diaryPct || 0).toFixed(1) + "%" : "N/A"}"`);
       row.push(studentPTPoints);
-      const ptPct = getStudentPTPct(student.id);
-      row.push(`"${ptPct.toFixed(1)}%"`);
+      const ptPct = getStudentPTPct(student);
+      row.push(`"${Number(ptPct || 0).toFixed(1)}%"`);
 
       let studentQAPoints = 0;
       let totalQAMax = 0;
       qaItems.forEach(item => {
-        const score = getStudentScoreForItem(student.id, item);
+        const score = getStudentScoreForItem(student, item);
         studentQAPoints += score;
         totalQAMax += item.maxScore;
         row.push(score);
       });
       row.push(studentQAPoints);
-      const qaPct = totalQAMax > 0 ? ((studentQAPoints / totalQAMax) * 100).toFixed(1) + "%" : "100%";
-      row.push(`"${qaPct}"`);
+      const qaPct = totalQAMax > 0 ? ((studentQAPoints / totalQAMax) * 100) : 100;
+      row.push(`"${Number(qaPct || 0).toFixed(1)}%"`);
 
-      const finalGrade = calculateFinalQuarterGrade(student.id);
-      row.push(`"${finalGrade.toFixed(1)}%"`);
+      const finalGrade = calculateFinalQuarterGrade(student);
+      row.push(`"${Number(finalGrade || 0).toFixed(1)}%"`);
 
       rows.push(row.join(","));
     });
@@ -3531,226 +3532,230 @@ export default function ClassDashboard() {
       {/* TAB 6: E-CLASS RECORD VIEW */}
       {activeTab === "record" && (
         <div className="space-y-6">
-          {/* Header Controls Bar */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center space-x-2">
-                <Table className="h-6 w-6 text-brand-600 dark:text-brand-400" />
-                <h2 className="text-xl font-extrabold text-slate-900 dark:text-white font-heading">
-                  Consolidated E-Class Record
-                </h2>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                DepEd-compliant grade sheet consolidating Written Works (WW), Performance Tasks (PT), and Quarterly Assessments (QA).
-              </p>
-            </div>
-
-            <div className="flex items-center space-x-3">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Select Quarter</label>
-                <select
-                  value={recordQuarter}
-                  onChange={(e) => setRecordQuarter(e.target.value)}
-                  className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                >
-                  <option value="1st Quarter">1st Quarter</option>
-                  <option value="2nd Quarter">2nd Quarter</option>
-                  <option value="3rd Quarter">3rd Quarter</option>
-                  <option value="4th Quarter">4th Quarter</option>
-                </select>
-              </div>
-
-              <button
-                onClick={handleExportCSV}
-                className="inline-flex items-center space-x-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer mt-4 sm:mt-0"
-              >
-                <Download className="h-4 w-4" />
-                <span>Export E-Class Record (CSV)</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Massively Detailed Horizontal Scrolling Data Table */}
-          {recordDataLoading ? (
-            <div className="py-16 text-center text-slate-400 text-sm">Loading E-Class Record data...</div>
-          ) : classStudents.length > 0 ? (
-            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
-              <div className="overflow-x-auto max-w-full">
-                <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
-                  {/* Row 1: Group Headers */}
-                  <thead>
-                    <tr className="bg-slate-900 text-white text-[11px] font-extrabold uppercase tracking-wider divide-x divide-slate-800 border-b border-slate-800">
-                      <th className="p-4 sticky left-0 z-20 bg-slate-900 min-w-[200px]">Student Name</th>
-                      <th colSpan={wwItems.length + 2} className="p-3 text-center bg-blue-900/60 text-blue-200">
-                        Written Works (WW) — 40% Weight
-                      </th>
-                      <th colSpan={ptItems.length + 4} className="p-3 text-center bg-purple-900/60 text-purple-200">
-                        Performance Tasks (PT) — 40% Weight
-                      </th>
-                      <th colSpan={qaItems.length > 0 ? qaItems.length + 2 : 2} className="p-3 text-center bg-teal-900/60 text-teal-200">
-                        Quarterly Assessment (QA) — 20% Weight
-                      </th>
-                      <th className="p-4 text-center bg-emerald-950 text-emerald-300 min-w-[120px]">
-                        Quarter Grade
-                      </th>
-                    </tr>
-
-                    {/* Row 2: Sub-headers */}
-                    <tr className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[10px] font-bold uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 divide-x divide-slate-200 dark:divide-slate-700">
-                      <th className="p-3 sticky left-0 z-20 bg-slate-100 dark:bg-slate-800">Student Info</th>
-
-                      {/* WW Sub-headers */}
-                      {wwItems.map((item, idx) => (
-                        <th key={`ww-head-${idx}`} className="p-2.5 text-center min-w-[110px] bg-blue-50/50 dark:bg-blue-950/20">
-                          <span className="block truncate max-w-[120px]" title={item.title}>{item.title}</span>
-                          <span className="text-[9px] text-blue-600 dark:text-blue-400 font-extrabold">({item.maxScore} pts)</span>
-                        </th>
-                      ))}
-                      {wwItems.length === 0 && <th className="p-2.5 text-center italic text-slate-400 bg-blue-50/30">No WW Items</th>}
-                      <th className="p-2.5 text-center bg-blue-100/70 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-extrabold min-w-[80px]">Total</th>
-                      <th className="p-2.5 text-center bg-blue-200/70 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200 font-extrabold min-w-[70px]">WW %</th>
-
-                      {/* PT Sub-headers */}
-                      {ptItems.map((item, idx) => (
-                        <th key={`pt-head-${idx}`} className="p-2.5 text-center min-w-[110px] bg-purple-50/50 dark:bg-purple-950/20">
-                          <span className="block truncate max-w-[120px]" title={item.title}>{item.title}</span>
-                          <span className="text-[9px] text-purple-600 dark:text-purple-400 font-extrabold">({item.maxScore} pts)</span>
-                        </th>
-                      ))}
-                      <th className="p-2.5 text-center bg-purple-50/50 dark:bg-purple-950/20 min-w-[100px] text-amber-600 dark:text-amber-400">VOCABULARY</th>
-                      <th className="p-2.5 text-center bg-purple-50/50 dark:bg-purple-950/20 min-w-[100px] text-teal-600 dark:text-teal-400">DIARY</th>
-                      <th className="p-2.5 text-center bg-purple-100/70 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 font-extrabold min-w-[80px]">Total</th>
-                      <th className="p-2.5 text-center bg-purple-200/70 dark:bg-purple-900/60 text-purple-900 dark:text-purple-200 font-extrabold min-w-[70px]">PT %</th>
-
-                      {/* QA Sub-headers */}
-                      {qaItems.map((item, idx) => (
-                        <th key={`qa-head-${idx}`} className="p-2.5 text-center min-w-[110px] bg-teal-50/50 dark:bg-teal-950/20">
-                          <span className="block truncate max-w-[120px]" title={item.title}>{item.title}</span>
-                          <span className="text-[9px] text-teal-600 dark:text-teal-400 font-extrabold">({item.maxScore} pts)</span>
-                        </th>
-                      ))}
-                      {qaItems.length === 0 && <th className="p-2.5 text-center italic text-slate-400 bg-teal-50/30">No QA Exam</th>}
-                      <th className="p-2.5 text-center bg-teal-100/70 dark:bg-teal-900/40 text-teal-800 dark:text-teal-300 font-extrabold min-w-[80px]">Total</th>
-                      <th className="p-2.5 text-center bg-teal-200/70 dark:bg-teal-900/60 text-teal-900 dark:text-teal-200 font-extrabold min-w-[70px]">QA %</th>
-
-                      {/* Final Grade Sub-header */}
-                      <th className="p-2.5 text-center bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-black">Grade</th>
-                    </tr>
-                  </thead>
-
-                  {/* Student Rows */}
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
-                    {classStudents.map((student) => {
-                      let studentWWPoints = 0;
-                      let totalWWMax = 0;
-                      wwItems.forEach(item => {
-                        const score = getStudentScoreForItem(student.id, item);
-                        studentWWPoints += score;
-                        totalWWMax += item.maxScore;
-                      });
-                      const wwPct = totalWWMax > 0 ? ((studentWWPoints / totalWWMax) * 100) : 100;
-
-                      let studentPTPoints = 0;
-                      let totalPTMax = 0;
-                      ptItems.forEach(item => {
-                        const score = getStudentScoreForItem(student.id, item);
-                        studentPTPoints += score;
-                        totalPTMax += item.maxScore;
-                      });
-                      const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(student.id);
-                      const ptPct = getStudentPTPct(student.id);
-
-                      let studentQAPoints = 0;
-                      let totalQAMax = 0;
-                      qaItems.forEach(item => {
-                        const score = getStudentScoreForItem(student.id, item);
-                        studentQAPoints += score;
-                        totalQAMax += item.maxScore;
-                      });
-                      const qaPct = totalQAMax > 0 ? ((studentQAPoints / totalQAMax) * 100) : 100;
-
-                      const finalGrade = calculateFinalQuarterGrade(student.id);
-
-                      return (
-                        <tr key={student.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors divide-x divide-slate-100 dark:divide-slate-800">
-                          <td className="p-3.5 sticky left-0 z-10 bg-white dark:bg-slate-900 font-bold text-slate-900 dark:text-slate-100">
-                            <div>{student.name || "Student"}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">{student.studentCode}</div>
-                          </td>
-
-                          {wwItems.map((item, idx) => {
-                            const score = getStudentScoreForItem(student.id, item);
-                            return (
-                              <td key={`ww-val-${idx}`} className="p-2.5 text-center text-slate-700 dark:text-slate-200">
-                                {score}
-                              </td>
-                            );
-                          })}
-                          {wwItems.length === 0 && <td className="p-2.5 text-center text-slate-400">—</td>}
-                          <td className="p-2.5 text-center font-bold text-blue-700 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-950/20">
-                            {studentWWPoints} / {totalWWMax}
-                          </td>
-                          <td className="p-2.5 text-center font-extrabold text-blue-800 dark:text-blue-300 bg-blue-100/40 dark:bg-blue-900/30">
-                            {wwPct.toFixed(1)}%
-                          </td>
-
-                          {ptItems.map((item, idx) => {
-                            const score = getStudentScoreForItem(student.id, item);
-                            return (
-                              <td key={`pt-val-${idx}`} className="p-2.5 text-center text-slate-700 dark:text-slate-200">
-                                {score}
-                              </td>
-                            );
-                          })}
-                          <td className="p-2.5 text-center font-bold text-amber-600 dark:text-amber-400 bg-purple-50/20">
-                            {vocabPct.toFixed(1)}%
-                          </td>
-                          <td className="p-2.5 text-center font-bold text-teal-600 dark:text-teal-400 bg-purple-50/20">
-                            {isMathClass ? (
-                              `${diaryPct.toFixed(1)}%`
-                            ) : (
-                              <span className="text-slate-400 font-normal">N/A</span>
-                            )}
-                          </td>
-                          <td className="p-2.5 text-center font-bold text-purple-700 dark:text-purple-400 bg-purple-50/30 dark:bg-purple-950/20">
-                            {studentPTPoints} / {totalPTMax}
-                          </td>
-                          <td className="p-2.5 text-center font-extrabold text-purple-800 dark:text-purple-300 bg-purple-100/40 dark:bg-purple-900/30">
-                            {ptPct.toFixed(1)}%
-                          </td>
-
-                          {qaItems.map((item, idx) => {
-                            const score = getStudentScoreForItem(student.id, item);
-                            return (
-                              <td key={`qa-val-${idx}`} className="p-2.5 text-center text-slate-700 dark:text-slate-200">
-                                {score}
-                              </td>
-                            );
-                          })}
-                          {qaItems.length === 0 && <td className="p-2.5 text-center text-slate-400">—</td>}
-                          <td className="p-2.5 text-center font-bold text-teal-700 dark:text-teal-400 bg-teal-50/30 dark:bg-teal-950/20">
-                            {studentQAPoints} / {totalQAMax}
-                          </td>
-                          <td className="p-2.5 text-center font-extrabold text-teal-800 dark:text-teal-300 bg-teal-100/40 dark:bg-teal-900/30">
-                            {qaPct.toFixed(1)}%
-                          </td>
-
-                          <td className="p-3 text-center bg-emerald-50 dark:bg-emerald-950/40 font-black text-sm text-emerald-700 dark:text-emerald-400">
-                            {finalGrade.toFixed(1)}%
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          {(!classId || recordDataLoading || !classStudents) ? (
+            <div className="py-16 text-center text-slate-400 text-sm font-medium">Loading E-Class Record data...</div>
           ) : (
-            <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl">
-              <Table className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Enrolled Students</p>
-              <p className="text-xs text-slate-400">Enroll students in this classroom to generate consolidated grade records.</p>
-            </div>
+            <>
+              {/* Header Controls Bar */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <Table className="h-6 w-6 text-brand-600 dark:text-brand-400" />
+                    <h2 className="text-xl font-extrabold text-slate-900 dark:text-white font-heading">
+                      Consolidated E-Class Record
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    DepEd-compliant grade sheet consolidating Written Works (WW), Performance Tasks (PT), and Quarterly Assessments (QA).
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Select Quarter</label>
+                    <select
+                      value={recordQuarter}
+                      onChange={(e) => setRecordQuarter(e.target.value)}
+                      className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                    >
+                      <option value="1st Quarter">1st Quarter</option>
+                      <option value="2nd Quarter">2nd Quarter</option>
+                      <option value="3rd Quarter">3rd Quarter</option>
+                      <option value="4th Quarter">4th Quarter</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={handleExportCSV}
+                    className="inline-flex items-center space-x-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer mt-4 sm:mt-0"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Export E-Class Record (CSV)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Massively Detailed Horizontal Scrolling Data Table */}
+              {(classStudents || []).length > 0 ? (
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+                  <div className="overflow-x-auto max-w-full">
+                    <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
+                      {/* Row 1: Group Headers */}
+                      <thead>
+                        <tr className="bg-slate-900 text-white text-[11px] font-extrabold uppercase tracking-wider divide-x divide-slate-800 border-b border-slate-800">
+                          <th className="p-4 sticky left-0 z-20 bg-slate-900 min-w-[200px]">Student Name</th>
+                          <th colSpan={(wwItems || []).length + 2} className="p-3 text-center bg-blue-900/60 text-blue-200">
+                            Written Works (WW) — 40% Weight
+                          </th>
+                          <th colSpan={(ptItems || []).length + 4} className="p-3 text-center bg-purple-900/60 text-purple-200">
+                            Performance Tasks (PT) — 40% Weight
+                          </th>
+                          <th colSpan={(qaItems || []).length > 0 ? (qaItems || []).length + 2 : 2} className="p-3 text-center bg-teal-900/60 text-teal-200">
+                            Quarterly Assessment (QA) — 20% Weight
+                          </th>
+                          <th className="p-4 text-center bg-emerald-950 text-emerald-300 min-w-[120px]">
+                            Quarter Grade
+                          </th>
+                        </tr>
+
+                        {/* Row 2: Sub-headers */}
+                        <tr className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-[10px] font-bold uppercase tracking-wider border-b border-slate-200 dark:border-slate-700 divide-x divide-slate-200 dark:divide-slate-700">
+                          <th className="p-3 sticky left-0 z-20 bg-slate-100 dark:bg-slate-800">Student Info</th>
+
+                          {/* WW Sub-headers */}
+                          {(wwItems || []).map((item, idx) => (
+                            <th key={`ww-head-${idx}`} className="p-2.5 text-center min-w-[110px] bg-blue-50/50 dark:bg-blue-950/20">
+                              <span className="block truncate max-w-[120px]" title={item.title}>{item.title}</span>
+                              <span className="text-[9px] text-blue-600 dark:text-blue-400 font-extrabold">({item.maxScore} pts)</span>
+                            </th>
+                          ))}
+                          {(wwItems || []).length === 0 && <th className="p-2.5 text-center italic text-slate-400 bg-blue-50/30">No WW Items</th>}
+                          <th className="p-2.5 text-center bg-blue-100/70 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-extrabold min-w-[80px]">Total</th>
+                          <th className="p-2.5 text-center bg-blue-200/70 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200 font-extrabold min-w-[70px]">WW %</th>
+
+                          {/* PT Sub-headers */}
+                          {(ptItems || []).map((item, idx) => (
+                            <th key={`pt-head-${idx}`} className="p-2.5 text-center min-w-[110px] bg-purple-50/50 dark:bg-purple-950/20">
+                              <span className="block truncate max-w-[120px]" title={item.title}>{item.title}</span>
+                              <span className="text-[9px] text-purple-600 dark:text-purple-400 font-extrabold">({item.maxScore} pts)</span>
+                            </th>
+                          ))}
+                          <th className="p-2.5 text-center bg-purple-50/50 dark:bg-purple-950/20 min-w-[100px] text-amber-600 dark:text-amber-400">VOCABULARY</th>
+                          <th className="p-2.5 text-center bg-purple-50/50 dark:bg-purple-950/20 min-w-[100px] text-teal-600 dark:text-teal-400">DIARY</th>
+                          <th className="p-2.5 text-center bg-purple-100/70 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 font-extrabold min-w-[80px]">Total</th>
+                          <th className="p-2.5 text-center bg-purple-200/70 dark:bg-purple-900/60 text-purple-900 dark:text-purple-200 font-extrabold min-w-[70px]">PT %</th>
+
+                          {/* QA Sub-headers */}
+                          {(qaItems || []).map((item, idx) => (
+                            <th key={`qa-head-${idx}`} className="p-2.5 text-center min-w-[110px] bg-teal-50/50 dark:bg-teal-950/20">
+                              <span className="block truncate max-w-[120px]" title={item.title}>{item.title}</span>
+                              <span className="text-[9px] text-teal-600 dark:text-teal-400 font-extrabold">({item.maxScore} pts)</span>
+                            </th>
+                          ))}
+                          {(qaItems || []).length === 0 && <th className="p-2.5 text-center italic text-slate-400 bg-teal-50/30">No QA Exam</th>}
+                          <th className="p-2.5 text-center bg-teal-100/70 dark:bg-teal-900/40 text-teal-800 dark:text-teal-300 font-extrabold min-w-[80px]">Total</th>
+                          <th className="p-2.5 text-center bg-teal-200/70 dark:bg-teal-900/60 text-teal-900 dark:text-teal-200 font-extrabold min-w-[70px]">QA %</th>
+
+                          {/* Final Grade Sub-header */}
+                          <th className="p-2.5 text-center bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 font-black">Grade</th>
+                        </tr>
+                      </thead>
+
+                      {/* Student Rows */}
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                        {(classStudents || []).map((student) => {
+                          let studentWWPoints = 0;
+                          let totalWWMax = 0;
+                          (wwItems || []).forEach(item => {
+                            const score = getStudentScoreForItem(student, item);
+                            studentWWPoints += score;
+                            totalWWMax += item.maxScore;
+                          });
+                          const wwPct = totalWWMax > 0 ? ((studentWWPoints / totalWWMax) * 100) : 100;
+
+                          let studentPTPoints = 0;
+                          let totalPTMax = 0;
+                          (ptItems || []).forEach(item => {
+                            const score = getStudentScoreForItem(student, item);
+                            studentPTPoints += score;
+                            totalPTMax += item.maxScore;
+                          });
+                          const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(student);
+                          const ptPct = getStudentPTPct(student);
+
+                          let studentQAPoints = 0;
+                          let totalQAMax = 0;
+                          (qaItems || []).forEach(item => {
+                            const score = getStudentScoreForItem(student, item);
+                            studentQAPoints += score;
+                            totalQAMax += item.maxScore;
+                          });
+                          const qaPct = totalQAMax > 0 ? ((studentQAPoints / totalQAMax) * 100) : 100;
+
+                          const finalGrade = calculateFinalQuarterGrade(student);
+
+                          return (
+                            <tr key={student.id || student.uid || Math.random()} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors divide-x divide-slate-100 dark:divide-slate-800">
+                              <td className="p-3.5 sticky left-0 z-10 bg-white dark:bg-slate-900 font-bold text-slate-900 dark:text-slate-100">
+                                <div>{student?.name || "Student"}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{student?.studentCode || ""}</div>
+                              </td>
+
+                              {(wwItems || []).map((item, idx) => {
+                                const score = getStudentScoreForItem(student, item);
+                                return (
+                                  <td key={`ww-val-${idx}`} className="p-2.5 text-center text-slate-700 dark:text-slate-200">
+                                    {score}
+                                  </td>
+                                );
+                              })}
+                              {(wwItems || []).length === 0 && <td className="p-2.5 text-center text-slate-400">—</td>}
+                              <td className="p-2.5 text-center font-bold text-blue-700 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-950/20">
+                                {studentWWPoints} / {totalWWMax}
+                              </td>
+                              <td className="p-2.5 text-center font-extrabold text-blue-800 dark:text-blue-300 bg-blue-100/40 dark:bg-blue-900/30">
+                                {Number(wwPct || 0).toFixed(1)}%
+                              </td>
+
+                              {(ptItems || []).map((item, idx) => {
+                                const score = getStudentScoreForItem(student, item);
+                                return (
+                                  <td key={`pt-val-${idx}`} className="p-2.5 text-center text-slate-700 dark:text-slate-200">
+                                    {score}
+                                  </td>
+                                );
+                              })}
+                              <td className="p-2.5 text-center font-bold text-amber-600 dark:text-amber-400 bg-purple-50/20">
+                                {Number(vocabPct || 0).toFixed(1)}%
+                              </td>
+                              <td className="p-2.5 text-center font-bold text-teal-600 dark:text-teal-400 bg-purple-50/20">
+                                {isMathClass ? (
+                                  `${Number(diaryPct || 0).toFixed(1)}%`
+                                ) : (
+                                  <span className="text-slate-400 font-normal">N/A</span>
+                                )}
+                              </td>
+                              <td className="p-2.5 text-center font-bold text-purple-700 dark:text-purple-400 bg-purple-50/30 dark:bg-purple-950/20">
+                                {studentPTPoints} / {totalPTMax}
+                              </td>
+                              <td className="p-2.5 text-center font-extrabold text-purple-800 dark:text-purple-300 bg-purple-100/40 dark:bg-purple-900/30">
+                                {Number(ptPct || 0).toFixed(1)}%
+                              </td>
+
+                              {(qaItems || []).map((item, idx) => {
+                                const score = getStudentScoreForItem(student, item);
+                                return (
+                                  <td key={`qa-val-${idx}`} className="p-2.5 text-center text-slate-700 dark:text-slate-200">
+                                    {score}
+                                  </td>
+                                );
+                              })}
+                              {(qaItems || []).length === 0 && <td className="p-2.5 text-center text-slate-400">—</td>}
+                              <td className="p-2.5 text-center font-bold text-teal-700 dark:text-teal-400 bg-teal-50/30 dark:bg-teal-950/20">
+                                {studentQAPoints} / {totalQAMax}
+                              </td>
+                              <td className="p-2.5 text-center font-extrabold text-teal-800 dark:text-teal-300 bg-teal-100/40 dark:bg-teal-900/30">
+                                {Number(qaPct || 0).toFixed(1)}%
+                              </td>
+
+                              <td className="p-3 text-center bg-emerald-50 dark:bg-emerald-950/40 font-black text-sm text-emerald-700 dark:text-emerald-400">
+                                {Number(finalGrade || 0).toFixed(1)}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl">
+                  <Table className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Enrolled Students</p>
+                  <p className="text-xs text-slate-400">Enroll students in this classroom to generate consolidated grade records.</p>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
