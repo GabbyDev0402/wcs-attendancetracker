@@ -15,7 +15,9 @@ import {
   HelpCircle, 
   Send,
   Lock,
-  Check
+  Check,
+  FolderPlus,
+  Type
 } from "lucide-react";
 
 export default function StudentExamSession() {
@@ -323,8 +325,44 @@ export default function StudentExamSession() {
           </p>
         </div>
 
-        {/* Questions Cards */}
+        {/* Questions Cards & Blocks */}
         {questions.map((q, idx) => {
+          if (q.type === "section") {
+            return (
+              <div key={q.id || idx} className="bg-indigo-900 text-white rounded-3xl p-6 sm:p-8 shadow-md space-y-2 border border-indigo-800">
+                <div className="flex items-center space-x-2 text-indigo-300 text-xs font-bold uppercase tracking-wider">
+                  <FolderPlus className="h-4 w-4 text-indigo-400" />
+                  <span>Section Header</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black font-heading">{q.title || "Untitled Section"}</h2>
+                {q.description && (
+                  <p className="text-xs text-indigo-100/90 leading-relaxed font-medium">{q.description}</p>
+                )}
+              </div>
+            );
+          }
+
+          if (q.type === "info") {
+            return (
+              <div key={q.id || idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-3">
+                <div className="flex items-center space-x-2 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                  <Type className="h-4 w-4 text-slate-500" />
+                  <span>Reading Passage / Instructions</span>
+                </div>
+                {q.content && q.content.includes("<") ? (
+                  <div 
+                    className="prose dark:prose-invert max-w-none text-sm text-slate-800 dark:text-slate-100 font-medium leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: q.content }}
+                  />
+                ) : (
+                  <div className="text-sm text-slate-800 dark:text-slate-100 font-medium leading-relaxed whitespace-pre-wrap">
+                    {q.content}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
           const typeLabelMap = {
             multipleChoice: "Multiple Choice",
             identification: "Identification",
@@ -352,10 +390,17 @@ export default function StudentExamSession() {
                 </span>
               </div>
 
-              {/* Question Text Prompt */}
-              <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap">
-                {q.text}
-              </div>
+              {/* Question Text Prompt with Rich Text HTML support */}
+              {q.text && q.text.includes("<") ? (
+                <div 
+                  className="prose dark:prose-invert max-w-none text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 leading-snug"
+                  dangerouslySetInnerHTML={{ __html: q.text }}
+                />
+              ) : (
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap">
+                  {q.text}
+                </div>
+              )}
 
               {/* INPUT TYPE 1: Multiple Choice */}
               {q.type === "multipleChoice" && (

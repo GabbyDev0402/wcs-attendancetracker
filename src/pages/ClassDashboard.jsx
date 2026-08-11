@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
+import ReactQuill from "react-quill";
+import "react-quill/dist/quill.snow.css";
 import { db } from "../firebase/config";
 import { 
   collection, 
@@ -47,7 +49,9 @@ import {
   FolderKanban,
   ExternalLink,
   Table,
-  Download
+  Download,
+  FolderPlus,
+  Type
 } from "lucide-react";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
@@ -1000,7 +1004,18 @@ export default function ClassDashboard() {
     multipleChoice: { label: "Multiple Choice", color: "brand" },
     identification: { label: "Identification", color: "teal" },
     vocabulary: { label: "Vocabulary Match", color: "amber" },
-    essay: { label: "Essay", color: "purple" }
+    essay: { label: "Essay", color: "purple" },
+    section: { label: "Section Header", color: "indigo" },
+    info: { label: "Text Block", color: "slate" }
+  };
+
+  const quillModules = {
+    toolbar: [
+      ['bold', 'italic', 'underline'],
+      [{ 'script': 'sub'}, { 'script': 'super' }],
+      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+      ['clean']
+    ]
   };
 
   // -------------------------------------------------------------
@@ -1467,6 +1482,12 @@ export default function ClassDashboard() {
         break;
       case "essay":
         newQ = { ...base, rubric: "", minWordCount: 50 };
+        break;
+      case "section":
+        newQ = { id: nextTaskQId, type: "section", title: "", description: "" };
+        break;
+      case "info":
+        newQ = { id: nextTaskQId, type: "info", content: "" };
         break;
       default:
         return;
@@ -3500,37 +3521,90 @@ export default function ClassDashboard() {
 
               {/* Conditional UI: In-App Quiz Mode */}
               {taskMode === "inApp" && (
-                <div className="space-y-6 animate-fade-in">
-                  {/* Question Type Toolbar */}
-                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm transition-colors">
-                    <h3 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Add Quiz Question</h3>
-                    <div className="flex flex-wrap gap-2">
-                      <button onClick={() => addTaskQuestion("multipleChoice")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors cursor-pointer">
-                        <Plus className="h-3.5 w-3.5" /><span>Multiple Choice</span>
-                      </button>
-                      <button onClick={() => addTaskQuestion("identification")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 dark:hover:bg-teal-900/50 transition-colors cursor-pointer">
-                        <Plus className="h-3.5 w-3.5" /><span>Identification</span>
-                      </button>
-                      <button onClick={() => addTaskQuestion("vocabulary")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors cursor-pointer">
-                        <Plus className="h-3.5 w-3.5" /><span>Vocabulary</span>
-                      </button>
-                      <button onClick={() => addTaskQuestion("essay")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors cursor-pointer">
-                        <Plus className="h-3.5 w-3.5" /><span>Essay</span>
-                      </button>
-                    </div>
-                  </div>
+                <div className="flex flex-col md:flex-row gap-6 items-start relative animate-fade-in">
+                  {/* Left Main Column: Questions & Blocks List */}
+                  <div className="flex-1 space-y-4 w-full">
+                    {taskQuestions.length === 0 ? (
+                      <div className="py-12 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                        <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                        <p className="text-sm font-bold text-slate-600 dark:text-slate-300">No questions or blocks added yet</p>
+                        <p className="text-xs text-slate-400">Use the builder tools on the right to add questions, section headers, or text blocks.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {taskQuestions.map((q, idx) => {
+                        if (q.type === "section") {
+                          return (
+                            <div key={q.id} className="bg-indigo-50/60 dark:bg-indigo-950/40 border-2 border-indigo-200 dark:border-indigo-800 rounded-2xl p-5 shadow-sm space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <FolderPlus className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                                  <span className="text-xs font-black uppercase text-indigo-700 dark:text-indigo-300 tracking-wider">
+                                    Section Header Block
+                                  </span>
+                                </div>
+                                <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 text-indigo-400 hover:text-red-500 transition-colors cursor-pointer">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
 
-                  {/* Questions List */}
-                  {taskQuestions.length === 0 ? (
-                    <div className="py-12 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
-                      <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-                      <p className="text-sm font-bold text-slate-600 dark:text-slate-300">No questions added yet</p>
-                      <p className="text-xs text-slate-400">Use the buttons above to add questions to this quiz.</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {taskQuestions.map((q, idx) => {
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Section Title *</label>
+                                <input
+                                  type="text"
+                                  value={q.title || ""}
+                                  onChange={(e) => updateTaskQuestion(q.id, "title", e.target.value)}
+                                  placeholder="e.g., Section 2: Reading Comprehension"
+                                  className="w-full text-base font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500 font-heading"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Description (Optional)</label>
+                                <input
+                                  type="text"
+                                  value={q.description || ""}
+                                  onChange={(e) => updateTaskQuestion(q.id, "description", e.target.value)}
+                                  placeholder="Instructions for this specific section..."
+                                  className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500"
+                                />
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (q.type === "info") {
+                          return (
+                            <div key={q.id} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <Type className="h-4 w-4 text-slate-500" />
+                                  <span className="text-xs font-extrabold uppercase text-slate-600 dark:text-slate-300 tracking-wider">
+                                    Text Block / Reading Passage
+                                  </span>
+                                </div>
+                                <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 transition-colors cursor-pointer">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Content / Instructions (Rich Text Formatting)</label>
+                                <ReactQuill
+                                  theme="snow"
+                                  value={q.content || ""}
+                                  onChange={(val) => updateTaskQuestion(q.id, "content", val)}
+                                  modules={quillModules}
+                                  placeholder="Enter reading passage, story, or general instructions..."
+                                  className="bg-white dark:bg-slate-900 rounded-xl text-slate-800 dark:text-slate-100"
+                                />
+                              </div>
+                            </div>
+                          );
+                        }
+
                         const typeInfo = questionTypeLabels[q.type] || { label: q.type, color: "slate" };
+
                         return (
                           <div key={q.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
                             {/* Question Header */}
@@ -3539,7 +3613,7 @@ export default function ClassDashboard() {
                                 <span className="flex items-center justify-center h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-600 dark:text-slate-300">
                                   {idx + 1}
                                 </span>
-                                <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-${typeInfo.color}-50 dark:bg-${typeInfo.color}-900/30 text-${typeInfo.color}-700 dark:text-${typeInfo.color}-300 border border-${typeInfo.color}-100 dark:border-${typeInfo.color}-800`}>
+                                <span className="inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                                   {typeInfo.label}
                                 </span>
                               </div>
@@ -3560,15 +3634,16 @@ export default function ClassDashboard() {
                               </div>
                             </div>
 
-                            {/* Question Prompt */}
+                            {/* Question Prompt with Rich Text ReactQuill */}
                             <div>
-                              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt</label>
-                              <textarea
-                                rows={2}
-                                value={q.text}
-                                onChange={(e) => updateTaskQuestion(q.id, "text", e.target.value)}
-                                placeholder="Enter your question prompt here..."
-                                className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
+                              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt (Rich Text Formatting)</label>
+                              <ReactQuill
+                                theme="snow"
+                                value={q.text || ""}
+                                onChange={(val) => updateTaskQuestion(q.id, "text", val)}
+                                modules={quillModules}
+                                placeholder="Enter question prompt, formatted exponents (e.g. x²), bold, or list items..."
+                                className="bg-white dark:bg-slate-900 rounded-xl text-slate-800 dark:text-slate-100"
                               />
                             </div>
 
@@ -3667,7 +3742,42 @@ export default function ClassDashboard() {
                     </div>
                   )}
                 </div>
-              )}
+
+                {/* Right Column: Sticky Floating Builder Toolbar */}
+                <div className="md:sticky md:top-24 w-full md:w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-lg space-y-3 shrink-0 z-30">
+                  <div className="flex items-center space-x-1.5 pb-2 border-b border-slate-100 dark:border-slate-800">
+                    <Sparkles className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+                    <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider font-heading">
+                      Builder Tools
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <button onClick={() => addTaskQuestion("multipleChoice")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 transition-colors cursor-pointer w-full">
+                      <Plus className="h-3.5 w-3.5" /><span>Multiple Choice</span>
+                    </button>
+                    <button onClick={() => addTaskQuestion("identification")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 transition-colors cursor-pointer w-full">
+                      <Plus className="h-3.5 w-3.5" /><span>Identification</span>
+                    </button>
+                    <button onClick={() => addTaskQuestion("vocabulary")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer w-full">
+                      <Plus className="h-3.5 w-3.5" /><span>Vocabulary Match</span>
+                    </button>
+                    <button onClick={() => addTaskQuestion("essay")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 transition-colors cursor-pointer w-full">
+                      <Plus className="h-3.5 w-3.5" /><span>Essay</span>
+                    </button>
+
+                    <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
+
+                    <button onClick={() => addTaskQuestion("section")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 text-xs font-bold hover:bg-indigo-100 transition-colors cursor-pointer w-full">
+                      <FolderPlus className="h-3.5 w-3.5" /><span>+ Add Section</span>
+                    </button>
+                    <button onClick={() => addTaskQuestion("info")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer w-full">
+                      <Type className="h-3.5 w-3.5" /><span>+ Add Text Block</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
               {/* Publish Action Button */}
               <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
