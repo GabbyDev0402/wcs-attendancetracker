@@ -69,6 +69,15 @@ import {
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
 
+const questionTypeLabels = {
+  multipleChoice: { label: "Multiple Choice", color: "brand" },
+  identification: { label: "Identification", color: "teal" },
+  vocabulary: { label: "Vocabulary Match", color: "amber" },
+  essay: { label: "Essay", color: "purple" },
+  section: { label: "Section Header", color: "indigo" },
+  info: { label: "Text Block", color: "slate" }
+};
+
 export default function ClassDashboard() {
   const { classId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -3513,7 +3522,7 @@ export default function ClassDashboard() {
                               {q.type === "multipleChoice" && (
                                 <div className="space-y-3">
                                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select correct answer)</label>
-                                  {q.options.map((opt, optIdx) => (
+                                  {(q.options || ["", "", "", ""]).map((opt, optIdx) => (
                                     <div key={optIdx} className="flex items-center space-x-2">
                                       <button
                                         type="button"
@@ -3532,7 +3541,7 @@ export default function ClassDashboard() {
                                         placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
                                         className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                                       />
-                                      {q.options.length > 2 && (
+                                      {(q.options || []).length > 2 && (
                                         <button onClick={() => removeTaskOption(q.id, optIdx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
                                       )}
                                     </div>
@@ -3546,7 +3555,7 @@ export default function ClassDashboard() {
                                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Exact Correct Answer</label>
                                   <input
                                     type="text"
-                                    value={q.correctAnswer}
+                                    value={q.correctAnswer || ""}
                                     onChange={(e) => updateTaskQuestion(q.id, "correctAnswer", e.target.value)}
                                     placeholder="The answer that will be auto-graded (case-insensitive)"
                                     className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
@@ -3557,11 +3566,11 @@ export default function ClassDashboard() {
                               {q.type === "vocabulary" && (
                                 <div className="space-y-3">
                                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Word / Definition Pairs</label>
-                                  {q.vocabularyPairs.map((pair) => (
+                                  {(q.vocabularyPairs || []).map((pair) => (
                                     <div key={pair.id} className="flex items-center space-x-2">
                                       <input
                                         type="text"
-                                        value={pair.word}
+                                        value={pair.word || ""}
                                         onChange={(e) => updateTaskVocabPair(q.id, pair.id, "word", e.target.value)}
                                         placeholder="Word"
                                         className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
@@ -3569,12 +3578,12 @@ export default function ClassDashboard() {
                                       <span className="text-slate-400 text-xs font-bold">→</span>
                                       <input
                                         type="text"
-                                        value={pair.definition}
+                                        value={pair.definition || ""}
                                         onChange={(e) => updateTaskVocabPair(q.id, pair.id, "definition", e.target.value)}
                                         placeholder="Definition"
                                         className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                                       />
-                                      {q.vocabularyPairs.length > 1 && (
+                                      {(q.vocabularyPairs || []).length > 1 && (
                                         <button onClick={() => removeTaskVocabPair(q.id, pair.id)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
                                       )}
                                     </div>
