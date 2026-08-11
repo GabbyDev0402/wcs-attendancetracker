@@ -145,8 +145,7 @@ export default function StudentClassDashboard() {
       const relevantExams = allExams.filter((ex) => {
         const isPublished = ex.status === "published";
         const matchesClassTag = ex.classId === targetClassTag || ex.classId === extractedClassId;
-        const matchesTeacher = extractedTeacherId ? (ex.teacherId === extractedTeacherId) : true;
-        return isPublished && (matchesClassTag || matchesTeacher);
+        return isPublished && matchesClassTag;
       });
 
       relevantExams.sort((a, b) => {
@@ -234,27 +233,35 @@ export default function StudentClassDashboard() {
     if (!user || !targetClassTag) return;
     setIsTasksLoading(true);
     try {
-      const tasksSnap = await getDocs(collection(db, "tasks"));
+      const qTasks = query(
+        collection(db, "tasks"),
+        where("status", "==", "published")
+      );
+      const tasksSnap = await getDocs(qTasks);
       const allTasks = tasksSnap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
 
       const relevantTasks = allTasks.filter((tk) => {
-        const isPublished = tk.status === "published";
-        const matchesClassTag = tk.classId === targetClassTag || tk.classId === extractedClassId;
-        const matchesTeacher = extractedTeacherId ? (tk.teacherId === extractedTeacherId) : true;
-        return isPublished && (matchesClassTag || matchesTeacher);
+        return tk.classId === targetClassTag || tk.classId === extractedClassId;
       });
 
       setTasksList(relevantTasks);
 
+      const studentUid = user.id || user.uid;
       const subSnap = await getDocs(
-        query(collection(db, "task_submissions"), where("studentId", "==", user.id))
+        query(
+          collection(db, "task_submissions"),
+          where("studentId", "==", studentUid)
+        )
       );
 
       const subsMap = {};
       subSnap.docs.forEach((doc) => {
         const data = doc.data();
         if (data.taskId) {
-          subsMap[data.taskId] = { id: doc.id, firestoreId: doc.id, ...data };
+          const matchesClass = data.classId === targetClassTag || data.classId === extractedClassId || relevantTasks.some(t => (t.firestoreId || t.id) === data.taskId);
+          if (matchesClass) {
+            subsMap[data.taskId] = { id: doc.id, firestoreId: doc.id, ...data };
+          }
         }
       });
 
