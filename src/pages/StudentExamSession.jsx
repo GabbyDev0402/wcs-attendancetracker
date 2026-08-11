@@ -125,9 +125,55 @@ export default function StudentExamSession() {
     });
   };
 
+  const handleCheckboxAnswerChange = (qId, optIdx) => {
+    if (alreadySubmitted) return;
+    setStudentAnswers((prev) => {
+      const current = Array.isArray(prev[qId]) ? prev[qId] : [];
+      const isSelected = current.includes(optIdx);
+      const updated = isSelected
+        ? current.filter((i) => i !== optIdx)
+        : [...current, optIdx].sort((a, b) => a - b);
+      return {
+        ...prev,
+        [qId]: updated
+      };
+    });
+  };
+
   // Auto-Grading & Submission Logic
   const handleSubmitExam = async (isAutoSubmit = false) => {
+    const questions = exam?.questions || [];
+
     if (!isAutoSubmit) {
+      // Validation for Required Questions
+      for (const q of questions) {
+        if (q.type === "section" || q.type === "info") continue;
+        if (q.required) {
+          const ans = studentAnswers[q.id];
+          let isMissing = false;
+
+          if (q.type === "checkboxes") {
+            if (!Array.isArray(ans) || ans.length === 0) isMissing = true;
+          } else if (q.type === "vocabulary") {
+            if (!ans || typeof ans !== "object") {
+              isMissing = true;
+            } else {
+              const filled = Object.values(ans).filter((v) => v && v.toString().trim().length > 0);
+              if (filled.length === 0) isMissing = true;
+            }
+          } else {
+            if (ans === undefined || ans === null || ans.toString().trim() === "") {
+              isMissing = true;
+            }
+          }
+
+          if (isMissing) {
+            alert("Please answer all required questions before submitting.");
+            return;
+          }
+        }
+      }
+
       const confirmSubmit = window.confirm("Are you sure you want to submit your exam answers?");
       if (!confirmSubmit) return;
     }
@@ -136,7 +182,6 @@ export default function StudentExamSession() {
     if (timerRef.current) clearInterval(timerRef.current);
 
     try {
-      const questions = exam.questions || [];
       let objScore = 0;
       let maxObjPoints = 0;
       let totalExamPoints = 0;
@@ -152,6 +197,13 @@ export default function StudentExamSession() {
           if (userAns !== undefined && Number(userAns) === Number(q.correctOptionIndex)) {
             objScore += pts;
           }
+        } else if (q.type === "checkboxes") {
+          maxObjPoints += pts;
+          const studentIndices = Array.isArray(studentAnswers[q.id]) ? [...studentAnswers[q.id]].sort((a, b) => a - b) : [];
+          const teacherIndices = Array.isArray(q.correctOptionIndices) ? [...q.correctOptionIndices].sort((a, b) => a - b) : [Number(q.correctOptionIndex) || 0];
+          if (JSON.stringify(studentIndices) === JSON.stringify(teacherIndices)) {
+            objScore += pts;
+          }
         } else if (q.type === "identification") {
           maxObjPoints += pts;
           const userAns = (studentAnswers[q.id] || "").toString().trim().toLowerCase();
@@ -161,7 +213,6 @@ export default function StudentExamSession() {
           }
         } else if (q.type === "vocabulary") {
           hasSubjective = true;
-          // Check vocabulary pairs if any objective scoring applies
           const vocabMap = studentAnswers[q.id] || {};
           const pairs = q.vocabularyPairs || [];
           let pairPoints = 0;
@@ -172,11 +223,10 @@ export default function StudentExamSession() {
               pairPoints += 1;
             }
           });
-          // Add partial objScore for vocabulary if pairs match exactly
           if (pairs.length > 0 && pairPoints === pairs.length) {
             objScore += pts;
           }
-        } else if (q.type === "essay") {
+        } else if (q.type === "essay" || q.type === "fileUpload") {
           hasSubjective = true;
         }
       });
@@ -203,7 +253,7 @@ export default function StudentExamSession() {
       alert(
         finalStatus === "Graded"
           ? `🎉 Exam Submitted & Auto-Graded!\nYour Score: ${objScore} / ${totalExamPoints} pts`
-          : `✅ Exam Submitted Successfully!\nObjective Score: ${objScore} / ${maxObjPoints} pts.\nEssay/Vocabulary questions are pending teacher review.`
+          : `✅ Exam Submitted Successfully!\nObjective Score: ${objScore} / ${maxObjPoints} pts.\nEssay/Vocabulary/Project link questions are pending teacher review.`
       );
 
       navigate(`/student/class/${encodeURIComponent(classId)}`);
@@ -365,9 +415,11 @@ export default function StudentExamSession() {
 
           const typeLabelMap = {
             multipleChoice: "Multiple Choice",
+            checkboxes: "Checkboxes (Multi-Select)",
             identification: "Identification",
             vocabulary: "Vocabulary Matching",
-            essay: "Essay Response"
+            essay: "Essay Response",
+            fileUpload: "File / Link Upload"
           };
 
           return (
@@ -384,6 +436,11 @@ export default function StudentExamSession() {
                   <span className="inline-flex px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                     {typeLabelMap[q.type] || q.type}
                   </span>
+                  {q.required && (
+                    <span className="text-[10px] font-extrabold text-red-500 uppercase tracking-wider bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded border border-red-200 dark:border-red-800">
+                      * Required
+                    </span>
+                  )}
                 </div>
                 <span className="text-xs font-bold text-slate-400 dark:text-slate-500 font-mono">
                   {q.points || 1} {q.points === 1 ? "Point" : "Points"}
@@ -411,8 +468,9 @@ export default function StudentExamSession() {
                       <button
                         type="button"
                         key={optIdx}
+                        disabled={alreadySubmitted}
                         onClick={() => handleAnswerChange(q.id, optIdx)}
-                        className={`w-full flex items-center space-x-3 p-3.5 rounded-2xl border text-left text-xs font-semibold transition-all cursor-pointer ${
+                        className={`w-full flex items-center space-x-3 p-3.5 rounded-2xl border text-left text-xs font-semibold transition-all ${alreadySubmitted ? "cursor-default" : "cursor-pointer"} ${
                           isSelected
                             ? "bg-brand-50/80 dark:bg-brand-900/30 border-brand-500 text-brand-900 dark:text-brand-200 shadow-2xs"
                             : "bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
@@ -432,7 +490,39 @@ export default function StudentExamSession() {
                 </div>
               )}
 
-              {/* INPUT TYPE 2: Identification */}
+              {/* INPUT TYPE 2: Checkboxes (Multi-Select) */}
+              {q.type === "checkboxes" && (
+                <div className="space-y-2.5 pt-2">
+                  {(q.options || []).map((opt, optIdx) => {
+                    const selectedIndices = Array.isArray(studentAnswers[q.id]) ? studentAnswers[q.id] : [];
+                    const isSelected = selectedIndices.includes(optIdx);
+                    return (
+                      <button
+                        type="button"
+                        key={optIdx}
+                        disabled={alreadySubmitted}
+                        onClick={() => handleCheckboxAnswerChange(q.id, optIdx)}
+                        className={`w-full flex items-center space-x-3 p-3.5 rounded-2xl border text-left text-xs font-semibold transition-all ${alreadySubmitted ? "cursor-default" : "cursor-pointer"} ${
+                          isSelected
+                            ? "bg-purple-50/80 dark:bg-purple-900/30 border-purple-500 text-purple-900 dark:text-purple-200 shadow-2xs"
+                            : "bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600"
+                        }`}
+                      >
+                        <span className={`h-5 w-5 rounded border flex items-center justify-center shrink-0 font-bold text-[10px] ${
+                          isSelected
+                            ? "bg-purple-600 border-purple-600 text-white"
+                            : "border-slate-300 dark:border-slate-600 text-slate-400"
+                        }`}>
+                          {isSelected && <Check className="h-3 w-3" />}
+                        </span>
+                        <span className="flex-1 leading-snug break-words whitespace-normal">{opt}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* INPUT TYPE 3: Identification */}
               {q.type === "identification" && (
                 <div className="pt-2">
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
@@ -440,15 +530,16 @@ export default function StudentExamSession() {
                   </label>
                   <input
                     type="text"
+                    disabled={alreadySubmitted}
                     value={studentAnswers[q.id] || ""}
                     onChange={(e) => handleAnswerChange(q.id, e.target.value)}
                     placeholder="Type your answer here..."
-                    className="w-full text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                    className="w-full text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors disabled:opacity-80"
                   />
                 </div>
               )}
 
-              {/* INPUT TYPE 3: Vocabulary */}
+              {/* INPUT TYPE 4: Vocabulary */}
               {q.type === "vocabulary" && (
                 <div className="space-y-4 pt-2">
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -463,10 +554,11 @@ export default function StudentExamSession() {
                         </div>
                         <input
                           type="text"
+                          disabled={alreadySubmitted}
                           value={currentVal}
                           onChange={(e) => handleVocabAnswerChange(q.id, pair.id, e.target.value)}
                           placeholder={`Enter definition or translation for '${pair.word}'...`}
-                          className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-amber-500 transition-colors"
+                          className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-amber-500 transition-colors disabled:opacity-80"
                         />
                       </div>
                     );
@@ -474,7 +566,7 @@ export default function StudentExamSession() {
                 </div>
               )}
 
-              {/* INPUT TYPE 4: Essay */}
+              {/* INPUT TYPE 5: Essay */}
               {q.type === "essay" && (
                 <div className="space-y-3 pt-2">
                   <div className="flex items-center justify-between">
@@ -489,13 +581,41 @@ export default function StudentExamSession() {
                   </div>
                   <textarea
                     rows={6}
+                    disabled={alreadySubmitted}
                     value={studentAnswers[q.id] || ""}
                     onChange={(e) => handleAnswerChange(q.id, e.target.value)}
                     placeholder="Write your detailed essay answer here..."
-                    className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors leading-relaxed"
+                    className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors leading-relaxed disabled:opacity-80"
                   />
                   <div className="text-right text-[10px] font-bold text-slate-400">
                     Word Count: {((studentAnswers[q.id] || "").trim().split(/\s+/).filter(Boolean)).length} words
+                  </div>
+                </div>
+              )}
+
+              {/* INPUT TYPE 6: File / Link Upload */}
+              {q.type === "fileUpload" && (
+                <div className="pt-2 space-y-2">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Project Link / File URL
+                  </label>
+                  <input
+                    type="url"
+                    disabled={alreadySubmitted}
+                    value={studentAnswers[q.id] || ""}
+                    onChange={(e) => handleAnswerChange(q.id, e.target.value)}
+                    placeholder="Paste your project URL or Google Drive link here (e.g. https://...)..."
+                    className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-emerald-500 transition-colors disabled:opacity-80"
+                  />
+                </div>
+              )}
+
+              {/* Rationale / Teacher's Explanation Box */}
+              {alreadySubmitted && q.rationale && q.rationale.trim() && (
+                <div className="mt-3 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs font-medium text-amber-900 dark:text-amber-200 flex items-start space-x-2.5">
+                  <span className="shrink-0 text-base">💡</span>
+                  <div>
+                    <span className="font-bold">Teacher's Note / Rationale:</span> {q.rationale}
                   </div>
                 </div>
               )}

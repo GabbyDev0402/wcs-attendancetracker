@@ -64,17 +64,21 @@ import {
   Download,
   FolderPlus,
   Type,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Paperclip,
+  CheckSquare
 } from "lucide-react";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
 
 const questionTypeLabels = {
   multipleChoice: { label: "Multiple Choice", color: "brand" },
+  checkboxes: { label: "Checkboxes (Multi-Select)", color: "purple" },
   identification: { label: "Identification", color: "teal" },
   vocabulary: { label: "Vocabulary Match", color: "amber" },
-  essay: { label: "Essay", color: "purple" },
-  section: { label: "Section Header", color: "indigo" },
+  essay: { label: "Essay", color: "indigo" },
+  fileUpload: { label: "File / Link Upload", color: "emerald" },
+  section: { label: "Section Header", color: "slate" },
   info: { label: "Text Block", color: "slate" }
 };
 
@@ -1576,8 +1580,11 @@ export default function ClassDashboard() {
       text: "",
       prompt: "",
       points: 1,
+      required: false,
+      rationale: "",
       options: ["", "", "", ""],
       correctOptionIndex: 0,
+      correctOptionIndices: [0],
       correctAnswer: "",
       vocabularyPairs: [{ id: `t-vp-${Date.now()}`, word: "", definition: "" }],
       rubric: "",
@@ -1590,8 +1597,12 @@ export default function ClassDashboard() {
     let newQ = { ...base };
     switch (type) {
       case "multipleChoice":
-        newQ.options = ["", "", "", ""];
+        newQ.options = ["Option A", "Option B", "Option C", "Option D"];
         newQ.correctOptionIndex = 0;
+        break;
+      case "checkboxes":
+        newQ.options = ["Option A", "Option B", "Option C", "Option D"];
+        newQ.correctOptionIndices = [0];
         break;
       case "identification":
         newQ.correctAnswer = "";
@@ -1602,6 +1613,9 @@ export default function ClassDashboard() {
       case "essay":
         newQ.rubric = "";
         newQ.minWordCount = 50;
+        break;
+      case "fileUpload":
+        newQ.points = 1;
         break;
       case "section":
         newQ.title = "";
@@ -1643,6 +1657,20 @@ export default function ClassDashboard() {
     );
   };
 
+  const toggleTaskCheckboxOption = (qId, optIdx) => {
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        const currentIndices = q.correctOptionIndices || [];
+        const isSelected = currentIndices.includes(optIdx);
+        const newIndices = isSelected
+          ? currentIndices.filter((i) => i !== optIdx)
+          : [...currentIndices, optIdx].sort((a, b) => a - b);
+        return { ...q, correctOptionIndices: newIndices };
+      })
+    );
+  };
+
   const addTaskOption = (qId) => {
     setTaskQuestions((prev) =>
       (prev || []).map((q) => {
@@ -1660,7 +1688,18 @@ export default function ClassDashboard() {
         let corrIdx = q.correctOptionIndex || 0;
         if (optIdx === corrIdx) corrIdx = 0;
         else if (optIdx < corrIdx) corrIdx--;
-        return { ...q, options: newOpts, correctOptionIndex: Math.max(0, Math.min(corrIdx, newOpts.length - 1)) };
+
+        const currentIndices = q.correctOptionIndices || [];
+        const updatedIndices = currentIndices
+          .filter((i) => i !== optIdx)
+          .map((i) => (i > optIdx ? i - 1 : i));
+
+        return {
+          ...q,
+          options: newOpts,
+          correctOptionIndex: Math.max(0, Math.min(corrIdx, newOpts.length - 1)),
+          correctOptionIndices: updatedIndices
+        };
       })
     );
   };
@@ -3555,8 +3594,8 @@ export default function ClassDashboard() {
                               {/* Type-Specific Fields */}
                               {q.type === "multipleChoice" && (
                                 <div className="space-y-3">
-                                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select correct answer)</label>
-                                  {(q.options || ["", "", "", ""]).map((opt, optIdx) => (
+                                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select single correct answer)</label>
+                                  {(q.options || ["Option A", "Option B", "Option C", "Option D"]).map((opt, optIdx) => (
                                     <div key={optIdx} className="flex items-center space-x-2">
                                       <button
                                         type="button"
@@ -3581,6 +3620,36 @@ export default function ClassDashboard() {
                                     </div>
                                   ))}
                                   <button onClick={() => addTaskOption(q.id)} className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer">+ Add Option</button>
+                                </div>
+                              )}
+
+                              {q.type === "checkboxes" && (
+                                <div className="space-y-3">
+                                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (check all correct answers)</label>
+                                  {(q.options || ["Option A", "Option B", "Option C", "Option D"]).map((opt, optIdx) => {
+                                    const isChecked = (q.correctOptionIndices || []).includes(optIdx);
+                                    return (
+                                      <div key={optIdx} className="flex items-center space-x-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={() => toggleTaskCheckboxOption(q.id, optIdx)}
+                                          className="h-4.5 w-4.5 accent-purple-600 rounded cursor-pointer shrink-0"
+                                        />
+                                        <input
+                                          type="text"
+                                          value={opt}
+                                          onChange={(e) => updateTaskOption(q.id, optIdx, e.target.value)}
+                                          placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
+                                          className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                                        />
+                                        {(q.options || []).length > 2 && (
+                                          <button onClick={() => removeTaskOption(q.id, optIdx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                  <button onClick={() => addTaskOption(q.id)} className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer">+ Add Option</button>
                                 </div>
                               )}
 
@@ -3614,7 +3683,7 @@ export default function ClassDashboard() {
                                         type="text"
                                         value={pair.definition || ""}
                                         onChange={(e) => updateTaskVocabPair(q.id, pair.id, "definition", e.target.value)}
-                                        placeholder="Definition"
+                                        placeholder="Definition (Optional)"
                                         className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                                       />
                                       {(q.vocabularyPairs || []).length > 1 && (
@@ -3632,7 +3701,7 @@ export default function ClassDashboard() {
                                     <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Grading Rubric / Answer Key Notes</label>
                                     <textarea
                                       rows={2}
-                                      value={q.rubric}
+                                      value={q.rubric || ""}
                                       onChange={(e) => updateTaskQuestion(q.id, "rubric", e.target.value)}
                                       placeholder="Enter rubric or sample answer to assist manual grading..."
                                       className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
@@ -3640,6 +3709,41 @@ export default function ClassDashboard() {
                                   </div>
                                 </div>
                               )}
+
+                              {q.type === "fileUpload" && (
+                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 font-semibold flex items-center space-x-2.5">
+                                  <Paperclip className="h-4 w-4 text-emerald-500 shrink-0" />
+                                  <span>Student preview: A URL / Link input box will be rendered for students to paste their project link. (Manually Graded)</span>
+                                </div>
+                              )}
+
+                              {/* Universal Question Settings (Bottom of Card) */}
+                              <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-3">
+                                <div className="flex items-center justify-between flex-wrap gap-2">
+                                  <label className="flex items-center space-x-2 text-xs font-bold text-slate-700 dark:text-slate-300 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={!!q.required}
+                                      onChange={(e) => updateTaskQuestion(q.id, "required", e.target.checked)}
+                                      className="h-4 w-4 accent-brand-600 rounded cursor-pointer"
+                                    />
+                                    <span>Required Question</span>
+                                  </label>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">
+                                    Answer Explanation / Rationale (Optional - Shown to students after grading)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={q.rationale || ""}
+                                    onChange={(e) => updateTaskQuestion(q.id, "rationale", e.target.value)}
+                                    placeholder="Explain why the answer is correct or add helpful learning notes..."
+                                    className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                                  />
+                                </div>
+                              </div>
                             </div>
                           );
                         })}
@@ -3660,14 +3764,20 @@ export default function ClassDashboard() {
                       <button onClick={() => addTaskQuestion("multipleChoice")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 transition-colors cursor-pointer w-full">
                         <Plus className="h-3.5 w-3.5" /><span>Multiple Choice</span>
                       </button>
+                      <button onClick={() => addTaskQuestion("checkboxes")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 transition-colors cursor-pointer w-full">
+                        <CheckSquare className="h-3.5 w-3.5" /><span>+ Checkboxes</span>
+                      </button>
                       <button onClick={() => addTaskQuestion("identification")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 transition-colors cursor-pointer w-full">
                         <Plus className="h-3.5 w-3.5" /><span>Identification</span>
                       </button>
                       <button onClick={() => addTaskQuestion("vocabulary")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer w-full">
                         <Plus className="h-3.5 w-3.5" /><span>Vocabulary Match</span>
                       </button>
-                      <button onClick={() => addTaskQuestion("essay")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 transition-colors cursor-pointer w-full">
+                      <button onClick={() => addTaskQuestion("essay")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 text-xs font-bold hover:bg-indigo-100 transition-colors cursor-pointer w-full">
                         <Plus className="h-3.5 w-3.5" /><span>Essay</span>
+                      </button>
+                      <button onClick={() => addTaskQuestion("fileUpload")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800 text-xs font-bold hover:bg-emerald-100 transition-colors cursor-pointer w-full">
+                        <Paperclip className="h-3.5 w-3.5" /><span>+ File/Link Upload</span>
                       </button>
 
                       <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
@@ -4060,17 +4170,195 @@ export default function ClassDashboard() {
 
                 return questions.map((q, idx) => {
                   const pts = Number(q.points) || 1;
+                  const promptHtml = q.prompt || q.text || "";
+
                   return (
                     <div key={q.id || idx} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                          {idx + 1}. {q.text}
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start space-x-2.5 flex-1 min-w-0">
+                          <span className="flex items-center justify-center h-6 w-6 rounded-md bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 font-extrabold text-xs shrink-0 mt-0.5">
+                            {idx + 1}
+                          </span>
+                          <div 
+                            className="prose prose-sm prose-slate max-w-none dark:prose-invert text-slate-800 dark:text-slate-100 font-bold leading-snug break-words" 
+                            dangerouslySetInnerHTML={{ __html: promptHtml || `Question ${idx + 1}` }} 
+                          />
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg shrink-0">
                           Max: {pts} pts
                         </span>
                       </div>
 
+                      {/* 1. Multiple Choice Comparison */}
+                      {q.type === "multipleChoice" && (
+                        <div className="space-y-3 pt-1">
+                          <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Multiple Choice Selection</span>
+                              {(() => {
+                                const isCorrect = Number(studentAnswers[q.id]) === Number(q.correctOptionIndex);
+                                return isCorrect ? (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    ✓ Correct (+{pts} pts)
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                                    ✕ Incorrect (0 pts)
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                            {(q.options || []).map((opt, optIdx) => {
+                              const isStudentSelected = Number(studentAnswers[q.id]) === optIdx;
+                              const isTeacherSelected = Number(q.correctOptionIndex) === optIdx;
+                              return (
+                                <div key={optIdx} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-xs">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-bold text-slate-400">{String.fromCharCode(65 + optIdx)}.</span>
+                                    <span className="text-slate-800 dark:text-slate-200">{opt}</span>
+                                  </div>
+                                  <div className="text-[10px] font-bold">
+                                    {isTeacherSelected && <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 mr-1.5">Correct Option</span>}
+                                    {isStudentSelected ? (
+                                      <span className="text-brand-600 dark:text-brand-400 font-bold">Student Selected</span>
+                                    ) : (
+                                      <span className="text-slate-400">Not Selected</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="text-[10px] font-bold text-slate-400">Auto-graded Objective Question.</div>
+                        </div>
+                      )}
+
+                      {/* 2. Checkboxes Comparison */}
+                      {q.type === "checkboxes" && (
+                        <div className="space-y-3 pt-1">
+                          <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Checkboxes Selection</span>
+                              {(() => {
+                                const studentIndices = Array.isArray(studentAnswers[q.id]) ? [...studentAnswers[q.id]].sort((a, b) => a - b) : [];
+                                const teacherIndices = Array.isArray(q.correctOptionIndices) ? [...q.correctOptionIndices].sort((a, b) => a - b) : [Number(q.correctOptionIndex) || 0];
+                                const isCorrect = JSON.stringify(studentIndices) === JSON.stringify(teacherIndices);
+                                return isCorrect ? (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    ✓ Correct (+{pts} pts)
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                                    ✕ Incorrect (0 pts)
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                            {(q.options || []).map((opt, optIdx) => {
+                              const studentIndices = Array.isArray(studentAnswers[q.id]) ? studentAnswers[q.id] : [];
+                              const isStudentSelected = studentIndices.includes(optIdx);
+                              const isTeacherSelected = (q.correctOptionIndices || []).includes(optIdx);
+
+                              return (
+                                <div key={optIdx} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-900 text-xs">
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`font-bold ${isStudentSelected ? "text-purple-600 dark:text-purple-400" : "text-slate-400"}`}>
+                                      [{isStudentSelected ? "✓" : " "}]
+                                    </span>
+                                    <span className="text-slate-800 dark:text-slate-200">{opt}</span>
+                                  </div>
+                                  <div className="text-[10px] font-bold">
+                                    {isTeacherSelected && <span className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 mr-1.5">Correct Option</span>}
+                                    {isStudentSelected ? (
+                                      <span className="text-purple-600 dark:text-purple-400 font-bold">Student Selected</span>
+                                    ) : (
+                                      <span className="text-slate-400">Not Selected</span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="text-[10px] font-bold text-slate-400">Auto-graded Objective Question.</div>
+                        </div>
+                      )}
+
+                      {/* 3. Identification Comparison */}
+                      {q.type === "identification" && (
+                        <div className="space-y-3 pt-1">
+                          <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Identification Answer Comparison</span>
+                              {(() => {
+                                const studentText = (studentAnswers[q.id] || "").toString().trim().toLowerCase();
+                                const correctText = (q.correctAnswer || "").toString().trim().toLowerCase();
+                                const isCorrect = !!studentText && studentText === correctText;
+                                return isCorrect ? (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    ✓ Correct (+{pts} pts)
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                                    ✕ Incorrect (0 pts)
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 space-y-0.5">
+                                <span className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Correct Answer:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100">{q.correctAnswer || "—"}</span>
+                              </div>
+                              <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-0.5">
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase">Student Answer:</span>
+                                <span className="font-bold text-slate-800 dark:text-slate-100">{studentAnswers[q.id] || "No Answer"}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-[10px] font-bold text-slate-400">Auto-graded Objective Question.</div>
+                        </div>
+                      )}
+
+                      {/* 4. File / Link Upload */}
+                      {q.type === "fileUpload" && (
+                        <div className="space-y-3 pt-1">
+                          <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Submitted Project Link / URL</span>
+                            {studentAnswers[q.id] ? (
+                              <a
+                                href={studentAnswers[q.id].startsWith("http") ? studentAnswers[q.id] : `https://${studentAnswers[q.id]}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center space-x-1.5 text-brand-600 dark:text-brand-400 font-bold underline hover:text-brand-700 cursor-pointer"
+                              >
+                                <Paperclip className="h-4 w-4 shrink-0 text-emerald-500" />
+                                <span>{studentAnswers[q.id]} ↗</span>
+                              </a>
+                            ) : (
+                              <span className="text-slate-400 italic">No link provided.</span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                              Award Project / File Points (Max: {pts} pts):
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={pts}
+                              value={manualQuizSubjScores[q.id] ?? 0}
+                              onChange={(e) => {
+                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                setManualQuizSubjScores(prev => ({ ...prev, [q.id]: val }));
+                              }}
+                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 5. Essay */}
                       {q.type === "essay" && (
                         <div className="space-y-3 pt-1">
                           <div className="p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
@@ -4102,6 +4390,7 @@ export default function ClassDashboard() {
                         </div>
                       )}
 
+                      {/* 6. Vocabulary */}
                       {q.type === "vocabulary" && (
                         <div className="space-y-3 pt-1">
                           <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
@@ -4133,12 +4422,6 @@ export default function ClassDashboard() {
                               className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                             />
                           </div>
-                        </div>
-                      )}
-
-                      {q.type !== "essay" && q.type !== "vocabulary" && (
-                        <div className="text-xs text-slate-500 font-medium">
-                          Auto-graded Objective Question.
                         </div>
                       )}
                     </div>
