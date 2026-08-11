@@ -210,18 +210,18 @@ export default function StudentTaskSession() {
       </div>
 
       {/* Questions & Blocks Section */}
-      <div className="space-y-6">
+      <div className="space-y-6 w-full max-w-full overflow-hidden">
         {questions.map((q, idx) => {
           if (q.type === "section") {
             return (
-              <div key={q.id || idx} className="bg-indigo-900 text-white rounded-3xl p-6 sm:p-8 shadow-md space-y-2 border border-indigo-800">
+              <div key={q.id || idx} className="w-full max-w-full overflow-hidden bg-indigo-900 text-white rounded-3xl p-6 sm:p-8 shadow-md space-y-2 border border-indigo-800">
                 <div className="flex items-center space-x-2 text-indigo-300 text-xs font-bold uppercase tracking-wider">
-                  <FolderPlus className="h-4 w-4 text-indigo-400" />
+                  <FolderPlus className="h-4 w-4 text-indigo-400 shrink-0" />
                   <span>Section Header</span>
                 </div>
-                <h2 className="text-xl sm:text-2xl font-black font-heading">{q.title || "Untitled Section"}</h2>
+                <h2 className="text-xl sm:text-2xl font-black font-heading break-words whitespace-pre-wrap">{q.title || "Untitled Section"}</h2>
                 {q.description && (
-                  <p className="text-xs text-indigo-100/90 leading-relaxed font-medium">{q.description}</p>
+                  <p className="text-xs text-indigo-100/90 leading-relaxed font-medium break-words whitespace-pre-wrap">{q.description}</p>
                 )}
               </div>
             );
@@ -229,18 +229,18 @@ export default function StudentTaskSession() {
 
           if (q.type === "info") {
             return (
-              <div key={q.id || idx} className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-3">
+              <div key={q.id || idx} className="w-full max-w-full overflow-hidden bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-3">
                 <div className="flex items-center space-x-2 text-slate-400 text-xs font-bold uppercase tracking-wider">
-                  <Type className="h-4 w-4 text-slate-500" />
+                  <Type className="h-4 w-4 text-slate-500 shrink-0" />
                   <span>Reading Passage / Instructions</span>
                 </div>
                 {q.content && q.content.includes("<") ? (
                   <div 
-                    className="prose dark:prose-invert max-w-none text-sm text-slate-800 dark:text-slate-100 font-medium leading-relaxed"
+                    className="w-full max-w-full break-words whitespace-pre-wrap overflow-hidden text-slate-800 dark:text-slate-100 text-sm font-medium leading-relaxed prose dark:prose-invert"
                     dangerouslySetInnerHTML={{ __html: q.content }}
                   />
                 ) : (
-                  <div className="text-sm text-slate-800 dark:text-slate-100 font-medium leading-relaxed whitespace-pre-wrap">
+                  <div className="w-full max-w-full break-words whitespace-pre-wrap overflow-hidden text-slate-800 dark:text-slate-100 text-sm font-medium leading-relaxed">
                     {q.content}
                   </div>
                 )}
@@ -251,7 +251,7 @@ export default function StudentTaskSession() {
           return (
             <div 
               key={q.id || idx} 
-              className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 transition-colors"
+              className="w-full max-w-full overflow-hidden bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4 transition-colors"
             >
               <div className="flex items-center justify-between">
                 <span className="inline-flex items-center space-x-2 text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -268,11 +268,11 @@ export default function StudentTaskSession() {
 
               {q.text && q.text.includes("<") ? (
                 <div 
-                  className="prose dark:prose-invert max-w-none text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 leading-snug"
+                  className="w-full max-w-full break-words whitespace-pre-wrap overflow-hidden text-slate-800 dark:text-slate-100 text-sm sm:text-base font-bold leading-snug prose dark:prose-invert"
                   dangerouslySetInnerHTML={{ __html: q.text }}
                 />
               ) : (
-                <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 leading-snug whitespace-pre-wrap">
+                <h3 className="w-full max-w-full break-words whitespace-pre-wrap overflow-hidden text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 leading-snug">
                   {q.text}
                 </h3>
               )}
@@ -286,17 +286,17 @@ export default function StudentTaskSession() {
                       <div
                         key={optIdx}
                         onClick={() => handleAnswerChange(q.id, optIdx)}
-                        className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between ${
+                        className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 w-full max-w-full overflow-hidden ${
                           isSelected
                             ? "border-brand-500 bg-brand-50/40 dark:bg-brand-900/30 text-slate-900 dark:text-white"
                             : "border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300"
                         }`}
                       >
-                        <span className="text-xs font-semibold">
+                        <span className="text-xs font-semibold break-words whitespace-normal flex-1">
                           <strong className="mr-2 text-slate-400">{String.fromCharCode(65 + optIdx)}.</strong>
                           {opt}
                         </span>
-                        <div className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                        <div className={`h-4 w-4 rounded-full border flex items-center justify-center shrink-0 ${
                           isSelected ? "border-brand-600 bg-brand-600 text-white" : "border-slate-300 dark:border-slate-600"
                         }`}>
                           {isSelected && <Check className="h-3 w-3" />}
