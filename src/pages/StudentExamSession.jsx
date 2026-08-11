@@ -334,9 +334,9 @@ export default function StudentExamSession() {
                   <FolderPlus className="h-4 w-4 text-indigo-400 shrink-0" />
                   <span>Section Header</span>
                 </div>
-                <h2 className="text-xl sm:text-2xl font-black font-heading break-words whitespace-pre-wrap">{q.title || "Untitled Section"}</h2>
+                <h2 className="text-xl sm:text-2xl font-black font-heading" style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{q.title || "Untitled Section"}</h2>
                 {q.description && (
-                  <p className="text-xs text-indigo-100/90 leading-relaxed font-medium break-words whitespace-pre-wrap">{q.description}</p>
+                  <p className="text-xs text-indigo-100/90 leading-relaxed font-medium" style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{q.description}</p>
                 )}
               </div>
             );
@@ -351,11 +351,15 @@ export default function StudentExamSession() {
                 </div>
                 {q.content && q.content.includes("<") ? (
                   <div 
-                    className="prose prose-slate dark:prose-invert max-w-none prose-p:leading-relaxed break-words w-full text-slate-800 dark:text-slate-100 font-medium"
+                    className="prose prose-slate dark:prose-invert max-w-none w-full text-slate-800 dark:text-slate-100 font-medium"
+                    style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
                     dangerouslySetInnerHTML={{ __html: q.content }}
                   />
                 ) : (
-                  <div className="prose prose-slate dark:prose-invert max-w-none prose-p:leading-relaxed break-words w-full text-slate-800 dark:text-slate-100 font-medium whitespace-pre-wrap">
+                  <div 
+                    className="prose prose-slate dark:prose-invert max-w-none w-full text-slate-800 dark:text-slate-100 font-medium"
+                    style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
+                  >
                     {q.content}
                   </div>
                 )}
@@ -393,11 +397,15 @@ export default function StudentExamSession() {
               {/* Question Text Prompt with Rich Text HTML support */}
               {q.text && q.text.includes("<") ? (
                 <div 
-                  className="prose prose-slate dark:prose-invert max-w-none prose-p:leading-relaxed break-words w-full text-slate-800 dark:text-slate-100 font-bold"
+                  className="prose prose-slate dark:prose-invert max-w-none w-full text-slate-800 dark:text-slate-100 font-bold"
+                  style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
                   dangerouslySetInnerHTML={{ __html: q.text }}
                 />
               ) : (
-                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-relaxed whitespace-pre-wrap break-words w-full">
+                <div 
+                  className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-relaxed w-full"
+                  style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
+                >
                   {q.text}
                 </div>
               )}
