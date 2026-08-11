@@ -15,38 +15,38 @@ if (typeof window !== "undefined" && !ReactDOM.findDOMNode) {
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import { db } from "../firebase/config";
-import { 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  doc, 
-  getDoc, 
-  setDoc, 
-  updateDoc, 
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
   deleteDoc,
   onSnapshot,
-  arrayUnion, 
+  arrayUnion,
   arrayRemove,
   addDoc,
   serverTimestamp
 } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { formatStudentName, formatTime12Hour } from "../utils/helpers";
-import { 
-  ArrowLeft, 
-  Users, 
-  ClipboardCheck, 
-  BookOpen, 
-  Search, 
-  UserPlus, 
-  UserMinus, 
-  Calendar, 
-  Check, 
-  Clock, 
-  X, 
-  Save, 
-  AlertCircle, 
+import {
+  ArrowLeft,
+  Users,
+  ClipboardCheck,
+  BookOpen,
+  Search,
+  UserPlus,
+  UserMinus,
+  Calendar,
+  Check,
+  Clock,
+  X,
+  Save,
+  AlertCircle,
   Sparkles,
   CheckCircle,
   Building2,
@@ -63,16 +63,17 @@ import {
   Table,
   Download,
   FolderPlus,
-  Type
+  Type,
+  FileSpreadsheet
 } from "lucide-react";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
 
 export default function ClassDashboard() {
   const { classId } = useParams();
-  const { user } = useAuth();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Tab State: 'roster' | 'attendance' | 'vocabularies' | 'exams'
   const currentTabParam = searchParams.get("tab") || "roster";
@@ -108,70 +109,89 @@ export default function ClassDashboard() {
   const formatSentencesText = (rawSentences) => {
     if (!rawSentences) return "No sentences submitted.";
     if (typeof rawSentences === "string") return rawSentences;
-    if (Array.isArray(rawSentences)) {
-      return rawSentences
-        .map(s => {
-          if (typeof s === "object" && s) {
-            return `${s.word || 'Word'}: ${s.sentence || ''}`;
-          }
-          return String(s);
-        })
-        .filter(Boolean)
-        .join(" | ");
-    }
+    if (Array.isArray(rawSentences)) return rawSentences.join(" ");
     return String(rawSentences);
   };
 
+  const todayStr = new Date().toISOString().split("T")[0];
+
   // Attendance State (Tab 2)
-  const todayStr = new Date().toLocaleDateString("en-CA");
   const [attendanceDate, setAttendanceDate] = useState(todayStr);
   const [attendance, setAttendance] = useState({});
   const [topic, setTopic] = useState("");
   const [pages, setPages] = useState("");
-  const [vocabularyWords, setVocabularyWords] = useState([]); // array of strings
+  const [vocabularyWords, setVocabularyWords] = useState([]);
   const [newVocabWordInput, setNewVocabWordInput] = useState("");
   const [attendanceSearchQuery, setAttendanceSearchQuery] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isAttendanceLoading, setIsAttendanceLoading] = useState(false);
   const [isSavingAttendance, setIsSavingAttendance] = useState(false);
   const [existingSessionId, setExistingSessionId] = useState(null);
+  const [attendanceSuccessToast, setAttendanceSuccessToast] = useState(false);
+
+  // Vocabularies State (Tab 3)
+  const [vocabularies, setVocabularies] = useState([]);
+  const [isVocabLoading, setIsVocabLoading] = useState(false);
+  const [isBuildingVocab, setIsBuildingVocab] = useState(false);
+  const [vocabPublishSuccess, setVocabPublishSuccess] = useState(false);
+
+  // Vocab Form States
+  const [vocabTitle, setVocabTitle] = useState("");
+  const [vocabDescription, setVocabDescription] = useState("");
+  const [vocabDueDate, setVocabDueDate] = useState("");
+  const [vocabWordsInput, setVocabWordsInput] = useState("");
+
+  // Vocab Micro-Grading Modal States
+  const [selectedVocabAssignment, setSelectedVocabAssignment] = useState(null);
+  const [selectedStudentVocab, setSelectedStudentVocab] = useState(null);
+  const [modalSentences, setModalSentences] = useState([]); // micro-grading array
+  const [isVocabModalOpen, setIsVocabModalOpen] = useState(false);
+  const [isGradingVocab, setIsGradingVocab] = useState(false);
 
   // Vocabularies & Submissions State (Tab 3)
   const [classSessionsHistory, setClassSessionsHistory] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  const [historyRangeFilter, setHistoryRangeFilter] = useState("7days"); // "7days" | "30days" | "all" | "custom"
+  const [historyRangeFilter, setHistoryRangeFilter] = useState("7days");
   const [historyDateFilter, setHistoryDateFilter] = useState("");
-
-  // Pending Vocab Submissions State (Tab 3 Top Section)
   const [pendingVocabSubmissions, setPendingVocabSubmissions] = useState([]);
   const [isPendingVocabLoading, setIsPendingVocabLoading] = useState(false);
   const [selectedVocabSub, setSelectedVocabSub] = useState(null);
   const [vocabFeedbackInput, setVocabFeedbackInput] = useState("");
-  const [modalSentences, setModalSentences] = useState([]); // micro-grading array
-  const [isVocabModalOpen, setIsVocabModalOpen] = useState(false);
-  const [isGradingVocab, setIsGradingVocab] = useState(false);
 
   // Graded Vocab Submissions Archive State (Tab 3 Middle Section)
   const [gradedVocabSubmissions, setGradedVocabSubmissions] = useState([]);
   const [gradedVocabDateFilter, setGradedVocabDateFilter] = useState(todayStr);
   const [isGradedVocabLoading, setIsGradedVocabLoading] = useState(false);
 
-  // Exams State (Tab 4)
+  // Exams State (Tab 4) - Google Forms + Exam Scope Architecture
   const [exams, setExams] = useState([]);
   const [isExamsLoading, setIsExamsLoading] = useState(false);
-  const [isBuildingExam, setIsBuildingExam] = useState(false);
   const [examPublishSuccess, setExamPublishSuccess] = useState(false);
-  const [examTitle, setExamTitle] = useState("");
-  const [examTimeLimit, setExamTimeLimit] = useState(30);
-  const [examQuestions, setExamQuestions] = useState([]);
 
-  // Exam Submissions & Grading State
+  // Add Exam Scope Modal State
+  const [isAddExamScopeModalOpen, setIsAddExamScopeModalOpen] = useState(false);
+  const [editingExamScope, setEditingExamScope] = useState(null);
+  const [scopeTitle, setScopeTitle] = useState("");
+  const [scopeText, setScopeText] = useState("");
+  const [scopeQuarter, setScopeQuarter] = useState("1st Quarter");
+  const [scopeCategory, setScopeCategory] = useState("1st Monthly Exam");
+  const [scopeMaxScore, setScopeMaxScore] = useState(100);
+  const [scopeGoogleFormUrl, setScopeGoogleFormUrl] = useState("");
+  const [isSavingScope, setIsSavingScope] = useState(false);
+
+  // Edit Google Form Link State
+  const [editingExamLink, setEditingExamLink] = useState(null);
+  const [editFormUrlInput, setEditFormUrlInput] = useState("");
+  const [isSavingExamLink, setIsSavingExamLink] = useState(false);
+
+  // Rapid 'Input Scores' Modal State
+  const [isInputScoresModalOpen, setIsInputScoresModalOpen] = useState(false);
+  const [selectedExamForScores, setSelectedExamForScores] = useState(null);
+  const [scoreInputs, setScoreInputs] = useState({});
+  const [scoresSearchQuery, setScoresSearchQuery] = useState("");
+  const [isSavingScores, setIsSavingScores] = useState(false);
   const [examSubmissions, setExamSubmissions] = useState([]);
   const [isExamSubmissionsLoading, setIsExamSubmissionsLoading] = useState(false);
-  const [isGradingExamModalOpen, setIsGradingExamModalOpen] = useState(false);
-  const [selectedExamSubmission, setSelectedExamSubmission] = useState(null);
-  const [manualSubjScores, setManualSubjScores] = useState({});
-  const [isSavingExamGrade, setIsSavingExamGrade] = useState(false);
   const [examGradeSuccessToast, setExamGradeSuccessToast] = useState(false);
 
   // Tasks State (Tab 5 - E-Class Record Phase 1)
@@ -276,7 +296,7 @@ export default function ClassDashboard() {
 
       const filtered = allStuds.filter(s => {
         const hasClassTag = Array.isArray(s.enrolledClasses) && s.enrolledClasses.includes(classTag);
-        
+
         if (s.enrolledClasses !== undefined) {
           return hasClassTag;
         }
@@ -581,10 +601,10 @@ export default function ClassDashboard() {
       const deletePromises = [];
       vocabSnap.docs.forEach(d => {
         const subData = d.data();
-        const matchesClass = subData.classId === targetClassTag || 
-                             subData.classId === classId || 
-                             subData.rawClassId === classId || 
-                             d.id.includes(sessionDate);
+        const matchesClass = subData.classId === targetClassTag ||
+          subData.classId === classId ||
+          subData.rawClassId === classId ||
+          d.id.includes(sessionDate);
         if (matchesClass) {
           deletePromises.push(deleteDoc(doc(db, "vocab_submissions", d.id)));
         }
@@ -599,7 +619,7 @@ export default function ClassDashboard() {
 
       await deleteDoc(doc(db, "sessions", sessionDocId)).catch(async () => {
         const fallbackTagDocId = `${user.id}_${classId}-${sessionDate}`;
-        await deleteDoc(doc(db, "sessions", fallbackTagDocId)).catch(() => {});
+        await deleteDoc(doc(db, "sessions", fallbackTagDocId)).catch(() => { });
       });
 
       // UI State Sync: Instantly remove deleted session from local state
@@ -691,9 +711,9 @@ export default function ClassDashboard() {
     const unsubPendingVocab = onSnapshot(pendingVocabQuery, (snap) => {
       const items = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(sub => 
-          sub.classId === classTag || 
-          sub.classId === classId || 
+        .filter(sub =>
+          sub.classId === classTag ||
+          sub.classId === classId ||
           sub.rawClassId === classId ||
           (sub.teacherId === user.id && (sub.classId.includes(classId) || sub.classId === classId))
         );
@@ -714,9 +734,9 @@ export default function ClassDashboard() {
     const unsubGradedVocab = onSnapshot(gradedVocabQuery, (snap) => {
       let items = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(sub => 
-          sub.classId === classTag || 
-          sub.classId === classId || 
+        .filter(sub =>
+          sub.classId === classTag ||
+          sub.classId === classId ||
           sub.rawClassId === classId ||
           (sub.teacherId === user.id && (sub.classId.includes(classId) || sub.classId === classId))
         );
@@ -744,8 +764,8 @@ export default function ClassDashboard() {
     };
   }, [activeTab, classId, historyRangeFilter, historyDateFilter, gradedVocabDateFilter, classInfo, user]);
 
-  const loadClassHistory = () => {};
-  const loadPendingVocabSubmissions = () => {};
+  const loadClassHistory = () => { };
+  const loadPendingVocabSubmissions = () => { };
 
   const handleOpenVocabModal = (sub) => {
     setSelectedVocabSub(sub);
@@ -808,7 +828,7 @@ export default function ClassDashboard() {
   };
 
   // -------------------------------------------------------------
-  // TAB 4: EXAMS LOGIC
+  // TAB 4: EXAMS LOGIC (Google Forms + Exam Scope Architecture)
   // -------------------------------------------------------------
   const classTag = `${user?.id}_${classId}`;
 
@@ -827,20 +847,21 @@ export default function ClassDashboard() {
         where("classId", "==", tag)
       );
       const snap = await getDocs(q);
-      setExams(snap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
+      const fetchedExams = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+
+      // Sort exams by createdAt descending
+      fetchedExams.sort((a, b) => {
+        const timeA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const timeB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return timeB - timeA;
+      });
+      setExams(fetchedExams);
 
       // Fetch exam submissions for this class
       const subSnap = await getDocs(collection(db, "exam_submissions"));
       const allSubs = subSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
       const classSubs = allSubs.filter(sub => {
-        const matchesTag = sub.classId === tag || sub.classId === classId || sub.classId === decodeURIComponent(classId);
-        return matchesTag;
-      });
-      // Sort by submittedAt descending
-      classSubs.sort((a, b) => {
-        const timeA = a.submittedAt?.toDate ? a.submittedAt.toDate() : new Date(a.submittedAt || 0);
-        const timeB = b.submittedAt?.toDate ? b.submittedAt.toDate() : new Date(b.submittedAt || 0);
-        return timeB - timeA;
+        return sub.classId === tag || sub.classId === classId || sub.classId === decodeURIComponent(classId);
       });
       setExamSubmissions(classSubs);
     } catch (e) {
@@ -851,181 +872,196 @@ export default function ClassDashboard() {
     }
   };
 
-  const handleOpenExamGradingModal = (sub) => {
-    setSelectedExamSubmission(sub);
-    if (sub.subjScoresDetail) {
-      setManualSubjScores(sub.subjScoresDetail);
-    } else {
-      setManualSubjScores({});
-    }
-    setIsGradingExamModalOpen(true);
+  // Add & Edit Exam Scope Handlers
+  const handleOpenAddExamScopeModal = () => {
+    setEditingExamScope(null);
+    setScopeTitle("");
+    setScopeText("");
+    setScopeQuarter("1st Quarter");
+    setScopeCategory("1st Monthly Exam");
+    setScopeMaxScore(100);
+    setScopeGoogleFormUrl("");
+    setIsAddExamScopeModalOpen(true);
   };
 
-  const handleFinalizeExamGrade = async () => {
-    if (!selectedExamSubmission) return;
-    setIsSavingExamGrade(true);
+  const handleOpenEditExamScopeModal = (exam) => {
+    setEditingExamScope(exam);
+    setScopeTitle(exam.title || "");
+    setScopeText(exam.scopeText || "");
+    setScopeQuarter(exam.quarter || "1st Quarter");
+    setScopeCategory(exam.category || "1st Monthly Exam");
+    setScopeMaxScore(exam.maxScore || 100);
+    setScopeGoogleFormUrl(exam.googleFormUrl || "");
+    setIsAddExamScopeModalOpen(true);
+  };
+
+  const handleDeleteExamScope = async (exam) => {
+    if (!exam) return;
+    const examDocId = exam.firestoreId || exam.id;
+    const confirmDelete = window.confirm(`Are you sure you want to delete the exam scope "${exam.title}"? This action cannot be undone.`);
+    if (!confirmDelete) return;
+
     try {
-      const calculatedSubjScore = Object.values(manualSubjScores).reduce(
-        (sum, pts) => sum + (Number(pts) || 0),
-        0
-      );
-
-      const subDocId = selectedExamSubmission.firestoreId || selectedExamSubmission.id;
-      const subRef = doc(db, "exam_submissions", subDocId);
-      await updateDoc(subRef, {
-        subjScore: calculatedSubjScore,
-        subjScoresDetail: manualSubjScores,
-        status: "Graded"
-      });
-
-      setExamGradeSuccessToast(true);
-      setTimeout(() => setExamGradeSuccessToast(false), 3000);
-      setIsGradingExamModalOpen(false);
-      setSelectedExamSubmission(null);
-      setManualSubjScores({});
+      await deleteDoc(doc(db, "exams", examDocId));
       loadExams();
-    } catch (err) {
-      alert("Failed to save exam grade: " + err.message);
-    } finally {
-      setIsSavingExamGrade(false);
+    } catch (e) {
+      alert("Failed to delete exam scope: " + e.message);
     }
   };
 
-  // Exam Builder Helpers
-  let nextQId = examQuestions.length > 0 ? Math.max(...examQuestions.map(q => q.id)) + 1 : 1;
-
-  const addQuestion = (type) => {
-    const base = { id: nextQId, type, text: "", points: 1 };
-    let newQ;
-    switch (type) {
-      case "multipleChoice":
-        newQ = { ...base, options: ["", "", "", ""], correctOptionIndex: 0 };
-        break;
-      case "identification":
-        newQ = { ...base, correctAnswer: "" };
-        break;
-      case "vocabulary":
-        newQ = { ...base, vocabularyPairs: [{ id: "vp-1", word: "", definition: "" }] };
-        break;
-      case "essay":
-        newQ = { ...base, rubric: "", minWordCount: 50 };
-        break;
-      default:
-        return;
+  const handleSaveExamScope = async () => {
+    if (!scopeTitle.trim()) {
+      alert("Please enter an exam title/topic.");
+      return;
     }
-    setExamQuestions(prev => [...prev, newQ]);
-  };
+    if (!scopeMaxScore || Number(scopeMaxScore) <= 0) {
+      alert("Please enter a valid max score (greater than 0).");
+      return;
+    }
 
-  const updateQuestion = (qId, field, value) => {
-    setExamQuestions(prev => prev.map(q => q.id === qId ? { ...q, [field]: value } : q));
-  };
-
-  const deleteQuestion = (qId) => {
-    setExamQuestions(prev => prev.filter(q => q.id !== qId));
-  };
-
-  const updateOption = (qId, optIdx, value) => {
-    setExamQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      const newOpts = [...q.options];
-      newOpts[optIdx] = value;
-      return { ...q, options: newOpts };
-    }));
-  };
-
-  const addOption = (qId) => {
-    setExamQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      return { ...q, options: [...q.options, ""] };
-    }));
-  };
-
-  const removeOption = (qId, optIdx) => {
-    setExamQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      const newOpts = q.options.filter((_, i) => i !== optIdx);
-      let corrIdx = q.correctOptionIndex;
-      if (optIdx === corrIdx) corrIdx = 0;
-      else if (optIdx < corrIdx) corrIdx--;
-      return { ...q, options: newOpts, correctOptionIndex: Math.min(corrIdx, newOpts.length - 1) };
-    }));
-  };
-
-  const addVocabPair = (qId) => {
-    setExamQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      const newId = `vp-${q.vocabularyPairs.length + 1}`;
-      return { ...q, vocabularyPairs: [...q.vocabularyPairs, { id: newId, word: "", definition: "" }] };
-    }));
-  };
-
-  const updateVocabPair = (qId, pairId, field, value) => {
-    setExamQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      return {
-        ...q,
-        vocabularyPairs: q.vocabularyPairs.map(p => p.id === pairId ? { ...p, [field]: value } : p)
-      };
-    }));
-  };
-
-  const removeVocabPair = (qId, pairId) => {
-    setExamQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      return { ...q, vocabularyPairs: q.vocabularyPairs.filter(p => p.id !== pairId) };
-    }));
-  };
-
-  const handlePublishExam = async () => {
-    if (!examTitle.trim()) { alert("Please enter an exam title."); return; }
-    if (examQuestions.length === 0) { alert("Please add at least one question."); return; }
-
+    setIsSavingScope(true);
     try {
       const tag = `${user.id}_${classId}`;
-      await addDoc(collection(db, "exams"), {
+      const payload = {
         classId: tag,
-        teacherId: user.id,
+        teacherId: user?.id || user?.uid,
         academicYear: CURRENT_ACADEMIC_YEAR,
-        title: examTitle.trim(),
-        timeLimit: Number(examTimeLimit) || 30,
-        questions: examQuestions,
+        title: scopeTitle.trim(),
+        scopeText: scopeText || "",
+        quarter: scopeQuarter,
+        category: scopeCategory,
+        maxScore: Number(scopeMaxScore) || 100,
+        googleFormUrl: scopeGoogleFormUrl.trim(),
         status: "published",
-        createdAt: serverTimestamp()
-      });
+        updatedAt: serverTimestamp()
+      };
 
-      setIsBuildingExam(false);
-      setExamTitle("");
-      setExamTimeLimit(30);
-      setExamQuestions([]);
+      if (editingExamScope) {
+        const examDocId = editingExamScope.firestoreId || editingExamScope.id;
+        await updateDoc(doc(db, "exams", examDocId), payload);
+      } else {
+        await addDoc(collection(db, "exams"), {
+          ...payload,
+          createdAt: serverTimestamp()
+        });
+      }
+
+      setIsAddExamScopeModalOpen(false);
+      setEditingExamScope(null);
       setExamPublishSuccess(true);
       setTimeout(() => setExamPublishSuccess(false), 3000);
       loadExams();
     } catch (e) {
-      alert("Failed to publish exam: " + e.message);
+      alert("Failed to save exam scope: " + e.message);
+    } finally {
+      setIsSavingScope(false);
     }
   };
 
-  const resetExamBuilder = () => {
-    setIsBuildingExam(false);
-    setExamTitle("");
-    setExamTimeLimit(30);
-    setExamQuestions([]);
+  // Quick Link Edit/Add Handlers
+  const handleOpenEditLinkModal = (exam) => {
+    setEditingExamLink(exam);
+    setEditFormUrlInput(exam.googleFormUrl || "");
   };
 
-  const questionTypeLabels = {
-    multipleChoice: { label: "Multiple Choice", color: "brand" },
-    identification: { label: "Identification", color: "teal" },
-    vocabulary: { label: "Vocabulary Match", color: "amber" },
-    essay: { label: "Essay", color: "purple" },
-    section: { label: "Section Header", color: "indigo" },
-    info: { label: "Text Block", color: "slate" }
+  const handleSaveExamLink = async () => {
+    if (!editingExamLink) return;
+    const examDocId = editingExamLink.firestoreId || editingExamLink.id;
+
+    setIsSavingExamLink(true);
+    try {
+      await updateDoc(doc(db, "exams", examDocId), {
+        googleFormUrl: editFormUrlInput.trim()
+      });
+
+      setEditingExamLink(null);
+      setEditFormUrlInput("");
+      loadExams();
+    } catch (e) {
+      alert("Failed to update Google Form link: " + e.message);
+    } finally {
+      setIsSavingExamLink(false);
+    }
+  };
+
+  // Rapid 'Input Scores' Modal Handlers
+  const handleOpenInputScoresModal = (exam) => {
+    setSelectedExamForScores(exam);
+    const examDocId = exam.firestoreId || exam.id;
+
+    const initialInputs = {};
+    const subsForThisExam = examSubmissions.filter(sub => sub.examId === examDocId || sub.examId === exam.id);
+    subsForThisExam.forEach(sub => {
+      if (sub.studentId) {
+        initialInputs[sub.studentId] = sub.objScore !== undefined ? sub.objScore : (sub.score !== undefined ? sub.score : "");
+      }
+    });
+
+    setScoreInputs(initialInputs);
+    setScoresSearchQuery("");
+    setIsInputScoresModalOpen(true);
+  };
+
+  const handleSaveAllScores = async () => {
+    if (!selectedExamForScores) return;
+    const examDocId = selectedExamForScores.firestoreId || selectedExamForScores.id;
+    const tag = `${user.id}_${classId}`;
+
+    setIsSavingScores(true);
+    try {
+      const batchPromises = Object.entries(scoreInputs).map(async ([studentId, rawScore]) => {
+        const subDocId = `${studentId}_${examDocId}`;
+        const studentObj = classStudents.find(s => (s.uid || s.id) === studentId);
+        const studentName = studentObj ? formatStudentName(studentObj) : "Student";
+
+        if (rawScore === "" || rawScore === null || rawScore === undefined) {
+          // If score was cleared/deleted, delete submission doc to unsubmit/reset!
+          try {
+            await deleteDoc(doc(db, "exam_submissions", subDocId));
+          } catch (e) {
+            // Ignore if doc doesn't exist
+          }
+          return;
+        }
+
+        const payload = {
+          examId: examDocId,
+          classId: tag,
+          studentId: studentId,
+          studentName: studentName,
+          quarter: selectedExamForScores.quarter || "1st Quarter",
+          category: selectedExamForScores.category || "1st Monthly Exam",
+          objScore: Number(rawScore) || 0,
+          subjScore: 0,
+          maxScore: Number(selectedExamForScores.maxScore || 100),
+          status: "graded",
+          academicYear: CURRENT_ACADEMIC_YEAR,
+          updatedAt: serverTimestamp()
+        };
+
+        await setDoc(doc(db, "exam_submissions", subDocId), payload, { merge: true });
+      });
+
+      await Promise.all(batchPromises);
+
+      setIsInputScoresModalOpen(false);
+      setSelectedExamForScores(null);
+      setScoreInputs({});
+      setExamGradeSuccessToast(true);
+      setTimeout(() => setExamGradeSuccessToast(false), 3000);
+      loadExams();
+    } catch (e) {
+      alert("Failed to save exam scores: " + e.message);
+    } finally {
+      setIsSavingScores(false);
+    }
   };
 
   const quillModules = {
     toolbar: [
       ['bold', 'italic', 'underline'],
-      [{ 'script': 'sub'}, { 'script': 'super' }],
-      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+      [{ 'script': 'sub' }, { 'script': 'super' }],
+      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
       ['clean']
     ]
   };
@@ -1090,7 +1126,7 @@ export default function ClassDashboard() {
 
     try {
       const taskId = taskToDelete.firestoreId || taskToDelete.id;
-      
+
       // Step A: Query task_submissions collection where taskId === taskId and delete each submission doc
       const subsQ = query(collection(db, "task_submissions"), where("taskId", "==", taskId));
       const subsSnap = await getDocs(subsQ);
@@ -1254,9 +1290,9 @@ export default function ClassDashboard() {
   };
 
   const isMathClass = (classId || "")?.toLowerCase()?.includes("math") ||
-                     (classInfo?.subject || "")?.toLowerCase()?.includes("math") ||
-                     (classInfo?.name || "")?.toLowerCase()?.includes("math") ||
-                     false;
+    (classInfo?.subject || "")?.toLowerCase()?.includes("math") ||
+    (classInfo?.name || "")?.toLowerCase()?.includes("math") ||
+    false;
 
   const quarterlySessions = (allClassSessions || []).filter(s => getQuarterFromDate(s?.date || s?.createdAt) === recordQuarter);
 
@@ -1299,51 +1335,77 @@ export default function ClassDashboard() {
   };
 
   const wwTaskItems = (allClassTasks || [])
-    .filter(t => t?.quarter === recordQuarter && t?.category === "Written Task")
+    .filter(t => t?.quarter === recordQuarter && (t?.category === "Written Task" || t?.category === "Written Works"))
     .map(t => ({
-      id: t.firestoreId,
+      id: t.firestoreId || t.id,
       title: t.title || "Written Task",
       type: "task",
-      maxScore: Number(t.totalPoints || t.maxScore) || 50
+      maxScore: Number(t.maxScore ?? t.totalPoints) || 50
     }));
 
   const wwExamItems = (allClassExams || [])
-    .filter(e => getQuarterForExam(e) === recordQuarter && !(e?.title || "").toLowerCase().includes("quarterly"))
-    .map(e => ({
-      id: e.firestoreId,
-      title: e.title || "Exam",
-      type: "exam",
-      maxScore: (e.questions || []).reduce((sum, q) => sum + (q.points || 1), 0) || 50
-    }));
+    .filter(e => {
+      const q = getQuarterForExam(e);
+      const isQuarterly = (e?.category || "").toLowerCase().includes("quarterly") || (e?.title || "").toLowerCase().includes("quarterly");
+      return q === recordQuarter && !isQuarterly;
+    })
+    .map(e => {
+      let mScore = Number(e.maxScore);
+      if (isNaN(mScore) || mScore <= 0) {
+        mScore = Array.isArray(e.questions) && e.questions.length > 0 
+          ? e.questions.reduce((sum, q) => sum + (Number(q.points) || 1), 0) 
+          : 50;
+      }
+      return {
+        id: e.firestoreId || e.id,
+        title: e.title || "Exam",
+        type: "exam",
+        maxScore: Number(mScore) || 50
+      };
+    });
 
   const wwItems = [...wwTaskItems, ...wwExamItems];
 
   const ptItems = (allClassTasks || [])
-    .filter(t => t?.quarter === recordQuarter && t?.category === "Performance Task")
+    .filter(t => t?.quarter === recordQuarter && (t?.category === "Performance Task" || t?.category === "Performance Tasks"))
     .map(t => ({
-      id: t.firestoreId,
+      id: t.firestoreId || t.id,
       title: t.title || "Performance Task",
       type: "task",
-      maxScore: Number(t.totalPoints || t.maxScore) || 50
+      maxScore: Number(t.maxScore ?? t.totalPoints) || 50
     }));
 
   const qaItems = (allClassExams || [])
-    .filter(e => getQuarterForExam(e) === recordQuarter && (e?.title || "").toLowerCase().includes("quarterly"))
-    .map(e => ({
-      id: e.firestoreId,
-      title: e.title || "Quarterly Exam",
-      type: "exam",
-      maxScore: (e.questions || []).reduce((sum, q) => sum + (q.points || 1), 0) || 100
-    }));
+    .filter(e => {
+      const q = getQuarterForExam(e);
+      const isQuarterly = (e?.category || "").toLowerCase().includes("quarterly") || (e?.title || "").toLowerCase().includes("quarterly");
+      return q === recordQuarter && isQuarterly;
+    })
+    .map(e => {
+      let mScore = Number(e.maxScore);
+      if (isNaN(mScore) || mScore <= 0) {
+        mScore = Array.isArray(e.questions) && e.questions.length > 0 
+          ? e.questions.reduce((sum, q) => sum + (Number(q.points) || 1), 0) 
+          : 100;
+      }
+      return {
+        id: e.firestoreId || e.id,
+        title: e.title || "Quarterly Exam",
+        type: "exam",
+        maxScore: Number(mScore) || 100
+      };
+    });
 
   const getStudentScoreForItem = (studentObj, item) => {
     const sUid = typeof studentObj === "object" ? (studentObj?.uid || studentObj?.id || "") : studentObj;
     if (item?.type === "task") {
-      const sub = (allClassTaskSubs || []).find(s => s?.studentId === sUid && s?.taskId === item.id);
-      return sub && sub.score !== undefined ? Number(sub.score || 0) : 0;
+      const sub = (allClassTaskSubs || []).find(s => (s?.studentId === sUid || s?.studentId === studentObj?.id) && (s?.taskId === item.id || s?.taskId === item.firestoreId));
+      return sub && sub.score !== undefined && sub.score !== null ? Number(sub.score) || 0 : 0;
     } else {
-      const sub = (allClassExamSubs || []).find(s => s?.studentId === sUid && s?.examId === item.id);
-      return sub && (sub.score !== undefined || sub.objScore !== undefined) ? Number(sub.score ?? sub.objScore ?? 0) : 0;
+      const sub = (allClassExamSubs || []).find(s => (s?.studentId === sUid || s?.studentId === studentObj?.id) && (s?.examId === item.id || s?.examId === item.firestoreId));
+      if (!sub) return 0;
+      const rawVal = sub.objScore ?? sub.score ?? sub.totalScore;
+      return rawVal !== undefined && rawVal !== null ? Number(rawVal) || 0 : 0;
     }
   };
 
@@ -1352,7 +1414,7 @@ export default function ClassDashboard() {
     let ptMax = 0;
     ptItems.forEach(item => {
       ptPoints += getStudentScoreForItem(studentObj, item);
-      ptMax += item.maxScore;
+      ptMax += Number(item.maxScore) || 0;
     });
 
     const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(studentObj);
@@ -1379,7 +1441,7 @@ export default function ClassDashboard() {
     let wwMax = 0;
     wwItems.forEach(item => {
       wwPoints += getStudentScoreForItem(studentObj, item);
-      wwMax += item.maxScore;
+      wwMax += Number(item.maxScore) || 0;
     });
     const wwPct = wwMax > 0 ? (wwPoints / wwMax) * 100 : 100;
 
@@ -1389,7 +1451,7 @@ export default function ClassDashboard() {
     let qaMax = 0;
     qaItems.forEach(item => {
       qaPoints += getStudentScoreForItem(studentObj, item);
-      qaMax += item.maxScore;
+      qaMax += Number(item.maxScore) || 0;
     });
     const qaPct = qaMax > 0 ? (qaPoints / qaMax) * 100 : 100;
 
@@ -1404,13 +1466,13 @@ export default function ClassDashboard() {
     }
 
     let headers = ["\"Student Name\"", "\"Student Code\""];
-    wwItems.forEach(item => headers.push(`"WW: ${item.title.replace(/"/g, '""')} (${item.maxScore} pts)"`));
+    wwItems.forEach(item => headers.push(`"WW: ${item.title.replace(/"/g, '""')} (${Number(item.maxScore)} PTS)"`));
     headers.push("\"WW Total Score\"", "\"WW %\"");
 
-    ptItems.forEach(item => headers.push(`"PT: ${item.title.replace(/"/g, '""')} (${item.maxScore} pts)"`));
+    ptItems.forEach(item => headers.push(`"PT: ${item.title.replace(/"/g, '""')} (${Number(item.maxScore)} PTS)"`));
     headers.push("\"VOCABULARY %\"", "\"DIARY %\"", "\"PT Total Score\"", "\"PT %\"");
 
-    qaItems.forEach(item => headers.push(`"QA: ${item.title.replace(/"/g, '""')} (${item.maxScore} pts)"`));
+    qaItems.forEach(item => headers.push(`"QA: ${item.title.replace(/"/g, '""')} (${Number(item.maxScore)} PTS)"`));
     headers.push("\"QA Total Score\"", "\"QA %\"", "\"Final Quarter Grade\"");
 
     let rows = [headers.join(",")];
@@ -1750,11 +1812,10 @@ export default function ClassDashboard() {
         <nav className="flex space-x-4 sm:space-x-8" aria-label="Classroom Tabs">
           <button
             onClick={() => handleTabChange("roster")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${
-              activeTab === "roster"
+            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "roster"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
+              }`}
           >
             <Users className="h-4.5 w-4.5" />
             <span>Class Roster</span>
@@ -1765,11 +1826,10 @@ export default function ClassDashboard() {
 
           <button
             onClick={() => handleTabChange("attendance")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${
-              activeTab === "attendance"
+            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "attendance"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
+              }`}
           >
             <ClipboardCheck className="h-4.5 w-4.5" />
             <span>Attendance & Log</span>
@@ -1777,11 +1837,10 @@ export default function ClassDashboard() {
 
           <button
             onClick={() => handleTabChange("vocabularies")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${
-              activeTab === "vocabularies"
+            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "vocabularies"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
+              }`}
           >
             <BookOpen className="h-4.5 w-4.5" />
             <span>Vocabularies & Submissions</span>
@@ -1794,11 +1853,10 @@ export default function ClassDashboard() {
 
           <button
             onClick={() => handleTabChange("exams")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${
-              activeTab === "exams"
+            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "exams"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
+              }`}
           >
             <ListChecks className="h-4.5 w-4.5" />
             <span>Exams</span>
@@ -1811,11 +1869,10 @@ export default function ClassDashboard() {
 
           <button
             onClick={() => handleTabChange("tasks")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${
-              activeTab === "tasks"
+            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "tasks"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
+              }`}
           >
             <FolderKanban className="h-4.5 w-4.5" />
             <span>Assignments & Tasks</span>
@@ -1828,11 +1885,10 @@ export default function ClassDashboard() {
 
           <button
             onClick={() => handleTabChange("record")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${
-              activeTab === "record"
+            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "record"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
+              }`}
           >
             <Table className="h-4.5 w-4.5" />
             <span>E-Class Record</span>
@@ -2120,36 +2176,32 @@ export default function ClassDashboard() {
                           <div className="flex items-center space-x-1 bg-slate-100/50 dark:bg-slate-800/50 p-1 rounded-xl border border-slate-200/50 dark:border-slate-700/50">
                             <button
                               onClick={() => handleStatusChange(student.id, "present")}
-                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                currentStatus === "present" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
-                              }`}
+                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${currentStatus === "present" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
+                                }`}
                             >
                               <Check className="h-3.5 w-3.5" />
                               <span>Present</span>
                             </button>
                             <button
                               onClick={() => handleStatusChange(student.id, "late")}
-                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                currentStatus === "late" ? "bg-amber-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
-                              }`}
+                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${currentStatus === "late" ? "bg-amber-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
+                                }`}
                             >
                               <Clock className="h-3.5 w-3.5" />
                               <span>Late</span>
                             </button>
                             <button
                               onClick={() => handleStatusChange(student.id, "excused")}
-                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                currentStatus === "excused" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
-                              }`}
+                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${currentStatus === "excused" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
+                                }`}
                             >
                               <ShieldCheck className="h-3.5 w-3.5" />
                               <span>Excused</span>
                             </button>
                             <button
                               onClick={() => handleStatusChange(student.id, "absent")}
-                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                                currentStatus === "absent" ? "bg-red-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
-                              }`}
+                              className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${currentStatus === "absent" ? "bg-red-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-800"
+                                }`}
                             >
                               <X className="h-3.5 w-3.5" />
                               <span>Absent</span>
@@ -2203,19 +2255,18 @@ export default function ClassDashboard() {
                 <button
                   onClick={handleSaveAttendance}
                   disabled={isSavingAttendance}
-                  className={`w-full inline-flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-bold shadow-md transition-all cursor-pointer ${
-                    isSavingAttendance
+                  className={`w-full inline-flex items-center justify-center space-x-2 rounded-xl py-2.5 text-sm font-bold shadow-md transition-all cursor-pointer ${isSavingAttendance
                       ? "bg-slate-400 text-white cursor-not-allowed"
                       : "bg-brand-600 hover:bg-brand-700 text-white"
-                  }`}
+                    }`}
                 >
                   <Save className="h-4 w-4" />
                   <span>
                     {isSavingAttendance
                       ? "Saving..."
                       : existingSessionId
-                      ? "Update Attendance"
-                      : "Save Attendance"}
+                        ? "Update Attendance"
+                        : "Save Attendance"}
                   </span>
                 </button>
               </div>
@@ -2388,33 +2439,30 @@ export default function ClassDashboard() {
                   <button
                     type="button"
                     onClick={() => { setHistoryRangeFilter("7days"); setHistoryDateFilter(""); }}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      historyRangeFilter === "7days" && !historyDateFilter
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${historyRangeFilter === "7days" && !historyDateFilter
                         ? "bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-xs"
                         : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                    }`}
+                      }`}
                   >
                     Last 7 Days
                   </button>
                   <button
                     type="button"
                     onClick={() => { setHistoryRangeFilter("30days"); setHistoryDateFilter(""); }}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      historyRangeFilter === "30days" && !historyDateFilter
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${historyRangeFilter === "30days" && !historyDateFilter
                         ? "bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-xs"
                         : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                    }`}
+                      }`}
                   >
                     Last 30 Days
                   </button>
                   <button
                     type="button"
                     onClick={() => { setHistoryRangeFilter("all"); setHistoryDateFilter(""); }}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      historyRangeFilter === "all" && !historyDateFilter
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${historyRangeFilter === "all" && !historyDateFilter
                         ? "bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-xs"
                         : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                    }`}
+                      }`}
                   >
                     All History
                   </button>
@@ -2565,11 +2613,10 @@ export default function ClassDashboard() {
                             onClick={() => {
                               setModalSentences(prev => prev?.map((s, i) => i === idx ? { ...s, status: "correct" } : s));
                             }}
-                            className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                              item?.status === "correct"
+                            className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${item?.status === "correct"
                                 ? "bg-emerald-600 text-white shadow-xs"
                                 : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-emerald-600"
-                            }`}
+                              }`}
                           >
                             <Check className="h-3.5 w-3.5" />
                             <span>Correct</span>
@@ -2580,11 +2627,10 @@ export default function ClassDashboard() {
                             onClick={() => {
                               setModalSentences(prev => prev?.map((s, i) => i === idx ? { ...s, status: "needs_review" } : s));
                             }}
-                            className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                              item?.status === "needs_review"
+                            className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${item?.status === "needs_review"
                                 ? "bg-amber-500 text-white shadow-xs"
                                 : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:text-amber-600"
-                            }`}
+                              }`}
                           >
                             <AlertTriangle className="h-3.5 w-3.5" />
                             <span>Needs Review</span>
@@ -2655,402 +2701,155 @@ export default function ClassDashboard() {
         </div>
       )}
 
-      {/* TAB 4: EXAMS VIEW */}
+      {/* TAB 4: EXAMS & ASSESSMENTS VIEW */}
       {activeTab === "exams" && (
         <div className="space-y-6">
           {examPublishSuccess && (
             <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
               <Sparkles className="h-4 w-4" />
-              <span>Exam published successfully!</span>
+              <span>Exam Scope published successfully!</span>
             </div>
           )}
 
-          {!isBuildingExam ? (
-            /* ── Exam List View ── */
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">Published Exams</h2>
-                <button
-                  onClick={() => setIsBuildingExam(true)}
-                  className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Create New Exam</span>
-                </button>
-              </div>
+          {examGradeSuccessToast && (
+            <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
+              <Sparkles className="h-4 w-4" />
+              <span>Exam scores batch saved to E-Class Record successfully!</span>
+            </div>
+          )}
 
-              {isExamsLoading ? (
-                <div className="py-16 text-center text-slate-400 text-sm">Loading exams...</div>
-              ) : exams.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {exams.map((exam) => (
-                    <div key={exam.firestoreId} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3 transition-colors">
-                      <div className="flex items-start justify-between">
+          {/* Header Bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
+                Exams & Assessments
+              </h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                Publish exam scopes & study guidelines, attach Google Form links, and rapidly enter scores for E-Class Record.
+              </p>
+            </div>
+
+            <button
+              onClick={handleOpenAddExamScopeModal}
+              className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              <span>+ Add Exam Scope</span>
+            </button>
+          </div>
+
+          {/* Exam Cards Grid */}
+          {isExamsLoading ? (
+            <div className="py-16 text-center text-slate-400 text-sm">Loading exam scopes...</div>
+          ) : exams.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {exams.map((exam) => {
+                const examDocId = exam.firestoreId || exam.id;
+                const subsForThisExam = examSubmissions.filter(sub => sub.examId === examDocId || sub.examId === exam.id);
+
+                return (
+                  <div key={examDocId} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors flex flex-col justify-between">
+                    <div className="space-y-3">
+                      {/* Title & Badges */}
+                      <div className="flex items-start justify-between gap-2">
                         <div>
                           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{exam.title}</h3>
-                          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 font-semibold">{exam.academicYear || CURRENT_ACADEMIC_YEAR}</p>
-                        </div>
-                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-bold border ${
-                          exam.status === "published"
-                            ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800"
-                            : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-800"
-                        }`}>
-                          {exam.status === "published" ? "Published" : "Draft"}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-4 text-xs text-slate-500 dark:text-slate-400 font-semibold">
-                        <span className="inline-flex items-center space-x-1">
-                          <Clock className="h-3.5 w-3.5" />
-                          <span>{exam.timeLimit || 30} mins</span>
-                        </span>
-                        <span className="inline-flex items-center space-x-1">
-                          <ListChecks className="h-3.5 w-3.5" />
-                          <span>{exam.questions?.length || 0} Questions</span>
-                        </span>
-                        <span className="inline-flex items-center space-x-1">
-                          <Sparkles className="h-3.5 w-3.5" />
-                          <span>{(exam.questions || []).reduce((sum, q) => sum + (q.points || 1), 0)} pts</span>
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-16 text-center space-y-2">
-                  <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Exams Created Yet</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">Click "Create New Exam" to build your first assessment for this class.</p>
-                </div>
-              )}
-
-              {/* ── Student Exam Submissions Section ── */}
-              <div className="pt-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">
-                      Student Exam Submissions
-                    </h3>
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                      Review student test answers and score subjective essay/vocabulary questions.
-                    </p>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg">
-                    {examSubmissions.length} Submissions
-                  </span>
-                </div>
-
-                {isExamSubmissionsLoading ? (
-                  <div className="py-8 text-center text-slate-400 text-xs">Loading submissions...</div>
-                ) : examSubmissions.length > 0 ? (
-                  <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-left">
-                        <thead>
-                          <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                            <th className="px-6 py-3">Student Name</th>
-                            <th className="px-6 py-3">Exam Title</th>
-                            <th className="px-6 py-3">Submitted Date</th>
-                            <th className="px-6 py-3">Status</th>
-                            <th className="px-6 py-3">Score</th>
-                            <th className="px-6 py-3 text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-200">
-                          {examSubmissions.map((sub) => {
-                            const totalCalculatedScore = (sub.objScore || 0) + (sub.subjScore || 0);
-                            const submittedDateStr = sub.submittedAt?.toDate
-                              ? sub.submittedAt.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                              : (sub.submittedAt || "Recently");
-
-                            return (
-                              <tr key={sub.firestoreId || sub.id} className="hover:bg-slate-50/10 dark:hover:bg-slate-800/30 transition-colors">
-                                <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">
-                                  {sub.studentName}
-                                </td>
-                                <td className="px-6 py-4 text-slate-600 dark:text-slate-300">
-                                  {sub.examTitle || "Exam"}
-                                </td>
-                                <td className="px-6 py-4 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
-                                  {submittedDateStr}
-                                </td>
-                                <td className="px-6 py-4">
-                                  <span className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${
-                                    sub.status === "Graded"
-                                      ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800"
-                                      : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-800"
-                                  }`}>
-                                    {sub.status === "Graded" ? <CheckCircle className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
-                                    <span>{sub.status}</span>
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 font-mono font-bold text-brand-600 dark:text-brand-400">
-                                  {totalCalculatedScore} / {sub.totalPoints || sub.maxObjPoints || 0} pts
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                  <button
-                                    onClick={() => handleOpenExamGradingModal(sub)}
-                                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                                      sub.status === "Pending Review"
-                                        ? "bg-brand-600 hover:bg-brand-700 text-white shadow-xs"
-                                        : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200"
-                                    }`}
-                                  >
-                                    {sub.status === "Pending Review" ? "Review & Grade ➔" : "View Results"}
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-8 text-center text-slate-400 dark:text-slate-500 text-xs italic bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
-                    No student submissions received for this class yet.
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            /* ── Exam Builder View ── */
-            <div className="space-y-6">
-              {/* Builder Header */}
-              <div className="flex items-center justify-between">
-                <button
-                  onClick={resetExamBuilder}
-                  className="inline-flex items-center space-x-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  <span>Cancel</span>
-                </button>
-                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">Exam Builder Studio</h2>
-                <div />
-              </div>
-
-              {/* General Settings Card */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4 transition-colors">
-                <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">General Settings</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Exam Title</label>
-                    <input
-                      type="text"
-                      value={examTitle}
-                      onChange={(e) => setExamTitle(e.target.value)}
-                      placeholder="e.g., 1st Monthly Exam — Reading Comprehension"
-                      className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Time Limit (Minutes)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={examTimeLimit}
-                      onChange={(e) => setExamTimeLimit(e.target.value)}
-                      className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Question Type Toolbar */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm transition-colors">
-                <h3 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-3">Add Question</h3>
-                <div className="flex flex-wrap gap-2">
-                  <button onClick={() => addQuestion("multipleChoice")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors cursor-pointer">
-                    <Plus className="h-3.5 w-3.5" /><span>Multiple Choice</span>
-                  </button>
-                  <button onClick={() => addQuestion("identification")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 dark:hover:bg-teal-900/50 transition-colors cursor-pointer">
-                    <Plus className="h-3.5 w-3.5" /><span>Identification</span>
-                  </button>
-                  <button onClick={() => addQuestion("vocabulary")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors cursor-pointer">
-                    <Plus className="h-3.5 w-3.5" /><span>Vocabulary</span>
-                  </button>
-                  <button onClick={() => addQuestion("essay")} className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors cursor-pointer">
-                    <Plus className="h-3.5 w-3.5" /><span>Essay</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Questions List */}
-              {examQuestions.length === 0 ? (
-                <div className="py-12 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
-                  <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-                  <p className="text-sm font-bold text-slate-600 dark:text-slate-300">No questions added yet</p>
-                  <p className="text-xs text-slate-400">Use the buttons above to add questions to this exam.</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {examQuestions.map((q, idx) => {
-                    const typeInfo = questionTypeLabels[q.type] || { label: q.type, color: "slate" };
-                    return (
-                      <div key={q.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
-                        {/* Question Header */}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-3">
-                            <span className="flex items-center justify-center h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-600 dark:text-slate-300">
-                              {idx + 1}
+                          <div className="flex items-center space-x-2 mt-1">
+                            <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
+                              {exam.quarter || "1st Quarter"}
                             </span>
-                            <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border ${
-                              typeInfo.color === 'brand' ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border-brand-100 dark:border-brand-800' :
-                              typeInfo.color === 'teal' ? 'bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border-teal-100 dark:border-teal-800' :
-                              typeInfo.color === 'amber' ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-100 dark:border-amber-800' :
-                              'bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800'
-                            }`}>
-                              {typeInfo.label}
+                            <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800">
+                              {exam.category || "Exam"}
                             </span>
                           </div>
-                          <div className="flex items-center space-x-3">
-                            <div className="flex items-center space-x-1.5">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase">PTS</label>
-                              <input
-                                type="number"
-                                min="1"
-                                value={q.points}
-                                onChange={(e) => updateQuestion(q.id, "points", parseInt(e.target.value) || 1)}
-                                className="w-14 text-xs font-bold text-center border border-slate-200 dark:border-slate-700 rounded-lg py-1 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                              />
-                            </div>
-                            <button onClick={() => deleteQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors cursor-pointer">
-                              <Trash2 className="h-3.5 w-3.5" />
+                        </div>
+
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
+                            <Sparkles className="h-3 w-3" />
+                            <span>Max: {exam.maxScore || 100} pts</span>
+                          </span>
+
+                          <button
+                            onClick={() => handleOpenEditExamScopeModal(exam)}
+                            title="Edit Exam Scope"
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteExamScope(exam)}
+                            title="Delete Exam Scope"
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-600 hover:border-red-300 dark:hover:text-red-400 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Scope Text Preview */}
+                      {exam.scopeText && (
+                        <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800 max-h-28 overflow-y-auto prose prose-slate dark:prose-invert max-w-none text-slate-800 dark:text-slate-100">
+                          <div dangerouslySetInnerHTML={{ __html: exam.scopeText.replace(/&nbsp;/g, ' ') }} />
+                        </div>
+                      )}
+
+                      {/* Google Form Link Section */}
+                      <div className="flex items-center justify-between pt-1">
+                        {exam.googleFormUrl ? (
+                          <div className="flex items-center space-x-2">
+                            <a
+                              href={exam.googleFormUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center space-x-1.5 text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                              <span>Open Google Form</span>
+                            </a>
+                            <button
+                              onClick={() => handleOpenEditLinkModal(exam)}
+                              className="text-[10px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline cursor-pointer"
+                            >
+                              (Edit Link)
                             </button>
                           </div>
-                        </div>
-
-                        {/* Question Prompt */}
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt</label>
-                          <textarea
-                            rows={2}
-                            value={q.text}
-                            onChange={(e) => updateQuestion(q.id, "text", e.target.value)}
-                            placeholder="Enter your question here..."
-                            className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
-                          />
-                        </div>
-
-                        {/* Type-Specific Fields */}
-                        {q.type === "multipleChoice" && (
-                          <div className="space-y-3">
-                            <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select correct answer)</label>
-                            {q.options.map((opt, optIdx) => (
-                              <div key={optIdx} className="flex items-center space-x-2">
-                                <button
-                                  type="button"
-                                  onClick={() => updateQuestion(q.id, "correctOptionIndex", optIdx)}
-                                  className={`flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer ${
-                                    q.correctOptionIndex === optIdx
-                                      ? "border-emerald-500 bg-emerald-500"
-                                      : "border-slate-300 dark:border-slate-600 hover:border-brand-400"
-                                  }`}
-                                >
-                                  {q.correctOptionIndex === optIdx && <Check className="h-3 w-3 text-white" />}
-                                </button>
-                                <input
-                                  type="text"
-                                  value={opt}
-                                  onChange={(e) => updateOption(q.id, optIdx, e.target.value)}
-                                  placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
-                                  className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                                />
-                                {q.options.length > 2 && (
-                                  <button onClick={() => removeOption(q.id, optIdx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
-                                )}
-                              </div>
-                            ))}
-                            <button onClick={() => addOption(q.id)} className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer">+ Add Option</button>
-                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleOpenEditLinkModal(exam)}
+                            className="inline-flex items-center space-x-1 text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            <span>Add Google Form Link</span>
+                          </button>
                         )}
 
-                        {q.type === "identification" && (
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Exact Correct Answer</label>
-                            <input
-                              type="text"
-                              value={q.correctAnswer}
-                              onChange={(e) => updateQuestion(q.id, "correctAnswer", e.target.value)}
-                              placeholder="The answer that will be auto-graded (case-insensitive)"
-                              className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                            />
-                          </div>
-                        )}
-
-                        {q.type === "vocabulary" && (
-                          <div className="space-y-3">
-                            <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Word / Definition Pairs</label>
-                            {q.vocabularyPairs.map((pair) => (
-                              <div key={pair.id} className="flex items-center space-x-2">
-                                <input
-                                  type="text"
-                                  value={pair.word}
-                                  onChange={(e) => updateVocabPair(q.id, pair.id, "word", e.target.value)}
-                                  placeholder="Word"
-                                  className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                                />
-                                <span className="text-slate-400 text-xs font-bold">→</span>
-                                <input
-                                  type="text"
-                                  value={pair.definition}
-                                  onChange={(e) => updateVocabPair(q.id, pair.id, "definition", e.target.value)}
-                                  placeholder="Definition / Translation"
-                                  className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                                />
-                                {q.vocabularyPairs.length > 1 && (
-                                  <button onClick={() => removeVocabPair(q.id, pair.id)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
-                                )}
-                              </div>
-                            ))}
-                            <button onClick={() => addVocabPair(q.id)} className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer">+ Add Word Pair</button>
-                          </div>
-                        )}
-
-                        {q.type === "essay" && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Rubric / Grading Guidelines (Optional)</label>
-                              <textarea
-                                rows={3}
-                                value={q.rubric}
-                                onChange={(e) => updateQuestion(q.id, "rubric", e.target.value)}
-                                placeholder="Describe what a good answer looks like..."
-                                className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Min Word Count</label>
-                              <input
-                                type="number"
-                                min="0"
-                                value={q.minWordCount}
-                                onChange={(e) => updateQuestion(q.id, "minWordCount", parseInt(e.target.value) || 0)}
-                                className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                              />
-                            </div>
-                          </div>
-                        )}
+                        <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                          {subsForThisExam.length} / {classStudents.length} Graded
+                        </span>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    </div>
 
-              {/* Publish Footer */}
-              {examQuestions.length > 0 && (
-                <div className="flex items-center justify-between bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm transition-colors">
-                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    {examQuestions.length} Question{examQuestions.length !== 1 ? "s" : ""} • {examQuestions.reduce((sum, q) => sum + (q.points || 1), 0)} Total Points
+                    {/* Card Footer Actions */}
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end">
+                      <button
+                        onClick={() => handleOpenInputScoresModal(exam)}
+                        className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+                      >
+                        <FileSpreadsheet className="h-4 w-4" />
+                        <span>Input Scores</span>
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={handlePublishExam}
-                    className="inline-flex items-center space-x-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    <span>Publish Exam</span>
-                  </button>
-                </div>
-              )}
+                );
+              })}
+            </div>
+          ) : (
+            <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+              <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Exam Scopes Added Yet</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Click "+ Add Exam Scope" to publish the first assessment topic and study guidelines.</p>
             </div>
           )}
         </div>
@@ -3092,19 +2891,18 @@ export default function ClassDashboard() {
               ) : tasks.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {tasks.map((task) => (
-                    <div 
-                      key={task.firestoreId || task.id} 
+                    <div
+                      key={task.firestoreId || task.id}
                       className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3.5 transition-colors"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="space-y-1">
                           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{task.title}</h3>
                           <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                            <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${
-                              task.category === "Performance Task"
+                            <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${task.category === "Performance Task"
                                 ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
                                 : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
-                            }`}>
+                              }`}>
                               {task.category || "Written Task"}
                             </span>
                             <span className="inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
@@ -3114,11 +2912,10 @@ export default function ClassDashboard() {
                         </div>
 
                         <div className="flex items-center space-x-1.5 shrink-0">
-                          <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[10px] font-bold border ${
-                            task.mode === "external"
+                          <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[10px] font-bold border ${task.mode === "external"
                               ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
                               : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
-                          }`}>
+                            }`}>
                             {task.mode === "external" ? (
                               <>
                                 <ExternalLink className="h-3 w-3" />
@@ -3228,11 +3025,10 @@ export default function ClassDashboard() {
                                   {sub.taskTitle || "Task"}
                                 </td>
                                 <td className="p-3.5">
-                                  <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    sub.mode === "external"
+                                  <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold ${sub.mode === "external"
                                       ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
                                       : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                                  }`}>
+                                    }`}>
                                     {sub.mode === "external" ? "External Link" : "In-App Quiz"}
                                   </span>
                                 </td>
@@ -3355,11 +3151,10 @@ export default function ClassDashboard() {
                                     {sub.taskTitle || "Task"}
                                   </td>
                                   <td className="p-3.5">
-                                    <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold ${
-                                      sub.mode === "external"
+                                    <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold ${sub.mode === "external"
                                         ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
                                         : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                                    }`}>
+                                      }`}>
                                       {sub.mode === "external" ? "External Link" : "In-App Quiz"}
                                     </span>
                                   </td>
@@ -3421,7 +3216,7 @@ export default function ClassDashboard() {
               {/* Core Information Card */}
               <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4 transition-colors">
                 <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">General Information & Grading Configuration</h3>
-                
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="sm:col-span-2">
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Task Title *</label>
@@ -3488,15 +3283,14 @@ export default function ClassDashboard() {
               {/* Task Mode Selector */}
               <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4 transition-colors">
                 <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Select Task Mode</h3>
-                
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div
                     onClick={() => setTaskMode("external")}
-                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start space-x-3 ${
-                      taskMode === "external"
+                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start space-x-3 ${taskMode === "external"
                         ? "border-brand-500 bg-brand-50/40 dark:bg-brand-900/30"
                         : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800/50"
-                    }`}
+                      }`}
                   >
                     <input
                       type="radio"
@@ -3518,11 +3312,10 @@ export default function ClassDashboard() {
 
                   <div
                     onClick={() => setTaskMode("inApp")}
-                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start space-x-3 ${
-                      taskMode === "inApp"
+                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start space-x-3 ${taskMode === "inApp"
                         ? "border-brand-500 bg-brand-50/40 dark:bg-brand-900/30"
                         : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800/50"
-                    }`}
+                      }`}
                   >
                     <input
                       type="radio"
@@ -3587,251 +3380,250 @@ export default function ClassDashboard() {
                     ) : (
                       <div className="space-y-4">
                         {taskQuestions.map((q, idx) => {
-                        if (q.type === "section") {
+                          if (q.type === "section") {
+                            return (
+                              <div key={q.id} className="bg-indigo-50/60 dark:bg-indigo-950/40 border-2 border-indigo-200 dark:border-indigo-800 rounded-2xl p-5 shadow-sm space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <FolderPlus className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                                    <span className="text-xs font-black uppercase text-indigo-700 dark:text-indigo-300 tracking-wider">
+                                      Section Header Block
+                                    </span>
+                                  </div>
+                                  <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 text-indigo-400 hover:text-red-500 transition-colors cursor-pointer">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Section Title *</label>
+                                  <input
+                                    type="text"
+                                    value={q.title || ""}
+                                    onChange={(e) => updateTaskQuestion(q.id, "title", e.target.value)}
+                                    placeholder="e.g., Section 2: Reading Comprehension"
+                                    className="w-full text-base font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500 font-heading"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Description (Optional)</label>
+                                  <input
+                                    type="text"
+                                    value={q.description || ""}
+                                    onChange={(e) => updateTaskQuestion(q.id, "description", e.target.value)}
+                                    placeholder="Instructions for this specific section..."
+                                    className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (q.type === "info") {
+                            return (
+                              <div key={q.id} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <Type className="h-4 w-4 text-slate-500" />
+                                    <span className="text-xs font-extrabold uppercase text-slate-600 dark:text-slate-300 tracking-wider">
+                                      Text Block / Reading Passage
+                                    </span>
+                                  </div>
+                                  <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 transition-colors cursor-pointer">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Content / Instructions (Rich Text Formatting)</label>
+                                  <ReactQuill
+                                    theme="snow"
+                                    value={q.content || ""}
+                                    onChange={(val) => updateTaskQuestion(q.id, "content", val)}
+                                    modules={quillModules}
+                                    placeholder="Enter reading passage, story, or general instructions..."
+                                    className="bg-white dark:bg-slate-900 rounded-xl text-slate-800 dark:text-slate-100"
+                                  />
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          const typeInfo = questionTypeLabels[q.type] || { label: q.type, color: "slate" };
+
                           return (
-                            <div key={q.id} className="bg-indigo-50/60 dark:bg-indigo-950/40 border-2 border-indigo-200 dark:border-indigo-800 rounded-2xl p-5 shadow-sm space-y-3">
+                            <div key={q.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
+                              {/* Question Header */}
                               <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <FolderPlus className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                                  <span className="text-xs font-black uppercase text-indigo-700 dark:text-indigo-300 tracking-wider">
-                                    Section Header Block
+                                <div className="flex items-center space-x-3">
+                                  <span className="flex items-center justify-center h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-600 dark:text-slate-300">
+                                    {idx + 1}
+                                  </span>
+                                  <span className="inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                    {typeInfo.label}
                                   </span>
                                 </div>
-                                <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 text-indigo-400 hover:text-red-500 transition-colors cursor-pointer">
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Section Title *</label>
-                                <input
-                                  type="text"
-                                  value={q.title || ""}
-                                  onChange={(e) => updateTaskQuestion(q.id, "title", e.target.value)}
-                                  placeholder="e.g., Section 2: Reading Comprehension"
-                                  className="w-full text-base font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500 font-heading"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Description (Optional)</label>
-                                <input
-                                  type="text"
-                                  value={q.description || ""}
-                                  onChange={(e) => updateTaskQuestion(q.id, "description", e.target.value)}
-                                  placeholder="Instructions for this specific section..."
-                                  className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500"
-                                />
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        if (q.type === "info") {
-                          return (
-                            <div key={q.id} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm space-y-3">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <Type className="h-4 w-4 text-slate-500" />
-                                  <span className="text-xs font-extrabold uppercase text-slate-600 dark:text-slate-300 tracking-wider">
-                                    Text Block / Reading Passage
-                                  </span>
+                                <div className="flex items-center space-x-3">
+                                  <div className="flex items-center space-x-1.5">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase">PTS</label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={q.points}
+                                      onChange={(e) => updateTaskQuestion(q.id, "points", parseInt(e.target.value) || 1)}
+                                      className="w-14 text-xs font-bold text-center border border-slate-200 dark:border-slate-700 rounded-lg py-1 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                    />
+                                  </div>
+                                  <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors cursor-pointer">
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
                                 </div>
-                                <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 transition-colors cursor-pointer">
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
                               </div>
 
+                              {/* Question Prompt with Rich Text ReactQuill */}
                               <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Content / Instructions (Rich Text Formatting)</label>
+                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt (Rich Text Formatting)</label>
                                 <ReactQuill
                                   theme="snow"
-                                  value={q.content || ""}
-                                  onChange={(val) => updateTaskQuestion(q.id, "content", val)}
+                                  value={q.text || ""}
+                                  onChange={(val) => updateTaskQuestion(q.id, "text", val)}
                                   modules={quillModules}
-                                  placeholder="Enter reading passage, story, or general instructions..."
+                                  placeholder="Enter question prompt, formatted exponents (e.g. x²), bold, or list items..."
                                   className="bg-white dark:bg-slate-900 rounded-xl text-slate-800 dark:text-slate-100"
                                 />
                               </div>
+
+                              {/* Type-Specific Fields */}
+                              {q.type === "multipleChoice" && (
+                                <div className="space-y-3">
+                                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select correct answer)</label>
+                                  {q.options.map((opt, optIdx) => (
+                                    <div key={optIdx} className="flex items-center space-x-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => updateTaskQuestion(q.id, "correctOptionIndex", optIdx)}
+                                        className={`flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer ${q.correctOptionIndex === optIdx
+                                            ? "border-emerald-500 bg-emerald-500"
+                                            : "border-slate-300 dark:border-slate-600 hover:border-brand-400"
+                                          }`}
+                                      >
+                                        {q.correctOptionIndex === optIdx && <Check className="h-3 w-3 text-white" />}
+                                      </button>
+                                      <input
+                                        type="text"
+                                        value={opt}
+                                        onChange={(e) => updateTaskOption(q.id, optIdx, e.target.value)}
+                                        placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
+                                        className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                                      />
+                                      {q.options.length > 2 && (
+                                        <button onClick={() => removeTaskOption(q.id, optIdx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
+                                      )}
+                                    </div>
+                                  ))}
+                                  <button onClick={() => addTaskOption(q.id)} className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer">+ Add Option</button>
+                                </div>
+                              )}
+
+                              {q.type === "identification" && (
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Exact Correct Answer</label>
+                                  <input
+                                    type="text"
+                                    value={q.correctAnswer}
+                                    onChange={(e) => updateTaskQuestion(q.id, "correctAnswer", e.target.value)}
+                                    placeholder="The answer that will be auto-graded (case-insensitive)"
+                                    className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                                  />
+                                </div>
+                              )}
+
+                              {q.type === "vocabulary" && (
+                                <div className="space-y-3">
+                                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Word / Definition Pairs</label>
+                                  {q.vocabularyPairs.map((pair) => (
+                                    <div key={pair.id} className="flex items-center space-x-2">
+                                      <input
+                                        type="text"
+                                        value={pair.word}
+                                        onChange={(e) => updateTaskVocabPair(q.id, pair.id, "word", e.target.value)}
+                                        placeholder="Word"
+                                        className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                      />
+                                      <span className="text-slate-400 text-xs font-bold">→</span>
+                                      <input
+                                        type="text"
+                                        value={pair.definition}
+                                        onChange={(e) => updateTaskVocabPair(q.id, pair.id, "definition", e.target.value)}
+                                        placeholder="Definition"
+                                        className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                      />
+                                      {q.vocabularyPairs.length > 1 && (
+                                        <button onClick={() => removeTaskVocabPair(q.id, pair.id)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
+                                      )}
+                                    </div>
+                                  ))}
+                                  <button onClick={() => addTaskVocabPair(q.id)} className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer">+ Add Word Pair</button>
+                                </div>
+                              )}
+
+                              {q.type === "essay" && (
+                                <div className="space-y-3">
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Grading Rubric / Answer Key Notes</label>
+                                    <textarea
+                                      rows={2}
+                                      value={q.rubric}
+                                      onChange={(e) => updateTaskQuestion(q.id, "rubric", e.target.value)}
+                                      placeholder="Enter rubric or sample answer to assist manual grading..."
+                                      className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
-                        }
+                        })}
+                      </div>
+                    )}
+                  </div>
 
-                        const typeInfo = questionTypeLabels[q.type] || { label: q.type, color: "slate" };
-
-                        return (
-                          <div key={q.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
-                            {/* Question Header */}
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-3">
-                                <span className="flex items-center justify-center h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-600 dark:text-slate-300">
-                                  {idx + 1}
-                                </span>
-                                <span className="inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                  {typeInfo.label}
-                                </span>
-                              </div>
-                              <div className="flex items-center space-x-3">
-                                <div className="flex items-center space-x-1.5">
-                                  <label className="text-[10px] font-bold text-slate-400 uppercase">PTS</label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    value={q.points}
-                                    onChange={(e) => updateTaskQuestion(q.id, "points", parseInt(e.target.value) || 1)}
-                                    className="w-14 text-xs font-bold text-center border border-slate-200 dark:border-slate-700 rounded-lg py-1 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                                  />
-                                </div>
-                                <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors cursor-pointer">
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* Question Prompt with Rich Text ReactQuill */}
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt (Rich Text Formatting)</label>
-                              <ReactQuill
-                                theme="snow"
-                                value={q.text || ""}
-                                onChange={(val) => updateTaskQuestion(q.id, "text", val)}
-                                modules={quillModules}
-                                placeholder="Enter question prompt, formatted exponents (e.g. x²), bold, or list items..."
-                                className="bg-white dark:bg-slate-900 rounded-xl text-slate-800 dark:text-slate-100"
-                              />
-                            </div>
-
-                            {/* Type-Specific Fields */}
-                            {q.type === "multipleChoice" && (
-                              <div className="space-y-3">
-                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select correct answer)</label>
-                                {q.options.map((opt, optIdx) => (
-                                  <div key={optIdx} className="flex items-center space-x-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => updateTaskQuestion(q.id, "correctOptionIndex", optIdx)}
-                                      className={`flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer ${
-                                        q.correctOptionIndex === optIdx
-                                          ? "border-emerald-500 bg-emerald-500"
-                                          : "border-slate-300 dark:border-slate-600 hover:border-brand-400"
-                                      }`}
-                                    >
-                                      {q.correctOptionIndex === optIdx && <Check className="h-3 w-3 text-white" />}
-                                    </button>
-                                    <input
-                                      type="text"
-                                      value={opt}
-                                      onChange={(e) => updateTaskOption(q.id, optIdx, e.target.value)}
-                                      placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
-                                      className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                                    />
-                                    {q.options.length > 2 && (
-                                      <button onClick={() => removeTaskOption(q.id, optIdx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
-                                    )}
-                                  </div>
-                                ))}
-                                <button onClick={() => addTaskOption(q.id)} className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer">+ Add Option</button>
-                              </div>
-                            )}
-
-                            {q.type === "identification" && (
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Exact Correct Answer</label>
-                                <input
-                                  type="text"
-                                  value={q.correctAnswer}
-                                  onChange={(e) => updateTaskQuestion(q.id, "correctAnswer", e.target.value)}
-                                  placeholder="The answer that will be auto-graded (case-insensitive)"
-                                  className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                                />
-                              </div>
-                            )}
-
-                            {q.type === "vocabulary" && (
-                              <div className="space-y-3">
-                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Word / Definition Pairs</label>
-                                {q.vocabularyPairs.map((pair) => (
-                                  <div key={pair.id} className="flex items-center space-x-2">
-                                    <input
-                                      type="text"
-                                      value={pair.word}
-                                      onChange={(e) => updateTaskVocabPair(q.id, pair.id, "word", e.target.value)}
-                                      placeholder="Word"
-                                      className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                                    />
-                                    <span className="text-slate-400 text-xs font-bold">→</span>
-                                    <input
-                                      type="text"
-                                      value={pair.definition}
-                                      onChange={(e) => updateTaskVocabPair(q.id, pair.id, "definition", e.target.value)}
-                                      placeholder="Definition"
-                                      className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                                    />
-                                    {q.vocabularyPairs.length > 1 && (
-                                      <button onClick={() => removeTaskVocabPair(q.id, pair.id)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
-                                    )}
-                                  </div>
-                                ))}
-                                <button onClick={() => addTaskVocabPair(q.id)} className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer">+ Add Word Pair</button>
-                              </div>
-                            )}
-
-                            {q.type === "essay" && (
-                              <div className="space-y-3">
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Grading Rubric / Answer Key Notes</label>
-                                  <textarea
-                                    rows={2}
-                                    value={q.rubric}
-                                    onChange={(e) => updateTaskQuestion(q.id, "rubric", e.target.value)}
-                                    placeholder="Enter rubric or sample answer to assist manual grading..."
-                                    className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                                  />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                  {/* Right Column: Sticky Floating Builder Toolbar */}
+                  <div className="md:sticky md:top-24 w-full md:w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-lg space-y-3 shrink-0 z-30">
+                    <div className="flex items-center space-x-1.5 pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <Sparkles className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+                      <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider font-heading">
+                        Builder Tools
+                      </span>
                     </div>
-                  )}
-                </div>
 
-                {/* Right Column: Sticky Floating Builder Toolbar */}
-                <div className="md:sticky md:top-24 w-full md:w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-lg space-y-3 shrink-0 z-30">
-                  <div className="flex items-center space-x-1.5 pb-2 border-b border-slate-100 dark:border-slate-800">
-                    <Sparkles className="h-4 w-4 text-brand-600 dark:text-brand-400" />
-                    <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider font-heading">
-                      Builder Tools
-                    </span>
-                  </div>
+                    <div className="flex flex-col gap-2">
+                      <button onClick={() => addTaskQuestion("multipleChoice")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 transition-colors cursor-pointer w-full">
+                        <Plus className="h-3.5 w-3.5" /><span>Multiple Choice</span>
+                      </button>
+                      <button onClick={() => addTaskQuestion("identification")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 transition-colors cursor-pointer w-full">
+                        <Plus className="h-3.5 w-3.5" /><span>Identification</span>
+                      </button>
+                      <button onClick={() => addTaskQuestion("vocabulary")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer w-full">
+                        <Plus className="h-3.5 w-3.5" /><span>Vocabulary Match</span>
+                      </button>
+                      <button onClick={() => addTaskQuestion("essay")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 transition-colors cursor-pointer w-full">
+                        <Plus className="h-3.5 w-3.5" /><span>Essay</span>
+                      </button>
 
-                  <div className="flex flex-col gap-2">
-                    <button onClick={() => addTaskQuestion("multipleChoice")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 transition-colors cursor-pointer w-full">
-                      <Plus className="h-3.5 w-3.5" /><span>Multiple Choice</span>
-                    </button>
-                    <button onClick={() => addTaskQuestion("identification")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 transition-colors cursor-pointer w-full">
-                      <Plus className="h-3.5 w-3.5" /><span>Identification</span>
-                    </button>
-                    <button onClick={() => addTaskQuestion("vocabulary")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer w-full">
-                      <Plus className="h-3.5 w-3.5" /><span>Vocabulary Match</span>
-                    </button>
-                    <button onClick={() => addTaskQuestion("essay")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 transition-colors cursor-pointer w-full">
-                      <Plus className="h-3.5 w-3.5" /><span>Essay</span>
-                    </button>
+                      <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
 
-                    <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
-
-                    <button onClick={() => addTaskQuestion("section")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 text-xs font-bold hover:bg-indigo-100 transition-colors cursor-pointer w-full">
-                      <FolderPlus className="h-3.5 w-3.5" /><span>+ Add Section</span>
-                    </button>
-                    <button onClick={() => addTaskQuestion("info")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer w-full">
-                      <Type className="h-3.5 w-3.5" /><span>+ Add Text Block</span>
-                    </button>
+                      <button onClick={() => addTaskQuestion("section")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 text-xs font-bold hover:bg-indigo-100 transition-colors cursor-pointer w-full">
+                        <FolderPlus className="h-3.5 w-3.5" /><span>+ Add Section</span>
+                      </button>
+                      <button onClick={() => addTaskQuestion("info")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer w-full">
+                        <Type className="h-3.5 w-3.5" /><span>+ Add Text Block</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
               {/* Publish Action Button */}
               <div className="flex justify-end pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -3923,9 +3715,9 @@ export default function ClassDashboard() {
 
                           {/* WW Sub-headers */}
                           {(wwItems || []).map((item, idx) => (
-                            <th key={`ww-head-${idx}`} className="p-2.5 text-center min-w-[110px] bg-blue-50/50 dark:bg-blue-950/20">
+                            <th key={`ww-head-${item.id || idx}`} className="p-2.5 text-center min-w-[110px] bg-blue-50/50 dark:bg-blue-950/20">
                               <span className="block truncate max-w-[120px]" title={item.title}>{item.title}</span>
-                              <span className="text-[9px] text-blue-600 dark:text-blue-400 font-extrabold">({item.maxScore} pts)</span>
+                              <span className="text-[9px] text-blue-600 dark:text-blue-400 font-extrabold">({Number(item.maxScore)} PTS)</span>
                             </th>
                           ))}
                           {(wwItems || []).length === 0 && <th className="p-2.5 text-center italic text-slate-400 bg-blue-50/30">No WW Items</th>}
@@ -3934,9 +3726,9 @@ export default function ClassDashboard() {
 
                           {/* PT Sub-headers */}
                           {(ptItems || []).map((item, idx) => (
-                            <th key={`pt-head-${idx}`} className="p-2.5 text-center min-w-[110px] bg-purple-50/50 dark:bg-purple-950/20">
+                            <th key={`pt-head-${item.id || idx}`} className="p-2.5 text-center min-w-[110px] bg-purple-50/50 dark:bg-purple-950/20">
                               <span className="block truncate max-w-[120px]" title={item.title}>{item.title}</span>
-                              <span className="text-[9px] text-purple-600 dark:text-purple-400 font-extrabold">({item.maxScore} pts)</span>
+                              <span className="text-[9px] text-purple-600 dark:text-purple-400 font-extrabold">({Number(item.maxScore)} PTS)</span>
                             </th>
                           ))}
                           <th className="p-2.5 text-center bg-purple-50/50 dark:bg-purple-950/20 min-w-[100px] text-amber-600 dark:text-amber-400">VOCABULARY</th>
@@ -3946,9 +3738,9 @@ export default function ClassDashboard() {
 
                           {/* QA Sub-headers */}
                           {(qaItems || []).map((item, idx) => (
-                            <th key={`qa-head-${idx}`} className="p-2.5 text-center min-w-[110px] bg-teal-50/50 dark:bg-teal-950/20">
+                            <th key={`qa-head-${item.id || idx}`} className="p-2.5 text-center min-w-[110px] bg-teal-50/50 dark:bg-teal-950/20">
                               <span className="block truncate max-w-[120px]" title={item.title}>{item.title}</span>
-                              <span className="text-[9px] text-teal-600 dark:text-teal-400 font-extrabold">({item.maxScore} pts)</span>
+                              <span className="text-[9px] text-teal-600 dark:text-teal-400 font-extrabold">({Number(item.maxScore)} PTS)</span>
                             </th>
                           ))}
                           {(qaItems || []).length === 0 && <th className="p-2.5 text-center italic text-slate-400 bg-teal-50/30">No QA Exam</th>}
@@ -3967,8 +3759,8 @@ export default function ClassDashboard() {
                           let totalWWMax = 0;
                           (wwItems || []).forEach(item => {
                             const score = getStudentScoreForItem(student, item);
-                            studentWWPoints += score;
-                            totalWWMax += item.maxScore;
+                            studentWWPoints += Number(score) || 0;
+                            totalWWMax += Number(item.maxScore) || 0;
                           });
                           const wwPct = totalWWMax > 0 ? ((studentWWPoints / totalWWMax) * 100) : 100;
 
@@ -3976,8 +3768,8 @@ export default function ClassDashboard() {
                           let totalPTMax = 0;
                           (ptItems || []).forEach(item => {
                             const score = getStudentScoreForItem(student, item);
-                            studentPTPoints += score;
-                            totalPTMax += item.maxScore;
+                            studentPTPoints += Number(score) || 0;
+                            totalPTMax += Number(item.maxScore) || 0;
                           });
                           const { vocabPct, diaryPct } = getStudentVocabAndDiaryPcts(student);
                           const ptPct = getStudentPTPct(student);
@@ -3986,8 +3778,8 @@ export default function ClassDashboard() {
                           let totalQAMax = 0;
                           (qaItems || []).forEach(item => {
                             const score = getStudentScoreForItem(student, item);
-                            studentQAPoints += score;
-                            totalQAMax += item.maxScore;
+                            studentQAPoints += Number(score) || 0;
+                            totalQAMax += Number(item.maxScore) || 0;
                           });
                           const qaPct = totalQAMax > 0 ? ((studentQAPoints / totalQAMax) * 100) : 100;
 
@@ -4187,9 +3979,8 @@ export default function ClassDashboard() {
                 </div>
               </div>
 
-              <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${
-                selectedQuizSub.status === "graded" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
-              }`}>
+              <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${selectedQuizSub.status === "graded" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
+                }`}>
                 {selectedQuizSub.status}
               </span>
             </div>
@@ -4383,16 +4174,15 @@ export default function ClassDashboard() {
                         const isSelected = selectedStudentId === (s.id || s.uid);
 
                         return (
-                          <div 
+                          <div
                             key={s.id || s.uid}
                             onClick={() => !isEnrolled && setSelectedStudentId(s.id || s.uid)}
-                            className={`p-3 rounded-xl border flex items-center justify-between transition-all ${
-                              isEnrolled
+                            className={`p-3 rounded-xl border flex items-center justify-between transition-all ${isEnrolled
                                 ? "bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50 opacity-60 cursor-not-allowed"
                                 : isSelected
-                                ? "bg-brand-50 dark:bg-brand-900/30 border-brand-300 dark:border-brand-700 cursor-pointer"
-                                : "bg-white dark:bg-slate-800/80 border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/40 cursor-pointer"
-                            }`}
+                                  ? "bg-brand-50 dark:bg-brand-900/30 border-brand-300 dark:border-brand-700 cursor-pointer"
+                                  : "bg-white dark:bg-slate-800/80 border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/40 cursor-pointer"
+                              }`}
                           >
                             <div>
                               <div className="font-bold text-xs text-slate-800 dark:text-slate-100">{formatStudentName(s)}</div>
@@ -4410,13 +4200,12 @@ export default function ClassDashboard() {
                                   setSelectedStudentId(s.id || s.uid);
                                 }
                               }}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${
-                                isEnrolled
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none ${isEnrolled
                                   ? "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700"
                                   : isSelected
-                                  ? "bg-brand-600 text-white shadow-sm"
-                                  : "bg-slate-900 dark:bg-brand-600 text-white hover:bg-brand-700"
-                              }`}
+                                    ? "bg-brand-600 text-white shadow-sm"
+                                    : "bg-slate-900 dark:bg-brand-600 text-white hover:bg-brand-700"
+                                }`}
                             >
                               {isEnrolled ? "Enrolled ✅" : "Enroll"}
                             </button>
@@ -4462,239 +4251,366 @@ export default function ClassDashboard() {
         </div>
       )}
 
-      {/* ── Teacher Exam Review & Manual Grading Modal ── */}
-      {isGradingExamModalOpen && selectedExamSubmission && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="relative w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto">
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-between shrink-0">
+      {/* MODAL 1: Add Exam Scope Modal */}
+      {isAddExamScopeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-6 transition-all my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 font-heading">
-                  Exam Review & Manual Grading
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
+                  {editingExamScope ? "Edit Exam Scope & Guidelines" : "+ Add Exam Scope & Guidelines"}
                 </h3>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  Student: <span className="font-bold text-slate-700 dark:text-slate-300">{selectedExamSubmission.studentName}</span> • Exam: <span className="font-bold text-slate-700 dark:text-slate-300">{selectedExamSubmission.examTitle || "Exam"}</span>
+                  {editingExamScope ? "Update assessment topics, max score, or instructions for students." : "Publish assessment topics and study scope for students. You can add a Google Form link now or later."}
                 </p>
               </div>
               <button
-                onClick={() => {
-                  setIsGradingExamModalOpen(false);
-                  setSelectedExamSubmission(null);
-                }}
+                onClick={() => setIsAddExamScopeModalOpen(false)}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Modal Sub-Header Stats Bar */}
-            <div className="px-6 py-3 bg-brand-50/50 dark:bg-brand-900/20 border-b border-brand-100/50 dark:border-brand-800/50 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
-              <div className="flex items-center space-x-4">
+            <div className="space-y-4">
+              {/* Exam Title */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                  Exam Title / Topic *
+                </label>
+                <input
+                  type="text"
+                  value={scopeTitle}
+                  onChange={(e) => setScopeTitle(e.target.value)}
+                  placeholder="e.g., 1st Periodical Examination — English & Reading"
+                  className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                />
+              </div>
+
+              {/* Quarter, Category, Max Score */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">Auto Obj Score:</span>{" "}
-                  <span className="font-bold text-brand-700 dark:text-brand-300">{selectedExamSubmission.objScore || 0} pts</span>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    Quarter *
+                  </label>
+                  <select
+                    value={scopeQuarter}
+                    onChange={(e) => setScopeQuarter(e.target.value)}
+                    className="w-full text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  >
+                    <option value="1st Quarter">1st Quarter</option>
+                    <option value="2nd Quarter">2nd Quarter</option>
+                    <option value="3rd Quarter">3rd Quarter</option>
+                    <option value="4th Quarter">4th Quarter</option>
+                  </select>
                 </div>
+
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">Manual Subj Score:</span>{" "}
-                  <span className="font-bold text-amber-600 dark:text-amber-400">
-                    {Object.values(manualSubjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} pts
-                  </span>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    Category *
+                  </label>
+                  <select
+                    value={scopeCategory}
+                    onChange={(e) => setScopeCategory(e.target.value)}
+                    className="w-full text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  >
+                    <option value="1st Monthly Exam">1st Monthly Exam</option>
+                    <option value="2nd Monthly Exam">2nd Monthly Exam</option>
+                    <option value="3rd Monthly Exam">3rd Monthly Exam</option>
+                    <option value="4th Monthly Exam">4th Monthly Exam</option>
+                    <option value="5th Monthly Exam">5th Monthly Exam</option>
+                    <option value="6th Monthly Exam">6th Monthly Exam</option>
+                    <option value="7th Monthly Exam">7th Monthly Exam</option>
+                    <option value="1st Quarterly Exam">1st Quarterly Exam</option>
+                    <option value="2nd Quarterly Exam">2nd Quarterly Exam</option>
+                    <option value="3rd Quarterly Exam">3rd Quarterly Exam</option>
+                    <option value="4th Quarterly Exam">4th Quarterly Exam</option>
+                  </select>
                 </div>
+
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">Total Score:</span>{" "}
-                  <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
-                    {(selectedExamSubmission.objScore || 0) + Object.values(manualSubjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} / {selectedExamSubmission.totalPoints || selectedExamSubmission.maxObjPoints || 0} pts
-                  </span>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    Max Score *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={scopeMaxScore}
+                    onChange={(e) => setScopeMaxScore(e.target.value)}
+                    className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  />
                 </div>
               </div>
 
-              <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${
-                selectedExamSubmission.status === "Graded" ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300" : "bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
-              }`}>
-                {selectedExamSubmission.status}
-              </span>
+              {/* Google Form URL */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                  Google Form URL (Optional — can be added later)
+                </label>
+                <input
+                  type="url"
+                  value={scopeGoogleFormUrl}
+                  onChange={(e) => setScopeGoogleFormUrl(e.target.value)}
+                  placeholder="https://docs.google.com/forms/d/e/..."
+                  className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors font-mono"
+                />
+              </div>
+
+              {/* Scope Rich Text Editor */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                  Exam Scope & Coverage / Instructions (Rich Text)
+                </label>
+                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden">
+                  <ReactQuill
+                    theme="snow"
+                    value={scopeText}
+                    onChange={setScopeText}
+                    modules={quillModules}
+                    placeholder="Enter coverage, coverage topics, reviewer guidelines, or test instructions..."
+                    className="text-slate-800 dark:text-slate-100 min-h-[140px]"
+                  />
+                </div>
+              </div>
             </div>
 
-            {/* Modal Scrollable Answers Body */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1">
-              {(() => {
-                const targetExam = exams.find(e => e.firestoreId === selectedExamSubmission.examId || e.id === selectedExamSubmission.examId);
-                const questions = targetExam?.questions || [];
-                const studentAnswers = selectedExamSubmission.answers || {};
-
-                if (questions.length === 0) {
-                  return (
-                    <div className="py-8 text-center text-slate-400 text-xs italic">
-                      Question structure not available for this exam.
-                    </div>
-                  );
-                }
-
-                return questions.map((q, idx) => {
-                  const pts = Number(q.points) || 1;
-                  const isSubjective = q.type === "essay" || q.type === "vocabulary";
-
-                  return (
-                    <div key={q.id || idx} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
-                      {/* Question Header */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <span className="h-6 w-6 rounded-lg bg-slate-200 dark:bg-slate-700 text-xs font-black flex items-center justify-center text-slate-700 dark:text-slate-200">
-                            {idx + 1}
-                          </span>
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
-                            {q.type}
-                          </span>
-                        </div>
-                        <span className="text-xs font-bold text-slate-400 dark:text-slate-500">
-                          Max Points: {pts}
-                        </span>
-                      </div>
-
-                      {/* Question Prompt */}
-                      <div className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                        {q.text}
-                      </div>
-
-                      {/* MULTIPLE CHOICE / IDENTIFICATION ANSWER REVIEW */}
-                      {!isSubjective && (
-                        <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
-                          <div>
-                            <span className="text-slate-400 font-bold">Student's Answer: </span>
-                            <span className="font-extrabold text-slate-800 dark:text-slate-200">
-                              {q.type === "multipleChoice"
-                                ? (q.options ? q.options[studentAnswers[q.id]] || `Option ${String.fromCharCode(65 + Number(studentAnswers[q.id]))}` : studentAnswers[q.id])
-                                : (studentAnswers[q.id] || "No answer provided")}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-slate-400 font-bold">Correct Answer: </span>
-                            <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
-                              {q.type === "multipleChoice"
-                                ? (q.options ? q.options[q.correctOptionIndex] || `Option ${String.fromCharCode(65 + Number(q.correctOptionIndex))}` : q.correctOptionIndex)
-                                : q.correctAnswer}
-                            </span>
-                          </div>
-                          <div className="pt-1 flex items-center space-x-1.5 text-[11px] font-bold">
-                            {(() => {
-                              let isCorrect = false;
-                              if (q.type === "multipleChoice") {
-                                isCorrect = Number(studentAnswers[q.id]) === Number(q.correctOptionIndex);
-                              } else {
-                                isCorrect = (studentAnswers[q.id] || "").toString().trim().toLowerCase() === (q.correctAnswer || "").toString().trim().toLowerCase();
-                              }
-                              return isCorrect ? (
-                                <span className="text-emerald-600 dark:text-emerald-400 inline-flex items-center space-x-1">
-                                  <CheckCircle className="h-3.5 w-3.5" />
-                                  <span>Auto-Graded: Correct (+{pts} pts)</span>
-                                </span>
-                              ) : (
-                                <span className="text-red-500 dark:text-red-400 inline-flex items-center space-x-1">
-                                  <X className="h-3.5 w-3.5" />
-                                  <span>Auto-Graded: Incorrect (0 pts)</span>
-                                </span>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* ESSAY ANSWER REVIEW & MANUAL SCORING */}
-                      {q.type === "essay" && (
-                        <div className="space-y-3 pt-1">
-                          <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Student Essay Response</span>
-                            {studentAnswers[q.id] || <span className="text-slate-400 italic">No response submitted.</span>}
-                          </div>
-
-                          {q.rubric && (
-                            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/40 text-xs text-amber-800 dark:text-amber-300">
-                              <span className="font-bold">Grading Rubric / Reference: </span>"{q.rubric}"
-                            </div>
-                          )}
-
-                          {/* Manual Point Selector */}
-                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              Award Points (Max: {pts} pts):
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              max={pts}
-                              value={manualSubjScores[q.id] ?? 0}
-                              onChange={(e) => {
-                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
-                                setManualSubjScores(prev => ({ ...prev, [q.id]: val }));
-                              }}
-                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* VOCABULARY ANSWER REVIEW & MANUAL SCORING */}
-                      {q.type === "vocabulary" && (
-                        <div className="space-y-3 pt-1">
-                          <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
-                            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Submitted Word Definitions</span>
-                            {(q.vocabularyPairs || []).map((pair) => {
-                              const userAns = (studentAnswers[q.id] || {})[pair.id] || "—";
-                              return (
-                                <div key={pair.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg bg-slate-50 dark:bg-slate-900">
-                                  <span className="font-bold text-amber-700 dark:text-amber-400">{pair.word}:</span>
-                                  <span className="font-semibold text-slate-800 dark:text-slate-200">"{userAns}"</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-
-                          {/* Manual Point Selector */}
-                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              Award Vocabulary Points (Max: {pts} pts):
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              max={pts}
-                              value={manualSubjScores[q.id] ?? 0}
-                              onChange={(e) => {
-                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
-                                setManualSubjScores(prev => ({ ...prev, [q.id]: val }));
-                              }}
-                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-end space-x-3 shrink-0">
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end space-x-3 border-t border-slate-100 dark:border-slate-800 pt-4">
               <button
                 type="button"
-                onClick={() => {
-                  setIsGradingExamModalOpen(false);
-                  setSelectedExamSubmission(null);
-                }}
-                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                onClick={() => setIsAddExamScopeModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleFinalizeExamGrade}
-                disabled={isSavingExamGrade}
-                className="inline-flex items-center space-x-2 px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                onClick={handleSaveExamScope}
+                disabled={isSavingScope}
+                className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
               >
                 <CheckCircle className="h-4 w-4" />
-                <span>{isSavingExamGrade ? "Saving Grade..." : "Finalize & Save Grade"}</span>
+                <span>{isSavingScope ? "Saving..." : (editingExamScope ? "Update Exam Scope" : "Publish Exam Scope")}</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: Add/Edit Google Form Link Modal */}
+      {editingExamLink && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 font-heading">
+                Google Form Link
+              </h3>
+              <button
+                onClick={() => setEditingExamLink(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Attach or update the Google Form URL for <strong className="text-slate-700 dark:text-slate-200">{editingExamLink.title}</strong>:
+            </p>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                Google Form URL
+              </label>
+              <input
+                type="url"
+                value={editFormUrlInput}
+                onChange={(e) => setEditFormUrlInput(e.target.value)}
+                placeholder="https://docs.google.com/forms/d/e/..."
+                className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors font-mono"
+              />
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setEditingExamLink(null)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveExamLink}
+                disabled={isSavingExamLink}
+                className="inline-flex items-center space-x-1.5 px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+              >
+                <Check className="h-4 w-4" />
+                <span>{isSavingExamLink ? "Saving..." : "Save Link"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: Rapid 'Input Scores' Spreadsheet Modal */}
+      {isInputScoresModalOpen && selectedExamForScores && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-3xl w-full p-6 shadow-2xl space-y-5 transition-all my-8 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 shrink-0">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <FileSpreadsheet className="h-5 w-5 text-brand-600 dark:text-brand-400" />
+                  <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
+                    Rapid Score Entry — {selectedExamForScores.title}
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  Enter student scores out of <strong className="text-brand-600 dark:text-brand-400 font-mono">{selectedExamForScores.maxScore || 100} pts</strong>. Scores save directly into E-Class Record.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsInputScoresModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Roster Search Filter */}
+            <div className="flex items-center justify-between shrink-0 gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={scoresSearchQuery}
+                  onChange={(e) => setScoresSearchQuery(e.target.value)}
+                  placeholder="Filter student by name..."
+                  className="w-full pl-9 pr-4 py-2 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                />
+              </div>
+
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 shrink-0">
+                Total Enrolled: <strong className="text-slate-800 dark:text-slate-200">{classStudents.length} Students</strong>
+              </div>
+            </div>
+
+            {/* Spreadsheet Table Body */}
+            <div className="overflow-y-auto border border-slate-100 dark:border-slate-800 rounded-2xl flex-1">
+              <table className="w-full border-collapse text-left">
+                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider z-10">
+                  <tr>
+                    <th className="px-5 py-3">#</th>
+                    <th className="px-5 py-3">Student Name</th>
+                    <th className="px-5 py-3 text-center">Score Input (Max: {selectedExamForScores.maxScore || 100})</th>
+                    <th className="px-5 py-3 text-center">Percentage</th>
+                    <th className="px-5 py-3 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200">
+                  {classStudents
+                    .filter(st => {
+                      if (!scoresSearchQuery.trim()) return true;
+                      const sName = formatStudentName(st).toLowerCase();
+                      return sName.includes(scoresSearchQuery.toLowerCase());
+                    })
+                    .map((st, sIdx) => {
+                      const stId = st.uid || st.id;
+                      const currentVal = scoreInputs[stId] ?? "";
+                      const numVal = Number(currentVal);
+                      const maxSc = Number(selectedExamForScores.maxScore || 100);
+                      const pct = currentVal !== "" && !isNaN(numVal) ? Math.min(100, Math.round((numVal / maxSc) * 100)) : null;
+
+                      return (
+                        <tr key={stId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                          <td className="px-5 py-3 font-mono text-[11px] text-slate-400 font-bold">
+                            {sIdx + 1}
+                          </td>
+                          <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">
+                            {formatStudentName(st)}
+                          </td>
+                          <td className="px-5 py-3 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              max={maxSc}
+                              value={currentVal}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setScoreInputs(prev => ({ ...prev, [stId]: val }));
+                              }}
+                              placeholder="0"
+                              className="w-24 text-center text-xs font-bold font-mono border border-slate-200 dark:border-slate-700 rounded-xl py-1.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all"
+                            />
+                          </td>
+                          <td className="px-5 py-3 text-center font-mono font-semibold">
+                            {pct !== null ? (
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${pct >= 75 ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                                  pct >= 50 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                                    "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                }`}>
+                                {pct}%
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 dark:text-slate-600">—</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            {currentVal !== "" ? (
+                              <div className="flex items-center justify-end space-x-2">
+                                <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                  <CheckCircle className="h-3 w-3" />
+                                  <span>Graded</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setScoreInputs(prev => ({ ...prev, [stId]: "" }))}
+                                  title="Unsubmit / Clear Score"
+                                  className="text-[10px] font-bold text-slate-400 hover:text-red-500 underline cursor-pointer"
+                                >
+                                  Unsubmit
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-slate-400">
+                                Pending
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4 shrink-0">
+              <div className="text-xs font-semibold text-slate-500 dark:border-slate-400">
+                <span className="font-bold text-brand-600 dark:text-brand-400">
+                  {Object.values(scoreInputs).filter(v => v !== "" && v !== null && v !== undefined).length}
+                </span>{" "}
+                of {classStudents.length} Students Graded
+              </div>
+
+              <div className="flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setIsInputScoresModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAllScores}
+                  disabled={isSavingScores}
+                  className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  <span>{isSavingScores ? "Saving Scores..." : "Save All Scores"}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

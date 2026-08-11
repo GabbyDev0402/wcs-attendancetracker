@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot, addDoc } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
 import { formatStudentName } from "../utils/helpers";
 import { 
   ArrowLeft,
@@ -21,6 +21,8 @@ import {
   FolderKanban,
   ExternalLink
 } from "lucide-react";
+
+const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
 
 export default function StudentClassDashboard() {
   const { classId: rawClassParam } = useParams();
@@ -48,10 +50,13 @@ export default function StudentClassDashboard() {
   const [vocabSuccessMsg, setVocabSuccessMsg] = useState({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // Exams State (Tab 2)
+  // Exams State (Tab 4)
   const [examsList, setExamsList] = useState([]);
   const [examSubmissionsMap, setExamSubmissionsMap] = useState({});
-  const [isExamsLoading, setIsExamsLoading] = useState(false);
+  const [examSubmissionsList, setExamSubmissionsList] = useState([]);
+  const [isExamsLoading, setIsExamsLoading] = useState(true);
+  const [isSubmittingExam, setIsSubmittingExam] = useState({});
+  const [examMarkSuccess, setExamMarkSuccess] = useState({});
 
   // Tasks State (Tab 3)
   const [tasksList, setTasksList] = useState([]);
@@ -134,50 +139,93 @@ export default function StudentClassDashboard() {
       setIsLoading(false);
     });
 
-    loadExamsData();
+    // 3. Real-time Exams Listener
+    const unsubExams = onSnapshot(collection(db, "exams"), (examsSnap) => {
+      const allExams = examsSnap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
+      const relevantExams = allExams.filter((ex) => {
+        const isPublished = ex.status === "published";
+        const matchesClassTag = ex.classId === targetClassTag || ex.classId === extractedClassId;
+        const matchesTeacher = extractedTeacherId ? (ex.teacherId === extractedTeacherId) : true;
+        return isPublished && (matchesClassTag || matchesTeacher);
+      });
+
+      relevantExams.sort((a, b) => {
+        const timeA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const timeB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return timeB - timeA;
+      });
+
+      setExamsList(relevantExams);
+      setIsExamsLoading(false);
+    }, (e) => {
+      console.error("Error listening to exams:", e);
+      setIsExamsLoading(false);
+    });
+
+    // 4. Real-time Exam Submissions Listener for Student
+    const studentUid = user?.id || user?.uid;
+    const examSubQuery = query(
+      collection(db, "exam_submissions"),
+      where("studentId", "==", studentUid)
+    );
+
+    const unsubExamSubs = onSnapshot(examSubQuery, (subSnap) => {
+      const list = subSnap.docs.map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }));
+      setExamSubmissionsList(list);
+
+      const subsMap = {};
+      list.forEach((data) => {
+        if (data.examId) {
+          subsMap[data.examId] = data;
+        }
+      });
+      setExamSubmissionsMap(subsMap);
+    }, (e) => {
+      console.error("Error listening to exam submissions:", e);
+    });
+
     loadTasksData();
 
     return () => {
       unsubSessions();
       unsubSubmissions();
+      unsubExams();
+      unsubExamSubs();
     };
   }, [user, targetClassTag]);
 
-  // Load Published Exams & Student Submissions for this classroom
-  const loadExamsData = async () => {
-    if (!user || !targetClassTag) return;
-    setIsExamsLoading(true);
+  // Mark Exam as Completed (Turned In) Handler
+  const handleMarkExamCompleted = async (exam) => {
+    if (!user || !exam) return;
+    const studentUid = user.id || user.uid;
+    const examDocId = exam.firestoreId || exam.id;
+    const subDocId = `${studentUid}_${examDocId}`;
+
+    setIsSubmittingExam(prev => ({ ...prev, [examDocId]: true }));
     try {
-      const examsSnap = await getDocs(collection(db, "exams"));
-      const allExams = examsSnap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
+      const studentName = user.internationalName || formatStudentName(user) || user.fullName || "Student";
+      const payload = {
+        examId: examDocId,
+        classId: targetClassTag,
+        studentId: studentUid,
+        studentName: studentName,
+        status: "turned_in",
+        objScore: 0,
+        subjScore: 0,
+        maxScore: Number(exam.maxScore) || 100,
+        academicYear: CURRENT_ACADEMIC_YEAR,
+        submittedAt: serverTimestamp()
+      };
 
-      const relevantExams = allExams.filter((ex) => {
-        const isPublished = ex.status === "published";
-        const matchesClassTag = ex.classId === targetClassTag || ex.classId === extractedClassId;
-        const matchesTeacher = extractedTeacherId ? (ex.teacherId === extractedTeacherId) : true;
-        return isPublished && matchesClassTag && matchesTeacher;
-      });
-
-      setExamsList(relevantExams);
-
-      // Fetch student submissions for these exams
-      const subSnap = await getDocs(
-        query(collection(db, "exam_submissions"), where("studentId", "==", user.id))
-      );
-
-      const subsMap = {};
-      subSnap.docs.forEach((doc) => {
-        const data = doc.data();
-        if (data.examId) {
-          subsMap[data.examId] = data;
-        }
-      });
-
-      setExamSubmissionsMap(subsMap);
-    } catch (e) {
-      console.error("Error loading exams in student portal:", e);
+      await setDoc(doc(db, "exam_submissions", subDocId), payload, { merge: true });
+      setExamMarkSuccess(prev => ({ ...prev, [examDocId]: true }));
+      setTimeout(() => {
+        setExamMarkSuccess(prev => ({ ...prev, [examDocId]: false }));
+      }, 3000);
+    } catch (err) {
+      alert("Failed to mark exam as completed: " + err.message);
     } finally {
-      setIsExamsLoading(false);
+      setIsSubmittingExam(prev => ({ ...prev, [examDocId]: false }));
     }
   };
 
@@ -748,8 +796,10 @@ export default function StudentClassDashboard() {
           </div>
         </div>
       )}
+      {/* TAB 4: EXAMS & ASSESSMENTS VIEW */}
       {activeTab === "exams" && (
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
+          {/* Header */}
           <div className="border-b border-slate-100 dark:border-slate-800 pb-4 flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-2xl">
@@ -760,7 +810,7 @@ export default function StudentClassDashboard() {
                   Exams & Assessments
                 </h2>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  Take active exams assigned for {displayTitle} and view your past test results.
+                  Review exam scopes & study guidelines, access Google Forms, and track test scores for {displayTitle}.
                 </p>
               </div>
             </div>
@@ -771,71 +821,111 @@ export default function StudentClassDashboard() {
           ) : examsList.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {examsList.map((ex) => {
-                const sub = examSubmissionsMap[ex.firestoreId];
-                const isSubmitted = !!sub;
+                const examDocId = ex.firestoreId || ex.id;
+                const mySubmission = examSubmissionsMap[examDocId] || examSubmissionsMap[ex.id];
+                const isSubmitted = !!mySubmission;
+                const isGraded = mySubmission?.status === "graded" || mySubmission?.status === "Graded";
+                const isTurnedIn = mySubmission?.status === "turned_in" || mySubmission?.status === "Turned In" || (isSubmitted && !isGraded);
+                const isSubmitting = isSubmittingExam[examDocId];
+                const isSuccess = examMarkSuccess[examDocId];
 
                 return (
                   <div
-                    key={ex.firestoreId}
-                    className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs flex flex-col justify-between space-y-4 transition-colors"
+                    key={examDocId}
+                    className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs flex flex-col justify-between space-y-4 transition-colors"
                   >
-                    <div className="space-y-2">
+                    <div className="space-y-3">
+                      {/* Card Top Header */}
                       <div className="flex items-start justify-between gap-2">
-                        <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                          {ex.title}
-                        </h3>
-                        {isSubmitted ? (
-                          <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 ${
-                            sub.status === "Graded"
-                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
-                              : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800"
-                          }`}>
-                            {sub.status === "Graded" ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
-                            <span>{sub.status}</span>
+                        <div>
+                          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
+                            {ex.title}
+                          </h3>
+                          <div className="flex items-center space-x-2 mt-1">
+                            <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
+                              {ex.quarter || "1st Quarter"}
+                            </span>
+                            <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800">
+                              {ex.category || "Exam"}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Submission Status Badge */}
+                        {isGraded ? (
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            <span>✅ Graded</span>
+                          </span>
+                        ) : isTurnedIn ? (
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800">
+                            <Clock className="h-3.5 w-3.5" />
+                            <span>Submitted - Awaiting Grade</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                             <Clock className="h-3.5 w-3.5" />
-                            <span>Active</span>
+                            <span>Max Score: {ex.maxScore || 100} pts</span>
                           </span>
                         )}
                       </div>
 
-                      <div className="flex items-center space-x-4 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
-                        <span className="inline-flex items-center space-x-1">
-                          <Clock className="h-3.5 w-3.5 text-slate-400" />
-                          <span>{ex.timeLimit || 30} Mins</span>
-                        </span>
-                        <span className="inline-flex items-center space-x-1">
-                          <FileText className="h-3.5 w-3.5 text-slate-400" />
-                          <span>{(ex.questions || []).length} Questions</span>
-                        </span>
-                      </div>
+                      {/* Scope & Guidelines (Rich Text) */}
+                      {ex.scopeText && (
+                        <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 max-h-36 overflow-y-auto">
+                          <div 
+                            className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 whitespace-normal break-normal text-slate-800 dark:text-slate-100 text-xs font-medium"
+                            style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
+                            dangerouslySetInnerHTML={{ __html: (ex.scopeText || "").replace(/&nbsp;/g, ' ') }} 
+                          />
+                        </div>
+                      )}
+
+                      {/* Toast / Feedback Banner */}
+                      {isSuccess && (
+                        <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-800 flex items-center space-x-1.5">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          <span>Exam marked as completed!</span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                      {isSubmitted ? (
+                    {/* Action Area */}
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                      {isGraded ? (
                         <div className="flex items-center justify-between w-full">
-                          <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                            Score: <span className="font-extrabold text-brand-600 dark:text-brand-400">{sub.objScore} / {sub.totalPoints || sub.maxObjPoints} pts</span>
+                          <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                            Final Score:
                           </div>
-                          <button
-                            disabled={true}
-                            className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold cursor-not-allowed opacity-75"
-                          >
-                            Submitted ✅
-                          </button>
+                          <div className="text-sm font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+                            Score: {mySubmission.objScore} / {ex.maxScore || 100} pts
+                          </div>
+                        </div>
+                      ) : isTurnedIn ? (
+                        <div className="flex items-center justify-between w-full text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          <span>Status: Turned In</span>
+                          <span className="font-bold text-amber-600 dark:text-amber-400">Awaiting Teacher Grade</span>
                         </div>
                       ) : (
-                        <div className="flex items-center justify-between w-full">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                            Status: Not Started
-                          </span>
+                        <div className="flex items-center justify-end space-x-2 w-full">
+                          {ex.googleFormUrl && (
+                            <a
+                              href={ex.googleFormUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors"
+                            >
+                              <span>Open Exam (Google Forms)</span>
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
                           <button
-                            onClick={() => navigate(`/student/class/${encodeURIComponent(targetClassTag)}/exam/${ex.firestoreId}`)}
-                            className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                            onClick={() => handleMarkExamCompleted(ex)}
+                            disabled={isSubmitting}
+                            className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
                           >
-                            <span>Start Exam ➔</span>
+                            <CheckCircle className="h-4 w-4" />
+                            <span>{isSubmitting ? "Marking..." : "Mark as Completed"}</span>
                           </button>
                         </div>
                       )}
@@ -848,7 +938,7 @@ export default function StudentClassDashboard() {
             <div className="py-12 text-center space-y-2">
               <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
               <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Active Exams</p>
-              <p className="text-xs text-slate-400">There are no published exams currently assigned to this classroom portal.</p>
+              <p className="text-xs text-slate-400">No active exams assigned for this class.</p>
             </div>
           )}
         </div>

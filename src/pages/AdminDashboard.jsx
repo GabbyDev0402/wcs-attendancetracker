@@ -29,7 +29,8 @@ import {
   ShieldCheck,
   ShieldAlert,
   Printer,
-  Settings
+  Settings,
+  Download
 } from "lucide-react";
 
 // Categorized options for Grade levels (Standard & ESL)
@@ -80,12 +81,83 @@ export default function AdminDashboard() {
   const [students, setStudents] = useState([]);
   const [stats, setStats] = useState({ totalTeachers: 0, totalClasses: 0, totalStudents: 0, unassignedStudents: 0 });
   
-  // Dashboard Tab State ("teachers" | "students" | "compliance")
+  // Dashboard Tab State ("teachers" | "students" | "compliance" | "academic")
   const [activeTab, setActiveTab] = useState("teachers");
 
   // Compliance Real-time Listeners State
   const [pendingVocabList, setPendingVocabList] = useState([]);
   const [pendingDiariesList, setPendingDiariesList] = useState([]);
+
+  // Institutional Academic Reports State (Tab 4)
+  const [academicExams, setAcademicExams] = useState([]);
+  const [academicExamSubs, setAcademicExamSubs] = useState([]);
+  const [isAcademicLoading, setIsAcademicLoading] = useState(false);
+  const [reportFilterGrade, setReportFilterGrade] = useState("All");
+  const [reportFilterCommunity, setReportFilterCommunity] = useState("All");
+  const [reportFilterQuarter, setReportFilterQuarter] = useState("All");
+  const [reportFilterExamName, setReportFilterExamName] = useState("All");
+  const [reportSearchQuery, setReportSearchQuery] = useState("");
+
+  useEffect(() => {
+    if (activeTab === "academic") {
+      loadAcademicData();
+    }
+  }, [activeTab]);
+
+  const loadAcademicData = async () => {
+    setIsAcademicLoading(true);
+    try {
+      const examsSnap = await getDocs(collection(db, "exams"));
+      const allExams = examsSnap.docs.map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }));
+
+      const subsSnap = await getDocs(collection(db, "exam_submissions"));
+      const gradedSubs = subsSnap.docs
+        .map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }))
+        .filter(s => s.status === "graded" || s.status === "Graded");
+
+      setAcademicExams(allExams);
+      setAcademicExamSubs(gradedSubs);
+    } catch (e) {
+      console.error("Error loading academic report data:", e);
+    } finally {
+      setIsAcademicLoading(false);
+    }
+  };
+
+  const handleExportAcademicReportCSV = () => {
+    if (filteredAcademicReports.length === 0) {
+      alert("No academic records available to export.");
+      return;
+    }
+
+    const headers = ["Student Name", "Student Code", "Grade Level", "Community", "Exam Title", "Quarter", "Subject / Class", "Score Earned", "Max Score", "Percentage (%)"];
+    
+    const rows = [headers.join(",")];
+    
+    filteredAcademicReports.forEach(item => {
+      rows.push([
+        `"${(item.studentName || 'Student').replace(/"/g, '""')}"`,
+        `"${(item.studentCode || '').replace(/"/g, '""')}"`,
+        `"${(item.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
+        `"${(item.community || 'Main').replace(/"/g, '""')}"`,
+        `"${(item.examTitle || 'Exam').replace(/"/g, '""')}"`,
+        `"${(item.quarter || '1st Quarter').replace(/"/g, '""')}"`,
+        `"${(item.subjectClass || 'General').replace(/"/g, '""')}"`,
+        item.earnedScore,
+        item.maxScore,
+        `"${item.percentage}%"`
+      ].join(","));
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Academic_Report_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   useEffect(() => {
     // Real-time listener for pending vocabularies
@@ -761,6 +833,81 @@ export default function AdminDashboard() {
 
   const unassignedStudentsList = students.filter(s => s.role === "student" && (!s.enrolledClasses || s.enrolledClasses.length === 0));
 
+  // Format clean class name (e.g. "uid_grade-8-math" -> "Grade 8")
+  const formatCleanClassName = (rawClassId) => {
+    if (!rawClassId) return "Classroom";
+    let slug = rawClassId.includes("_") ? rawClassId.split("_").pop() : rawClassId;
+    
+    const gradeMatch = slug.match(/grade-?\d+/i);
+    if (gradeMatch) {
+      const num = gradeMatch[0].match(/\d+/);
+      return num ? `Grade ${num[0]}` : "Grade Level";
+    }
+
+    const eslMatch = slug.match(/^(e|m|h)\d+/i);
+    if (eslMatch) {
+      return eslMatch[0].toUpperCase();
+    }
+
+    const clean = slug
+      .replace(/-(math|english|reading|science|social-science|history|filipino|mapeh|values)/gi, "")
+      .replace(/-/g, " ");
+    return clean.replace(/\b\w/g, l => l.toUpperCase());
+  };
+
+  // Compute processed and filtered academic performance reports
+  const uniqueGradeLevels = ["All", ...new Set(students.map(s => s.grade || s.gradeLevel).filter(Boolean))];
+  const uniqueCommunities = ["All", ...new Set(students.map(s => s.communityName || s.communityCenter || s.community).filter(Boolean))];
+  const quarterOptions = ["All", "1st Quarter", "2nd Quarter", "3rd Quarter", "4th Quarter"];
+
+  const processedAcademicReports = academicExamSubs.map((sub) => {
+    const student = students.find(s => s.id === sub.studentId || s.uid === sub.studentId) || {};
+    const exam = academicExams.find(e => e.firestoreId === sub.examId || e.id === sub.examId) || {};
+
+    const studentName = student.internationalName || student.fullName || student.name || formatStudentName(student) || sub.studentName || "Student";
+    const studentCode = student.studentCode || "";
+    const gradeLevel = student.grade || student.gradeLevel || sub.gradeLevel || "Grade 1";
+    const community = student.communityName || student.communityCenter || student.community || "Main";
+
+    const examTitle = exam.title || sub.examTitle || "Exam";
+    const quarter = sub.quarter || exam.quarter || "1st Quarter";
+    const subjectClass = formatCleanClassName(sub.classId || exam.classId);
+
+    const earnedScore = Number(sub.objScore || 0) + Number(sub.subjScore || 0);
+    const maxScore = Number(exam.maxScore || sub.maxScore) || 100;
+    const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
+
+    return {
+      id: sub.firestoreId || sub.id,
+      studentName,
+      studentCode,
+      gradeLevel,
+      community,
+      examTitle,
+      quarter,
+      subjectClass,
+      earnedScore,
+      maxScore,
+      percentage
+    };
+  });
+
+  const uniqueExamNames = ["All", ...new Set(processedAcademicReports.map(r => r.examTitle).filter(Boolean))];
+
+  const filteredAcademicReports = processedAcademicReports.filter((item) => {
+    if (reportFilterGrade !== "All" && item.gradeLevel !== reportFilterGrade) return false;
+    if (reportFilterCommunity !== "All" && item.community !== reportFilterCommunity) return false;
+    if (reportFilterQuarter !== "All" && item.quarter !== reportFilterQuarter) return false;
+    if (reportFilterExamName !== "All" && item.examTitle !== reportFilterExamName) return false;
+    if (reportSearchQuery.trim()) {
+      const q = reportSearchQuery.toLowerCase();
+      const matchName = item.studentName.toLowerCase().includes(q);
+      const matchExam = item.examTitle.toLowerCase().includes(q);
+      if (!matchName && !matchExam) return false;
+    }
+    return true;
+  });
+
   // Send password reset magic link email
   const handleSendResetEmail = async (teacherEmail) => {
     try {
@@ -923,6 +1070,23 @@ export default function AdminDashboard() {
             </span>
           )}
         </button>
+
+        <button
+          onClick={() => setActiveTab("academic")}
+          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
+            activeTab === "academic"
+              ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          }`}
+        >
+          <BookOpen className="h-4 w-4" />
+          <span>Academic Reports</span>
+          {academicExamSubs.length > 0 && (
+            <span className="text-xs bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-full font-extrabold">
+              {academicExamSubs.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Tab Content */}
@@ -1061,6 +1225,211 @@ export default function AdminDashboard() {
             ) : (
               <div className="py-16 text-center text-slate-400 text-sm">
                 No faculty members available for compliance evaluation.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: ACADEMIC REPORTS VIEW */}
+      {activeTab === "academic" && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header Controls Bar */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center space-x-2">
+                <BookOpen className="h-6 w-6 text-brand-600 dark:text-brand-400" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+                  Institutional Academic Performance Reports
+                </h2>
+              </div>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                School-wide exam performance metrics, test scores, and grade distribution analytics.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-3 print:hidden">
+              <button
+                onClick={handleExportAcademicReportCSV}
+                className="inline-flex items-center space-x-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"
+              >
+                <Download className="h-4 w-4" />
+                <span>Export Report (CSV)</span>
+              </button>
+
+              <button
+                onClick={() => window.print()}
+                className="inline-flex items-center space-x-2 rounded-xl bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"
+              >
+                <Printer className="h-4 w-4" />
+                <span>Print / Save PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Filters Toolbar */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-5 shadow-sm space-y-4 print:hidden">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* Search */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Search Student / Exam
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={reportSearchQuery}
+                    onChange={(e) => setReportSearchQuery(e.target.value)}
+                    placeholder="Search name or exam..."
+                    className="w-full pl-9 pr-3 py-2 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Exam Name Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Filter by Exam Name
+                </label>
+                <select
+                  value={reportFilterExamName}
+                  onChange={(e) => setReportFilterExamName(e.target.value)}
+                  className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                >
+                  {uniqueExamNames.map((eName) => (
+                    <option key={eName} value={eName}>{eName === "All" ? "All Exams" : eName}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Grade Level Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Filter by Grade Level
+                </label>
+                <select
+                  value={reportFilterGrade}
+                  onChange={(e) => setReportFilterGrade(e.target.value)}
+                  className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                >
+                  {uniqueGradeLevels.map((g) => (
+                    <option key={g} value={g}>{g === "All" ? "All Grade Levels" : g}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Community Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Filter by Community
+                </label>
+                <select
+                  value={reportFilterCommunity}
+                  onChange={(e) => setReportFilterCommunity(e.target.value)}
+                  className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                >
+                  {uniqueCommunities.map((c) => (
+                    <option key={c} value={c}>{c === "All" ? "All Communities" : c}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quarter Filter */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Filter by Quarter
+                </label>
+                <select
+                  value={reportFilterQuarter}
+                  onChange={(e) => setReportFilterQuarter(e.target.value)}
+                  className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                >
+                  {quarterOptions.map((q) => (
+                    <option key={q} value={q}>{q === "All" ? "All Quarters" : q}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Academic Report Data Table */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+            {isAcademicLoading ? (
+              <div className="py-16 text-center text-slate-400 text-sm font-medium">
+                Loading school-wide academic data...
+              </div>
+            ) : filteredAcademicReports.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      <th className="p-4">Student Name</th>
+                      <th className="p-4">Grade Level</th>
+                      <th className="p-4">Community</th>
+                      <th className="p-4">Exam Title</th>
+                      <th className="p-4">Quarter</th>
+                      <th className="p-4">Subject / Class</th>
+                      <th className="p-4 text-center">Score</th>
+                      <th className="p-4 text-center">Percentage</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
+                    {filteredAcademicReports.map((item) => {
+                      const pct = item.percentage;
+                      const badgeStyle =
+                        pct >= 80
+                          ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                          : pct >= 70
+                          ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                          : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
+                      return (
+                        <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                          <td className="p-4 font-bold text-slate-900 dark:text-slate-100">
+                            {item.studentName}
+                            {item.studentCode && (
+                              <span className="block text-[10px] text-slate-400 font-mono font-normal">
+                                {item.studentCode}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4 font-semibold text-slate-600 dark:text-slate-300">
+                            {item.gradeLevel}
+                          </td>
+                          <td className="p-4 font-semibold text-slate-600 dark:text-slate-300">
+                            {item.community}
+                          </td>
+                          <td className="p-4 font-bold text-slate-800 dark:text-slate-100">
+                            {item.examTitle}
+                          </td>
+                          <td className="p-4">
+                            <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                              {item.quarter}
+                            </span>
+                          </td>
+                          <td className="p-4 font-mono text-[11px] text-slate-500">
+                            {item.subjectClass}
+                          </td>
+                          <td className="p-4 text-center font-bold font-mono">
+                            {item.earnedScore} / {item.maxScore}
+                          </td>
+                          <td className="p-4 text-center">
+                            <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-black border font-mono ${badgeStyle}`}>
+                              {pct}%
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-16 text-center space-y-2">
+                <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Graded Exam Submissions Found</p>
+                <p className="text-xs text-slate-400">Try adjusting your filters or search query above.</p>
               </div>
             )}
           </div>
