@@ -222,6 +222,7 @@ export default function ClassDashboard() {
   const [tasks, setTasks] = useState([]);
   const [isTasksLoading, setIsTasksLoading] = useState(false);
   const [isBuildingTask, setIsBuildingTask] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState(null);
   const [taskPublishSuccess, setTaskPublishSuccess] = useState(false);
 
   // Task Form States
@@ -1695,6 +1696,22 @@ export default function ClassDashboard() {
     );
   };
 
+  const handleOpenEditTask = (task) => {
+    if (!task) return;
+    const taskId = task.firestoreId || task.id;
+    setEditingTaskId(taskId);
+    setTaskTitle(task.title || "");
+    setTaskDescription(task.description || "");
+    setTaskDueDate(task.dueDate || "");
+    setTaskQuarter(task.quarter || "1st Quarter");
+    setTaskCategory(task.category || "Written Task");
+    setTaskMode(task.mode || "external");
+    setTaskExternalUrl(task.externalUrl || "");
+    setTaskMaxScore(task.maxScore || task.totalPoints || 50);
+    setTaskQuestions(task.questions || []);
+    setIsBuildingTask(true);
+  };
+
   const handlePublishTask = async () => {
     if (!taskTitle.trim()) { alert("Please enter a task title."); return; }
     if (!taskDueDate) { alert("Please select a due date."); return; }
@@ -1723,7 +1740,7 @@ export default function ClassDashboard() {
         mode: taskMode,
         totalPoints,
         status: "published",
-        createdAt: new Date().toISOString()
+        updatedAt: new Date().toISOString()
       };
 
       if (taskMode === "external") {
@@ -1733,19 +1750,27 @@ export default function ClassDashboard() {
         payload.questions = taskQuestions;
       }
 
-      await addDoc(collection(db, "tasks"), payload);
+      if (editingTaskId) {
+        await updateDoc(doc(db, "tasks", editingTaskId), payload);
+      } else {
+        await addDoc(collection(db, "tasks"), {
+          ...payload,
+          createdAt: new Date().toISOString()
+        });
+      }
 
       resetTaskBuilder();
       setTaskPublishSuccess(true);
       setTimeout(() => setTaskPublishSuccess(false), 3000);
       loadTasks();
     } catch (e) {
-      alert("Failed to publish task: " + e.message);
+      alert("Failed to save task: " + e.message);
     }
   };
 
   const resetTaskBuilder = () => {
     setIsBuildingTask(false);
+    setEditingTaskId(null);
     setTaskTitle("");
     setTaskDescription("");
     setTaskDueDate("");
@@ -2885,7 +2910,7 @@ export default function ClassDashboard() {
           {taskPublishSuccess && (
             <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
               <Sparkles className="h-4 w-4" />
-              <span>Task / Quiz published successfully!</span>
+              <span>{editingTaskId ? "Task / Quiz updated successfully!" : "Task / Quiz published successfully!"}</span>
             </div>
           )}
 
@@ -2902,7 +2927,10 @@ export default function ClassDashboard() {
                   </p>
                 </div>
                 <button
-                  onClick={() => setIsBuildingTask(true)}
+                  onClick={() => {
+                    resetTaskBuilder();
+                    setIsBuildingTask(true);
+                  }}
                   className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0"
                 >
                   <Plus className="h-4 w-4" />
@@ -2953,6 +2981,13 @@ export default function ClassDashboard() {
                             )}
                           </span>
                           <button
+                            onClick={() => handleOpenEditTask(task)}
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"
+                            title="Edit Task"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
                             onClick={() => handleDeleteTask(task)}
                             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 transition-colors cursor-pointer"
                             title="Delete Task"
@@ -2998,10 +3033,9 @@ export default function ClassDashboard() {
                 <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
                   <FolderKanban className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
                   <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Tasks or Quizzes Created Yet</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">Click "Create New Task" to build your first written task, performance task, or quiz for this classroom.</p>
+                  <p className="text-xs text-slate-400">Click "Create New Task" to build your first assignment or quiz.</p>
                 </div>
               )}
-
               {/* ── Pending Submissions Section ── */}
               <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-4">
                 <div className="flex items-center justify-between">
@@ -3656,7 +3690,7 @@ export default function ClassDashboard() {
                   className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 text-sm font-bold shadow-lg transition-all cursor-pointer"
                 >
                   <Sparkles className="h-4 w-4" />
-                  <span>Publish Task / Quiz</span>
+                  <span>{editingTaskId ? "Save Changes" : "Publish Task / Quiz"}</span>
                 </button>
               </div>
             </div>
