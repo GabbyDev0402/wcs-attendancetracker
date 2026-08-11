@@ -329,14 +329,14 @@ export default function StudentExamSession() {
         {questions.map((q, idx) => {
           if (q.type === "section") {
             return (
-              <div key={q.id || idx} className="w-full max-w-full overflow-hidden bg-indigo-900 text-white rounded-3xl p-6 sm:p-8 shadow-md space-y-2 border border-indigo-800">
+              <div key={q.id || idx} className="w-full min-w-0 overflow-hidden bg-indigo-900 text-white rounded-3xl p-6 sm:p-8 shadow-md space-y-2 border border-indigo-800">
                 <div className="flex items-center space-x-2 text-indigo-300 text-xs font-bold uppercase tracking-wider">
                   <FolderPlus className="h-4 w-4 text-indigo-400 shrink-0" />
                   <span>Section Header</span>
                 </div>
-                <h2 className="text-xl sm:text-2xl font-black font-heading" style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{q.title || "Untitled Section"}</h2>
+                <h2 className="text-xl sm:text-2xl font-black font-heading">{q.title || "Untitled Section"}</h2>
                 {q.description && (
-                  <p className="text-xs text-indigo-100/90 leading-relaxed font-medium" style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}>{q.description}</p>
+                  <p className="text-xs text-indigo-100/90 leading-relaxed font-medium">{q.description}</p>
                 )}
               </div>
             );
@@ -344,22 +344,18 @@ export default function StudentExamSession() {
 
           if (q.type === "info") {
             return (
-              <div key={q.id || idx} className="w-full max-w-full overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-3">
+              <div key={q.id || idx} className="w-full min-w-0 overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-3">
                 <div className="flex items-center space-x-2 text-slate-400 text-xs font-bold uppercase tracking-wider">
                   <Type className="h-4 w-4 text-slate-500 shrink-0" />
                   <span>Reading Passage / Instructions</span>
                 </div>
                 {q.content && q.content.includes("<") ? (
                   <div 
-                    className="prose prose-slate dark:prose-invert max-w-none w-full text-slate-800 dark:text-slate-100 font-medium"
-                    style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
-                    dangerouslySetInnerHTML={{ __html: q.content }}
+                    className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 whitespace-normal break-normal text-slate-800 dark:text-slate-100 font-medium"
+                    dangerouslySetInnerHTML={{ __html: q.content.replace(/&nbsp;/g, ' ') }}
                   />
                 ) : (
-                  <div 
-                    className="prose prose-slate dark:prose-invert max-w-none w-full text-slate-800 dark:text-slate-100 font-medium"
-                    style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
-                  >
+                  <div className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 whitespace-normal break-normal text-slate-800 dark:text-slate-100 font-medium">
                     {q.content}
                   </div>
                 )}
@@ -377,7 +373,7 @@ export default function StudentExamSession() {
           return (
             <div
               key={q.id || idx}
-              className="w-full max-w-full overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-5 transition-colors"
+              className="w-full min-w-0 overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-5 transition-colors"
             >
               {/* Question Top Header */}
               <div className="flex items-center justify-between">
@@ -397,15 +393,11 @@ export default function StudentExamSession() {
               {/* Question Text Prompt with Rich Text HTML support */}
               {q.text && q.text.includes("<") ? (
                 <div 
-                  className="prose prose-slate dark:prose-invert max-w-none w-full text-slate-800 dark:text-slate-100 font-bold"
-                  style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
-                  dangerouslySetInnerHTML={{ __html: q.text }}
+                  className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 whitespace-normal break-normal text-slate-800 dark:text-slate-100 font-bold"
+                  dangerouslySetInnerHTML={{ __html: q.text.replace(/&nbsp;/g, ' ') }}
                 />
               ) : (
-                <div 
-                  className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-relaxed w-full"
-                  style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
-                >
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-relaxed w-full whitespace-normal break-normal">
                   {q.text}
                 </div>
               )}
