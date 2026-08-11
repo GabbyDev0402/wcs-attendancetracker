@@ -236,11 +236,15 @@ export default function StudentTaskSession() {
                 </div>
                 {q.content && q.content.includes("<") ? (
                   <div 
-                    className="w-full max-w-full break-words whitespace-pre-wrap overflow-hidden text-slate-800 dark:text-slate-100 text-sm font-medium leading-relaxed prose dark:prose-invert"
+                    className="prose prose-slate dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:overflow-x-auto w-full text-slate-800 dark:text-slate-100 font-medium"
+                    style={{ overflowWrap: 'anywhere' }}
                     dangerouslySetInnerHTML={{ __html: q.content }}
                   />
                 ) : (
-                  <div className="w-full max-w-full break-words whitespace-pre-wrap overflow-hidden text-slate-800 dark:text-slate-100 text-sm font-medium leading-relaxed">
+                  <div 
+                    className="prose prose-slate dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:overflow-x-auto w-full text-slate-800 dark:text-slate-100 font-medium whitespace-pre-wrap"
+                    style={{ overflowWrap: 'anywhere' }}
+                  >
                     {q.content}
                   </div>
                 )}
@@ -268,11 +272,15 @@ export default function StudentTaskSession() {
 
               {q.text && q.text.includes("<") ? (
                 <div 
-                  className="w-full max-w-full break-words whitespace-pre-wrap overflow-hidden text-slate-800 dark:text-slate-100 text-sm sm:text-base font-bold leading-snug prose dark:prose-invert"
+                  className="prose prose-slate dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:overflow-x-auto w-full text-slate-800 dark:text-slate-100 font-bold"
+                  style={{ overflowWrap: 'anywhere' }}
                   dangerouslySetInnerHTML={{ __html: q.text }}
                 />
               ) : (
-                <h3 className="w-full max-w-full break-words whitespace-pre-wrap overflow-hidden text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 leading-snug">
+                <h3 
+                  className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 leading-snug whitespace-pre-wrap w-full"
+                  style={{ overflowWrap: 'anywhere' }}
+                >
                   {q.text}
                 </h3>
               )}
