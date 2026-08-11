@@ -105,11 +105,26 @@ export default function ClassDashboard() {
     return [];
   };
 
-  // Safe helper to format sentences (array or string) into preview text for cards
+  // Safe helper to format sentences (array of objects/strings or raw string) into preview text for cards
   const formatSentencesText = (rawSentences) => {
     if (!rawSentences) return "No sentences submitted.";
     if (typeof rawSentences === "string") return rawSentences;
-    if (Array.isArray(rawSentences)) return rawSentences.join(" ");
+    if (Array.isArray(rawSentences)) {
+      return rawSentences
+        .map(item => {
+          if (!item) return "";
+          if (typeof item === "string") return item;
+          if (typeof item === "object") {
+            const wordPrefix = item.word ? `[${item.word}] ` : "";
+            const sentenceText = item.sentence || item.text || item.content || "";
+            if (sentenceText) return `${wordPrefix}${sentenceText}`;
+            return Object.values(item).filter(v => typeof v === "string").join(" ");
+          }
+          return String(item);
+        })
+        .filter(Boolean)
+        .join(" ");
+    }
     return String(rawSentences);
   };
 
