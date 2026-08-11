@@ -237,13 +237,13 @@ export default function StudentTaskSession() {
                 {q.content && q.content.includes("<") ? (
                   <div 
                     className="prose prose-slate dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:overflow-x-auto w-full text-slate-800 dark:text-slate-100 font-medium"
-                    style={{ overflowWrap: 'anywhere' }}
+                    style={{ overflowWrap: 'break-word', wordBreak: 'normal' }}
                     dangerouslySetInnerHTML={{ __html: q.content }}
                   />
                 ) : (
                   <div 
                     className="prose prose-slate dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:overflow-x-auto w-full text-slate-800 dark:text-slate-100 font-medium whitespace-pre-wrap"
-                    style={{ overflowWrap: 'anywhere' }}
+                    style={{ overflowWrap: 'break-word', wordBreak: 'normal' }}
                   >
                     {q.content}
                   </div>
@@ -273,13 +273,13 @@ export default function StudentTaskSession() {
               {q.text && q.text.includes("<") ? (
                 <div 
                   className="prose prose-slate dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:overflow-x-auto w-full text-slate-800 dark:text-slate-100 font-bold"
-                  style={{ overflowWrap: 'anywhere' }}
+                  style={{ overflowWrap: 'break-word', wordBreak: 'normal' }}
                   dangerouslySetInnerHTML={{ __html: q.text }}
                 />
               ) : (
                 <h3 
                   className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 leading-snug whitespace-pre-wrap w-full"
-                  style={{ overflowWrap: 'anywhere' }}
+                  style={{ overflowWrap: 'break-word', wordBreak: 'normal' }}
                 >
                   {q.text}
                 </h3>
