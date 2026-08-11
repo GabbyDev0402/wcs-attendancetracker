@@ -58,6 +58,7 @@ export default function StudentClassDashboard() {
   const [taskSubmissionsMap, setTaskSubmissionsMap] = useState({});
   const [isTasksLoading, setIsTasksLoading] = useState(false);
   const [isMarkingDone, setIsMarkingDone] = useState({});
+  const [taskArchiveQuarter, setTaskArchiveQuarter] = useState("1st Quarter");
 
   const targetClassTag = decodeURIComponent(rawClassParam || "");
   let extractedTeacherId = "";
@@ -855,137 +856,267 @@ export default function StudentClassDashboard() {
 
       {/* Tab Content: Assignments & Tasks */}
       {activeTab === "tasks" && (
-        <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
-          <div className="border-b border-slate-100 dark:border-slate-800 pb-4">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
-              Classroom Assignments & Tasks
-            </h2>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-              Complete written tasks, performance tasks, external Google Forms, and in-app worksheets.
-            </p>
-          </div>
+        <div className="space-y-6">
+          {/* ── Active Tasks Section (Top) ── */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-4">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+                Active Assignments & Tasks
+              </h2>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                Complete pending written tasks, performance tasks, external Google Forms, and in-app worksheets.
+              </p>
+            </div>
 
-          {isTasksLoading ? (
-            <div className="py-12 text-center text-slate-400 text-sm">Loading tasks...</div>
-          ) : tasksList.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {tasksList.map((task) => {
+            {(() => {
+              const activeTasks = (tasksList || []).filter((task) => {
                 const taskId = task.firestoreId || task.id;
                 const sub = taskSubmissionsMap[taskId];
-                const isSubmitted = !!sub;
+                if (!sub) return true;
+                return sub.status !== "graded";
+              });
 
+              if (isTasksLoading) {
+                return <div className="py-12 text-center text-slate-400 text-sm">Loading active tasks...</div>;
+              }
+
+              if (activeTasks.length === 0) {
                 return (
-                  <div
-                    key={taskId}
-                    className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{task.title}</h3>
-                          <div className="flex items-center space-x-2 mt-1 flex-wrap gap-y-1">
-                            <span className={`inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
-                              task.category === "Performance Task"
-                                ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
-                                : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
-                            }`}>
-                              {task.category || "Written Task"}
-                            </span>
-                            <span className="inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                              {task.quarter || "1st Quarter"}
-                            </span>
-                          </div>
-                        </div>
-
-                        {isSubmitted ? (
-                          <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 ${
-                            sub.status === "graded"
-                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
-                              : "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800"
-                          }`}>
-                            {sub.status === "graded" ? <CheckCircle className="h-3.5 w-3.5" /> : <Clock className="h-3.5 w-3.5" />}
-                            <span className="capitalize">{sub.status === "graded" ? "Graded" : "Turned In"}</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
-                            <Clock className="h-3.5 w-3.5" />
-                            <span>Assigned</span>
-                          </span>
-                        )}
-                      </div>
-
-                      {task.description && (
-                        <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
-                          {task.description}
-                        </p>
-                      )}
-
-                      <div className="flex items-center space-x-4 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
-                        <span>Due: {task.dueDate || "No Due Date"}</span>
-                        <span>• Max: {task.totalPoints || task.maxScore || 50} pts</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                      {isSubmitted ? (
-                        <div className="flex items-center justify-between w-full">
-                          <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                            Score: <span className="font-extrabold text-brand-600 dark:text-brand-400">{sub.status === "graded" ? `${sub.score} / ${sub.maxScore || task.totalPoints || 50} pts` : `Awaiting Grade (${sub.maxScore || task.totalPoints || 50} max)`}</span>
-                          </div>
-                          <button
-                            disabled={true}
-                            className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold cursor-not-allowed opacity-75"
-                          >
-                            Submitted ✅
-                          </button>
-                        </div>
-                      ) : task.mode === "external" ? (
-                        <div className="flex items-center justify-between w-full gap-2">
-                          {task.externalUrl ? (
-                            <a
-                              href={task.externalUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center space-x-1 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors"
-                            >
-                              <span>Open Link ↗</span>
-                            </a>
-                          ) : <div />}
-
-                          <button
-                            onClick={() => handleMarkExternalTaskDone(task)}
-                            disabled={isMarkingDone[taskId]}
-                            className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
-                          >
-                            <CheckCircle className="h-3.5 w-3.5" />
-                            <span>{isMarkingDone[taskId] ? "Marking..." : "Mark as Done"}</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between w-full">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                            In-App Quiz
-                          </span>
-                          <button
-                            onClick={() => navigate(`/student/class/${encodeURIComponent(targetClassTag)}/task/${taskId}`)}
-                            className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
-                          >
-                            <span>Start Task ➔</span>
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                  <div className="py-12 text-center space-y-2 bg-slate-50/50 dark:bg-slate-800/30 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                    <CheckCircle className="h-10 w-10 text-emerald-400 dark:text-emerald-500 mx-auto" />
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">You have no active assignments.</p>
+                    <p className="text-xs text-slate-400">All assigned tasks for this classroom are completed and up to date.</p>
                   </div>
                 );
-              })}
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {activeTasks.map((task) => {
+                    const taskId = task.firestoreId || task.id;
+                    const sub = taskSubmissionsMap[taskId];
+                    const isSubmitted = !!sub;
+
+                    return (
+                      <div
+                        key={taskId}
+                        className="bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{task.title}</h3>
+                              <div className="flex items-center space-x-2 mt-1 flex-wrap gap-y-1">
+                                <span className={`inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                                  task.category === "Performance Task"
+                                    ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
+                                    : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
+                                }`}>
+                                  {task.category || "Written Task"}
+                                </span>
+                                <span className="inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                  {task.quarter || "1st Quarter"}
+                                </span>
+                              </div>
+                            </div>
+
+                            {isSubmitted ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800">
+                                <Clock className="h-3.5 w-3.5" />
+                                <span>Submitted (Pending Grade)</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
+                                <Clock className="h-3.5 w-3.5" />
+                                <span>Assigned</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {task.description && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                              {task.description}
+                            </p>
+                          )}
+
+                          <div className="flex items-center space-x-4 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
+                            <span>Due: {task.dueDate || "No Due Date"}</span>
+                            <span>• Max: {task.totalPoints || task.maxScore || 50} pts</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+                          {isSubmitted ? (
+                            <div className="flex items-center justify-between w-full">
+                              <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                Status: <span className="font-extrabold text-amber-600 dark:text-amber-400">Awaiting Grade ({sub.maxScore || task.totalPoints || 50} max)</span>
+                              </div>
+                              <button
+                                disabled={true}
+                                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 text-xs font-bold cursor-not-allowed opacity-75"
+                              >
+                                Submitted ✅
+                              </button>
+                            </div>
+                          ) : task.mode === "external" ? (
+                            <div className="flex items-center justify-between w-full gap-2">
+                              {task.externalUrl ? (
+                                <a
+                                  href={task.externalUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center space-x-1 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors"
+                                >
+                                  <span>Open Link ↗</span>
+                                </a>
+                              ) : <div />}
+
+                              <button
+                                onClick={() => handleMarkExternalTaskDone(task)}
+                                disabled={isMarkingDone[taskId]}
+                                className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                              >
+                                <CheckCircle className="h-3.5 w-3.5" />
+                                <span>{isMarkingDone[taskId] ? "Marking..." : "Mark as Done"}</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between w-full">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                In-App Quiz
+                              </span>
+                              <button
+                                onClick={() => navigate(`/student/class/${encodeURIComponent(targetClassTag)}/task/${taskId}`)}
+                                className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                              >
+                                <span>Start Task ➔</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* ── Visual Separation Line ── */}
+          <hr className="border-slate-200 dark:border-slate-800 my-6" />
+
+          {/* ── Graded Tasks Archive Section (Bottom) ── */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading flex items-center gap-2">
+                  <span>📁 Graded Tasks Archive</span>
+                </h2>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  Review graded assignments, teacher evaluation scores, and historical tasks.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Select Quarter:</label>
+                <select
+                  value={taskArchiveQuarter}
+                  onChange={(e) => setTaskArchiveQuarter(e.target.value)}
+                  className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
+                >
+                  <option value="1st Quarter">1st Quarter</option>
+                  <option value="2nd Quarter">2nd Quarter</option>
+                  <option value="3rd Quarter">3rd Quarter</option>
+                  <option value="4th Quarter">4th Quarter</option>
+                </select>
+              </div>
             </div>
-          ) : (
-            <div className="py-12 text-center space-y-2">
-              <FolderKanban className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Assignments or Tasks</p>
-              <p className="text-xs text-slate-400">There are no tasks or quizzes currently assigned to this classroom portal.</p>
-            </div>
-          )}
+
+            {(() => {
+              const gradedTasks = (tasksList || []).filter((task) => {
+                const taskId = task.firestoreId || task.id;
+                const sub = taskSubmissionsMap[taskId];
+                return sub && sub.status === "graded";
+              });
+
+              const filteredGraded = gradedTasks.filter((task) => {
+                return (task.quarter || "1st Quarter") === taskArchiveQuarter;
+              });
+
+              if (isTasksLoading) {
+                return <div className="py-12 text-center text-slate-400 text-sm">Loading graded archive...</div>;
+              }
+
+              if (filteredGraded.length === 0) {
+                return (
+                  <div className="py-12 text-center text-slate-400 text-xs italic bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded-2xl">
+                    No graded tasks for this quarter.
+                  </div>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredGraded.map((task) => {
+                    const taskId = task.firestoreId || task.id;
+                    const sub = taskSubmissionsMap[taskId];
+
+                    return (
+                      <div
+                        key={taskId}
+                        className="bg-emerald-50/30 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/50 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{task.title}</h3>
+                              <div className="flex items-center space-x-2 mt-1 flex-wrap gap-y-1">
+                                <span className={`inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
+                                  task.category === "Performance Task"
+                                    ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
+                                    : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
+                                }`}>
+                                  {task.category || "Written Task"}
+                                </span>
+                                <span className="inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                  {task.quarter || "1st Quarter"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                              <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                              <span>Graded</span>
+                            </span>
+                          </div>
+
+                          {task.description && (
+                            <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                              {task.description}
+                            </p>
+                          )}
+
+                          <div className="flex items-center space-x-4 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
+                            <span>Due: {task.dueDate || "No Due Date"}</span>
+                            <span>• Max: {task.totalPoints || task.maxScore || 50} pts</span>
+                          </div>
+                        </div>
+
+                        <div className="pt-3 border-t border-emerald-100 dark:border-emerald-800/40 flex items-center justify-between">
+                          <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Final Score: <span className="font-black text-emerald-700 dark:text-emerald-400 text-sm ml-1">{sub.score} / {sub.maxScore || task.totalPoints || 50} pts</span>
+                          </div>
+                          <span className="px-3 py-1 rounded-xl bg-emerald-100/60 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
+                            Completed ✅
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
     </div>

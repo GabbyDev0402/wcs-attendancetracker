@@ -1,5 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
+import ReactDOM from "react-dom";
+
+// React 19 Polyfill for ReactQuill (findDOMNode was removed in React 19)
+if (typeof window !== "undefined" && !ReactDOM.findDOMNode) {
+  ReactDOM.findDOMNode = (componentOrElement) => {
+    if (!componentOrElement) return null;
+    if (componentOrElement instanceof HTMLElement) return componentOrElement;
+    if (componentOrElement.current instanceof HTMLElement) return componentOrElement.current;
+    return null;
+  };
+}
+
 import ReactQuill from "react-quill";
 import "react-quill/dist/quill.snow.css";
 import { db } from "../firebase/config";
@@ -1465,94 +1477,136 @@ export default function ClassDashboard() {
     document.body.removeChild(link);
   };
 
-  let nextTaskQId = taskQuestions.length > 0 ? Math.max(...taskQuestions.map(q => q.id)) + 1 : 1;
+  let nextTaskQId = (taskQuestions || []).length > 0
+    ? Math.max(...(taskQuestions || []).map(q => Number(q.id) || 0)) + 1
+    : 1;
 
   const addTaskQuestion = (type) => {
-    const base = { id: nextTaskQId, type, text: "", points: 1 };
-    let newQ;
+    const qId = Date.now() + Math.floor(Math.random() * 1000);
+    const base = {
+      id: qId,
+      type: type || "multipleChoice",
+      text: "",
+      prompt: "",
+      points: 1,
+      options: ["", "", "", ""],
+      correctOptionIndex: 0,
+      correctAnswer: "",
+      vocabularyPairs: [{ id: `t-vp-${Date.now()}`, word: "", definition: "" }],
+      rubric: "",
+      minWordCount: 50,
+      title: "",
+      description: "",
+      content: ""
+    };
+
+    let newQ = { ...base };
     switch (type) {
       case "multipleChoice":
-        newQ = { ...base, options: ["", "", "", ""], correctOptionIndex: 0 };
+        newQ.options = ["", "", "", ""];
+        newQ.correctOptionIndex = 0;
         break;
       case "identification":
-        newQ = { ...base, correctAnswer: "" };
+        newQ.correctAnswer = "";
         break;
       case "vocabulary":
-        newQ = { ...base, vocabularyPairs: [{ id: "t-vp-1", word: "", definition: "" }] };
+        newQ.vocabularyPairs = [{ id: `t-vp-${Date.now()}`, word: "", definition: "" }];
         break;
       case "essay":
-        newQ = { ...base, rubric: "", minWordCount: 50 };
+        newQ.rubric = "";
+        newQ.minWordCount = 50;
         break;
       case "section":
-        newQ = { id: nextTaskQId, type: "section", title: "", description: "" };
+        newQ.title = "";
+        newQ.description = "";
         break;
       case "info":
-        newQ = { id: nextTaskQId, type: "info", content: "" };
+        newQ.content = "";
         break;
       default:
-        return;
+        break;
     }
-    setTaskQuestions(prev => [...prev, newQ]);
+    setTaskQuestions((prev) => [...(prev || []), newQ]);
   };
 
   const updateTaskQuestion = (qId, field, value) => {
-    setTaskQuestions(prev => prev.map(q => q.id === qId ? { ...q, [field]: value } : q));
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        if (field === "text" || field === "prompt") {
+          return { ...q, text: value, prompt: value };
+        }
+        return { ...q, [field]: value };
+      })
+    );
   };
 
   const deleteTaskQuestion = (qId) => {
-    setTaskQuestions(prev => prev.filter(q => q.id !== qId));
+    setTaskQuestions((prev) => (prev || []).filter((q) => q.id !== qId));
   };
 
   const updateTaskOption = (qId, optIdx, value) => {
-    setTaskQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      const newOpts = [...q.options];
-      newOpts[optIdx] = value;
-      return { ...q, options: newOpts };
-    }));
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        const newOpts = [...(q.options || [])];
+        newOpts[optIdx] = value;
+        return { ...q, options: newOpts };
+      })
+    );
   };
 
   const addTaskOption = (qId) => {
-    setTaskQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      return { ...q, options: [...q.options, ""] };
-    }));
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        return { ...q, options: [...(q.options || []), ""] };
+      })
+    );
   };
 
   const removeTaskOption = (qId, optIdx) => {
-    setTaskQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      const newOpts = q.options.filter((_, i) => i !== optIdx);
-      let corrIdx = q.correctOptionIndex;
-      if (optIdx === corrIdx) corrIdx = 0;
-      else if (optIdx < corrIdx) corrIdx--;
-      return { ...q, options: newOpts, correctOptionIndex: Math.min(corrIdx, newOpts.length - 1) };
-    }));
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        const newOpts = (q.options || []).filter((_, i) => i !== optIdx);
+        let corrIdx = q.correctOptionIndex || 0;
+        if (optIdx === corrIdx) corrIdx = 0;
+        else if (optIdx < corrIdx) corrIdx--;
+        return { ...q, options: newOpts, correctOptionIndex: Math.max(0, Math.min(corrIdx, newOpts.length - 1)) };
+      })
+    );
   };
 
   const addTaskVocabPair = (qId) => {
-    setTaskQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      const newId = `t-vp-${q.vocabularyPairs.length + 1}`;
-      return { ...q, vocabularyPairs: [...q.vocabularyPairs, { id: newId, word: "", definition: "" }] };
-    }));
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        const newId = `t-vp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        return { ...q, vocabularyPairs: [...(q.vocabularyPairs || []), { id: newId, word: "", definition: "" }] };
+      })
+    );
   };
 
   const updateTaskVocabPair = (qId, pairId, field, value) => {
-    setTaskQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      return {
-        ...q,
-        vocabularyPairs: q.vocabularyPairs.map(p => p.id === pairId ? { ...p, [field]: value } : p)
-      };
-    }));
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        return {
+          ...q,
+          vocabularyPairs: (q.vocabularyPairs || []).map((p) => (p.id === pairId ? { ...p, [field]: value } : p))
+        };
+      })
+    );
   };
 
   const removeTaskVocabPair = (qId, pairId) => {
-    setTaskQuestions(prev => prev.map(q => {
-      if (q.id !== qId) return q;
-      return { ...q, vocabularyPairs: q.vocabularyPairs.filter(p => p.id !== pairId) };
-    }));
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        return { ...q, vocabularyPairs: (q.vocabularyPairs || []).filter((p) => p.id !== pairId) };
+      })
+    );
   };
 
   const handlePublishTask = async () => {
