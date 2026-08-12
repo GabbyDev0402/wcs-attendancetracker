@@ -38,7 +38,7 @@ export default function StudentClassDashboard() {
     return [];
   };
 
-  const todayStr = new Date().toLocaleDateString("en-CA");
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
 
   const [activeTab, setActiveTab] = useState("vocab");
   const [teacherName, setTeacherName] = useState("");
@@ -993,6 +993,7 @@ export default function StudentClassDashboard() {
                     const taskId = task.firestoreId || task.id;
                     const sub = taskSubmissionsMap[taskId];
                     const isSubmitted = !!sub;
+                    const isPastDue = !!task.dueDate && task.dueDate < todayStr;
 
                     return (
                       <div
@@ -1022,6 +1023,11 @@ export default function StudentClassDashboard() {
                                 <Clock className="h-3.5 w-3.5" />
                                 <span>Submitted (Pending Grade)</span>
                               </span>
+                            ) : isPastDue ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                                <AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
+                                <span>⚠️ Missed Deadline</span>
+                              </span>
                             ) : (
                               <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
                                 <Clock className="h-3.5 w-3.5" />
@@ -1037,7 +1043,9 @@ export default function StudentClassDashboard() {
                           )}
 
                           <div className="flex items-center space-x-4 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
-                            <span>Due: {task.dueDate || "No Due Date"}</span>
+                            <span className={isPastDue && !isSubmitted ? "text-red-600 dark:text-red-400 font-bold" : ""}>
+                              Due: {task.dueDate || "No Due Date"}
+                            </span>
                             <span>• Max: {task.totalPoints || task.maxScore || 50} pts</span>
                           </div>
                         </div>
@@ -1068,26 +1076,46 @@ export default function StudentClassDashboard() {
                                 </a>
                               ) : <div />}
 
-                              <button
-                                onClick={() => handleMarkExternalTaskDone(task)}
-                                disabled={isMarkingDone[taskId]}
-                                className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
-                              >
-                                <CheckCircle className="h-3.5 w-3.5" />
-                                <span>{isMarkingDone[taskId] ? "Marking..." : "Mark as Done"}</span>
-                              </button>
+                              {isPastDue ? (
+                                <button
+                                  disabled={true}
+                                  className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-bold cursor-not-allowed"
+                                >
+                                  <Lock className="h-3.5 w-3.5" />
+                                  <span>🔒 Locked (Past Due)</span>
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleMarkExternalTaskDone(task)}
+                                  disabled={isMarkingDone[taskId]}
+                                  className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                                >
+                                  <CheckCircle className="h-3.5 w-3.5" />
+                                  <span>{isMarkingDone[taskId] ? "Marking..." : "Mark as Done"}</span>
+                                </button>
+                              )}
                             </div>
                           ) : (
                             <div className="flex items-center justify-between w-full">
                               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                                 In-App Quiz
                               </span>
-                              <button
-                                onClick={() => navigate(`/student/class/${encodeURIComponent(targetClassTag)}/task/${taskId}`)}
-                                className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
-                              >
-                                <span>Start Task ➔</span>
-                              </button>
+                              {isPastDue ? (
+                                <button
+                                  disabled={true}
+                                  className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs font-bold cursor-not-allowed"
+                                >
+                                  <Lock className="h-3.5 w-3.5" />
+                                  <span>🔒 Locked (Past Due)</span>
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => navigate(`/student/class/${encodeURIComponent(targetClassTag)}/task/${taskId}`)}
+                                  className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                                >
+                                  <span>Start Task ➔</span>
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>

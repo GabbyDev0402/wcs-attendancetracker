@@ -31,6 +31,7 @@ export default function StudentTaskSession() {
   const [studentAnswers, setStudentAnswers] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
+  const [isExpired, setIsExpired] = useState(false);
 
   // Load Task Data & Check Previous Submission
   useEffect(() => {
@@ -48,24 +49,32 @@ export default function StudentTaskSession() {
       if (taskSnap.exists()) {
         const data = { firestoreId: taskSnap.id, ...taskSnap.data() };
         setTask(data);
+
+        // 2. Check if student already submitted this task
+        const subQ = query(
+          collection(db, "task_submissions"),
+          where("taskId", "==", taskId),
+          where("studentId", "==", user.id)
+        );
+        const subSnap = await getDocs(subQ);
+        const hasSubmission = !subSnap.empty;
+
+        if (hasSubmission) {
+          const subData = { firestoreId: subSnap.docs[0].id, ...subSnap.docs[0].data() };
+          setSubmission(subData);
+          setStudentAnswers(subData.answers || {});
+          setAlreadySubmitted(true);
+        }
+
+        // 3. Past Due Route Guard check
+        const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
+        if (data.dueDate && data.dueDate < todayStr && !hasSubmission) {
+          setIsExpired(true);
+        }
       } else {
         alert("Task or Quiz not found.");
         navigate(`/student/class/${encodeURIComponent(classId)}`);
         return;
-      }
-
-      // 2. Check if student already submitted this task
-      const subQ = query(
-        collection(db, "task_submissions"),
-        where("taskId", "==", taskId),
-        where("studentId", "==", user.id)
-      );
-      const subSnap = await getDocs(subQ);
-      if (!subSnap.empty) {
-        const subData = { firestoreId: subSnap.docs[0].id, ...subSnap.docs[0].data() };
-        setSubmission(subData);
-        setStudentAnswers(subData.answers || {});
-        setAlreadySubmitted(true);
       }
     } catch (e) {
       console.error("Error loading task:", e);
@@ -227,6 +236,31 @@ export default function StudentTaskSession() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-brand-600"></div>
+      </div>
+    );
+  }
+
+  if (isExpired) {
+    return (
+      <div className="max-w-xl mx-auto my-12 p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl text-center space-y-5 shadow-sm animate-fade-in transition-colors">
+        <div className="p-4 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl w-16 h-16 mx-auto flex items-center justify-center border border-red-100 dark:border-red-800">
+          <Lock className="h-8 w-8" />
+        </div>
+        <div className="space-y-1.5">
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">This Task Has Expired</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-md mx-auto">
+            The submission deadline (<strong className="font-semibold text-slate-700 dark:text-slate-300">{task?.dueDate}</strong>) for this task has passed. Submissions are now locked for this assignment.
+          </p>
+        </div>
+        <div className="pt-2">
+          <button
+            onClick={() => navigate(`/student/class/${encodeURIComponent(classId)}`)}
+            className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 text-xs font-bold transition-all cursor-pointer shadow-md"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Return to Classroom Portal</span>
+          </button>
+        </div>
       </div>
     );
   }
