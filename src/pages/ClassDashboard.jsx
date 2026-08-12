@@ -1382,7 +1382,7 @@ export default function ClassDashboard() {
       let mScore = Number(e.maxScore);
       if (isNaN(mScore) || mScore <= 0) {
         mScore = Array.isArray(e.questions) && e.questions.length > 0 
-          ? e.questions.reduce((sum, q) => sum + (Number(q.points) || 1), 0) 
+          ? e.questions.reduce((sum, q) => ['section', 'info'].includes(q.type) ? sum : sum + (Number(q.points) || 0), 0) 
           : 50;
       }
       return {
@@ -1414,7 +1414,7 @@ export default function ClassDashboard() {
       let mScore = Number(e.maxScore);
       if (isNaN(mScore) || mScore <= 0) {
         mScore = Array.isArray(e.questions) && e.questions.length > 0 
-          ? e.questions.reduce((sum, q) => sum + (Number(q.points) || 1), 0) 
+          ? e.questions.reduce((sum, q) => ['section', 'info'].includes(q.type) ? sum : sum + (Number(q.points) || 0), 0) 
           : 100;
       }
       return {
@@ -1620,9 +1620,11 @@ export default function ClassDashboard() {
       case "section":
         newQ.title = "";
         newQ.description = "";
+        newQ.points = 0;
         break;
       case "info":
         newQ.content = "";
+        newQ.points = 0;
         break;
       default:
         break;
@@ -1765,7 +1767,7 @@ export default function ClassDashboard() {
       const tag = `${user.id}_${classId}`;
       const totalPoints = taskMode === "external"
         ? (Number(taskMaxScore) || 50)
-        : taskQuestions.reduce((sum, q) => sum + (q.points || 1), 0);
+        : taskQuestions.reduce((sum, q) => ['section', 'info'].includes(q.type) ? sum : sum + (Number(q.points) || 0), 0);
 
       const payload = {
         classId: tag,
@@ -3563,16 +3565,18 @@ export default function ClassDashboard() {
                                   </span>
                                 </div>
                                 <div className="flex items-center space-x-3">
-                                  <div className="flex items-center space-x-1.5">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase">PTS</label>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      value={q.points}
-                                      onChange={(e) => updateTaskQuestion(q.id, "points", parseInt(e.target.value) || 1)}
-                                      className="w-14 text-xs font-bold text-center border border-slate-200 dark:border-slate-700 rounded-lg py-1 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                                    />
-                                  </div>
+                                  {!['section', 'info'].includes(q.type) && (
+                                    <div className="flex items-center space-x-1.5">
+                                      <label className="text-[10px] font-bold text-slate-400 uppercase">PTS</label>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        value={q.points}
+                                        onChange={(e) => updateTaskQuestion(q.id, "points", parseInt(e.target.value) || 1)}
+                                        className="w-14 text-xs font-bold text-center border border-slate-200 dark:border-slate-700 rounded-lg py-1 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                      />
+                                    </div>
+                                  )}
                                   <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors cursor-pointer">
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
@@ -4224,9 +4228,11 @@ export default function ClassDashboard() {
                             dangerouslySetInnerHTML={{ __html: promptHtml || `Question ${currentNumber}` }} 
                           />
                         </div>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg shrink-0">
-                          Max: {pts} pts
-                        </span>
+                        {!['section', 'info'].includes(q.type) && (
+                          <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg shrink-0">
+                            Max: {pts} pts
+                          </span>
+                        )}
                       </div>
 
                       {/* 1. Multiple Choice Comparison */}

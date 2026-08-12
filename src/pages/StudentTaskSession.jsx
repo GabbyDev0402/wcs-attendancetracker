@@ -166,6 +166,8 @@ export default function StudentTaskSession() {
       let hasSubjective = false;
 
       questions.forEach((q) => {
+        if (["section", "info"].includes(q.type)) return;
+
         const pts = Number(q.points) || 1;
         totalTaskPoints += pts;
 
@@ -376,9 +378,11 @@ export default function StudentTaskSession() {
                     )}
                   </div>
 
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
-                    {q.points || 1} {q.points === 1 ? "Point" : "Points"}
-                  </span>
+                  {!['section', 'info'].includes(q.type) && (
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+                      {q.points || 1} {q.points === 1 ? "Point" : "Points"}
+                    </span>
+                  )}
                 </div>
 
                 {q.text && q.text.includes("<") ? (
