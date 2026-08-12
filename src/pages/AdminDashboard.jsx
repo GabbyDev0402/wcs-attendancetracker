@@ -95,7 +95,7 @@ export default function AdminDashboard() {
   const [reportFilterGrade, setReportFilterGrade] = useState("All");
   const [reportFilterCommunity, setReportFilterCommunity] = useState("All");
   const [reportFilterQuarter, setReportFilterQuarter] = useState("All");
-  const [reportFilterExamName, setReportFilterExamName] = useState("All");
+  const [reportFilterExamCategory, setReportFilterExamCategory] = useState("All Categories");
   const [reportSearchQuery, setReportSearchQuery] = useState("");
 
   useEffect(() => {
@@ -130,7 +130,7 @@ export default function AdminDashboard() {
       return;
     }
 
-    const headers = ["Student Name", "Student Code", "Grade Level", "Community", "Exam Title", "Quarter", "Subject / Class", "Score Earned", "Max Score", "Percentage (%)"];
+    const headers = ["Student Name", "Student Code", "Grade Level", "Community", "Exam Title", "Category", "Quarter", "Subject / Class", "Score Earned", "Max Score", "Percentage (%)"];
     
     const rows = [headers.join(",")];
     
@@ -141,6 +141,7 @@ export default function AdminDashboard() {
         `"${(item.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
         `"${(item.community || 'Main').replace(/"/g, '""')}"`,
         `"${(item.examTitle || 'Exam').replace(/"/g, '""')}"`,
+        `"${(item.category || '1st Monthly Exam').replace(/"/g, '""')}"`,
         `"${(item.quarter || '1st Quarter').replace(/"/g, '""')}"`,
         `"${(item.subjectClass || 'General').replace(/"/g, '""')}"`,
         item.earnedScore,
@@ -867,6 +868,7 @@ export default function AdminDashboard() {
     const community = student.communityName || student.communityCenter || student.community || "Main";
 
     const examTitle = exam.title || sub.examTitle || "Exam";
+    const category = exam.category || sub.category || "1st Monthly Exam";
     const quarter = sub.quarter || exam.quarter || "1st Quarter";
     const subjectClass = formatCleanClassName(sub.classId || exam.classId);
 
@@ -881,6 +883,7 @@ export default function AdminDashboard() {
       gradeLevel,
       community,
       examTitle,
+      category,
       quarter,
       subjectClass,
       earnedScore,
@@ -889,18 +892,19 @@ export default function AdminDashboard() {
     };
   });
 
-  const uniqueExamNames = ["All", ...new Set(processedAcademicReports.map(r => r.examTitle).filter(Boolean))];
+  const uniqueExamCategories = ["All Categories", ...new Set(processedAcademicReports.map(r => r.category).filter(Boolean))];
 
   const filteredAcademicReports = processedAcademicReports.filter((item) => {
     if (reportFilterGrade !== "All" && item.gradeLevel !== reportFilterGrade) return false;
     if (reportFilterCommunity !== "All" && item.community !== reportFilterCommunity) return false;
     if (reportFilterQuarter !== "All" && item.quarter !== reportFilterQuarter) return false;
-    if (reportFilterExamName !== "All" && item.examTitle !== reportFilterExamName) return false;
+    if (reportFilterExamCategory !== "All Categories" && item.category !== reportFilterExamCategory) return false;
     if (reportSearchQuery.trim()) {
       const q = reportSearchQuery.toLowerCase();
       const matchName = item.studentName.toLowerCase().includes(q);
       const matchExam = item.examTitle.toLowerCase().includes(q);
-      if (!matchName && !matchExam) return false;
+      const matchCategory = item.category ? item.category.toLowerCase().includes(q) : false;
+      if (!matchName && !matchExam && !matchCategory) return false;
     }
     return true;
   });
@@ -1588,18 +1592,18 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Exam Name Filter */}
+              {/* Exam Category Filter */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Filter by Exam Name
+                  Filter by Exam Category
                 </label>
                 <select
-                  value={reportFilterExamName}
-                  onChange={(e) => setReportFilterExamName(e.target.value)}
+                  value={reportFilterExamCategory}
+                  onChange={(e) => setReportFilterExamCategory(e.target.value)}
                   className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                 >
-                  {uniqueExamNames.map((eName) => (
-                    <option key={eName} value={eName}>{eName === "All" ? "All Exams" : eName}</option>
+                  {uniqueExamCategories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
               </div>
@@ -1701,8 +1705,11 @@ export default function AdminDashboard() {
                           <td className="p-4 font-semibold text-slate-600 dark:text-slate-300">
                             {item.community}
                           </td>
-                          <td className="p-4 font-bold text-slate-800 dark:text-slate-100">
-                            {item.examTitle}
+                          <td className="p-4">
+                            <div className="font-bold text-slate-800 dark:text-slate-100">{item.examTitle}</div>
+                            <span className="inline-flex px-2 py-0.5 mt-1 rounded text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100/50 dark:border-brand-800/50">
+                              {item.category}
+                            </span>
                           </td>
                           <td className="p-4">
                             <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
