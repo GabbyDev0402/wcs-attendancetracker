@@ -79,7 +79,7 @@ export default function TeacherDashboard() {
     });
 
     setTeacherClasses(parsedClasses);
-  }, [user]);
+  }, [user?.id, JSON.stringify(user?.assignments)]);
 
   // Load pending & graded diaries if user is a Math teacher (Real-time onSnapshot)
   useEffect(() => {
@@ -137,7 +137,7 @@ export default function TeacherDashboard() {
       unsubPending();
       unsubGraded();
     };
-  }, [isMathTeacher, gradedDiaryDateFilter, user]);
+  }, [isMathTeacher, gradedDiaryDateFilter, user?.id]);
 
   // Real-time Pending Vocab Submissions by Class Listener
   useEffect(() => {
@@ -173,7 +173,7 @@ export default function TeacherDashboard() {
     });
 
     return () => unsubPendingVocabs();
-  }, [user]);
+  }, [user?.id]);
 
   const loadPendingDiaries = () => { };
 

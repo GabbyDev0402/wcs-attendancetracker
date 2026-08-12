@@ -160,27 +160,24 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    // Real-time listener for pending vocabularies
-    const vocabQ = query(collection(db, "vocab_submissions"), where("status", "==", "pending"));
-    const unsubVocab = onSnapshot(vocabQ, (snap) => {
-      setPendingVocabList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (err) => {
-      console.warn("Real-time vocab listener warning:", err);
-    });
+    if (activeTab === "compliance") {
+      loadComplianceData();
+    }
+  }, [activeTab]);
 
-    // Real-time listener for pending diaries
-    const diaryQ = query(collection(db, "diaries"), where("status", "==", "pending"));
-    const unsubDiary = onSnapshot(diaryQ, (snap) => {
-      setPendingDiariesList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, (err) => {
-      console.warn("Real-time diary listener warning:", err);
-    });
+  const loadComplianceData = async () => {
+    try {
+      const vocabQ = query(collection(db, "vocab_submissions"), where("status", "==", "pending"));
+      const vocabSnap = await getDocs(vocabQ);
+      setPendingVocabList(vocabSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
-    return () => {
-      unsubVocab();
-      unsubDiary();
-    };
-  }, []);
+      const diaryQ = query(collection(db, "diaries"), where("status", "==", "pending"));
+      const diarySnap = await getDocs(diaryQ);
+      setPendingDiariesList(diarySnap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.warn("Error loading compliance data:", err);
+    }
+  };
 
   const computeTeacherCompliance = (teacher) => {
     const assignments = teacher.assignments || [];

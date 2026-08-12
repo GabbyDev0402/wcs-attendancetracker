@@ -90,7 +90,11 @@ export default function StudentClassDashboard() {
     setIsLoading(true);
 
     // 1. Real-time Sessions Listener (Vocab Assignments)
-    const unsubSessions = onSnapshot(collection(db, "sessions"), (sessionsSnap) => {
+    const sessionsQuery = extractedTeacherId
+      ? query(collection(db, "sessions"), where("teacherId", "==", extractedTeacherId))
+      : collection(db, "sessions");
+
+    const unsubSessions = onSnapshot(sessionsQuery, (sessionsSnap) => {
       const rawSessions = sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       const relevantSessions = rawSessions.filter((s) => {
@@ -139,8 +143,9 @@ export default function StudentClassDashboard() {
       setIsLoading(false);
     });
 
-    // 3. Real-time Exams Listener
-    const unsubExams = onSnapshot(collection(db, "exams"), (examsSnap) => {
+    // 3. Real-time Exams Listener (Filtered by published status)
+    const examsQuery = query(collection(db, "exams"), where("status", "==", "published"));
+    const unsubExams = onSnapshot(examsQuery, (examsSnap) => {
       const allExams = examsSnap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
       const relevantExams = allExams.filter((ex) => {
         const isPublished = ex.status === "published";
@@ -191,7 +196,7 @@ export default function StudentClassDashboard() {
       unsubExams();
       unsubExamSubs();
     };
-  }, [user, targetClassTag]);
+  }, [user?.id, targetClassTag]);
 
   // Mark Exam as Completed (Turned In) Handler
   const handleMarkExamCompleted = async (exam) => {

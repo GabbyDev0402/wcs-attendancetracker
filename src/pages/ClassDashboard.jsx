@@ -297,7 +297,7 @@ export default function ClassDashboard() {
         setClassInfo({ name: classId, grade: classId, subject: "" });
       }
     }
-  }, [user, classId]);
+  }, [user?.id, classId]);
 
   const handleTabChange = (tabName) => {
     setActiveTab(tabName);
@@ -309,7 +309,7 @@ export default function ClassDashboard() {
   // -------------------------------------------------------------
   useEffect(() => {
     loadClassRoster();
-  }, [classId, user]);
+  }, [classId, user?.id]);
 
   const loadClassRoster = async () => {
     if (!classId || !user) return;
@@ -421,7 +421,7 @@ export default function ClassDashboard() {
   useEffect(() => {
     if (activeTab !== "attendance") return;
     loadSessionRecord();
-  }, [activeTab, classId, attendanceDate, classStudents]);
+  }, [activeTab, classId, attendanceDate, classStudents.length]);
 
   const loadSessionRecord = async () => {
     if (!classId || !attendanceDate || classStudents.length === 0) return;
@@ -791,7 +791,7 @@ export default function ClassDashboard() {
       unsubPendingVocab();
       unsubGradedVocab();
     };
-  }, [activeTab, classId, historyRangeFilter, historyDateFilter, gradedVocabDateFilter, classInfo, user]);
+  }, [activeTab, classId, historyRangeFilter, historyDateFilter, gradedVocabDateFilter, classInfo?.grade, classInfo?.subject, user?.id]);
 
   const loadClassHistory = () => { };
   const loadPendingVocabSubmissions = () => { };
@@ -863,7 +863,7 @@ export default function ClassDashboard() {
 
   useEffect(() => {
     if (activeTab === "exams") loadExams();
-  }, [activeTab, classId, user]);
+  }, [activeTab, classId, user?.id]);
 
   const loadExams = async () => {
     if (!classId || !user) return;
@@ -1103,7 +1103,7 @@ export default function ClassDashboard() {
       loadTasks();
       loadTaskSubmissions();
     }
-  }, [activeTab, classId, user]);
+  }, [activeTab, classId, user?.id]);
 
   const loadTasks = async () => {
     if (!classId || !user) return;
@@ -1255,7 +1255,7 @@ export default function ClassDashboard() {
   // -------------------------------------------------------------
   useEffect(() => {
     if (activeTab === "record") loadEClassRecordData();
-  }, [activeTab, classId, user]);
+  }, [activeTab, classId, user?.id]);
 
   const loadEClassRecordData = async () => {
     if (!classId || !user) return;

@@ -65,12 +65,12 @@ export default function TeacherRoster() {
     if (teacherClasses.length > 0 && !targetClassId) {
       setTargetClassId(teacherClasses[0].slug);
     }
-  }, [user]);
+  }, [user?.id, JSON.stringify(user?.assignments)]);
 
   // Load students from Firestore matching V2 enrolledClasses or legacy enrolledTeachers
   useEffect(() => {
     loadStudents();
-  }, [classList]);
+  }, [user?.id]);
 
   const loadStudents = async () => {
     if (!user) return;

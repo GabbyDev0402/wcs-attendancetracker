@@ -98,99 +98,99 @@ export default function StudentDashboard() {
     }
     const uniqueTeacherIds = [...new Set(teacherIds)].filter(Boolean);
 
-    let sessionsQuery;
+    let sessionsQuery = null;
+    let unsubSessions = () => {};
     if (uniqueTeacherIds.length > 0) {
       sessionsQuery = query(
         collection(db, "sessions"),
         where("teacherId", "in", uniqueTeacherIds.slice(0, 10))
       );
+      unsubSessions = onSnapshot(sessionsQuery, (snap) => {
+        const fetchedSessions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllSessionsList(fetchedSessions);
+
+        // Map to deduplicate session logs by unique key: (classSlug + date)
+        const sessionMap = new Map();
+
+        fetchedSessions.forEach(session => {
+          if (!session.records || !Array.isArray(session.records)) return;
+          const myRecord = session.records.find(r => r.studentId === user.id);
+          if (!myRecord) return;
+
+          const rawClassId = session.classId || "";
+          const classSlug = rawClassId.includes("_") ? rawClassId.split("_")[1] : rawClassId;
+          const subjectName = session.subject || classSlug || "Classroom";
+          const gradeName = session.gradeLevel || session.grade || user.gradeLevel || "";
+          const sessionDate = session.date || "Unknown Date";
+
+          // Unique session key per subject & date
+          const sessionKey = `${(classSlug || subjectName).toLowerCase()}_${sessionDate}`;
+
+          const existing = sessionMap.get(sessionKey);
+          const currentUpdatedAt = session.updatedAt ? new Date(session.updatedAt).getTime() : 0;
+          const existingUpdatedAt = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+
+          if (!existing || currentUpdatedAt >= existingUpdatedAt) {
+            sessionMap.set(sessionKey, {
+              id: session.id || sessionKey,
+              date: sessionDate,
+              rawClassId,
+              classSlug,
+              subject: subjectName,
+              gradeLevel: gradeName,
+              fullSubjectName: `${gradeName} ${subjectName}`.trim(),
+              status: myRecord.status,
+              minutesLate: myRecord.minutesLate || 0,
+              updatedAt: session.updatedAt || session.date
+            });
+          }
+        });
+
+        const deduplicatedLogs = Array.from(sessionMap.values());
+
+        let present = 0, late = 0, absent = 0, excused = 0;
+        const subjectBreakdown = {};
+
+        deduplicatedLogs.forEach(log => {
+          const st = (log.status || "").toLowerCase();
+          if (st === "present") present++;
+          else if (st === "late") late++;
+          else if (st === "absent") absent++;
+          else if (st === "excused") excused++;
+
+          const subjKey = log.fullSubjectName || log.subject;
+          if (!subjectBreakdown[subjKey]) {
+            subjectBreakdown[subjKey] = { total: 0, present: 0, late: 0, absent: 0, excused: 0 };
+          }
+          subjectBreakdown[subjKey].total++;
+          if (st === "present") subjectBreakdown[subjKey].present++;
+          else if (st === "late") subjectBreakdown[subjKey].late++;
+          else if (st === "absent") subjectBreakdown[subjKey].absent++;
+          else if (st === "excused") subjectBreakdown[subjKey].excused++;
+        });
+
+        const totalSessions = present + late + absent + excused;
+        const averageScore = totalSessions > 0 ? Math.round(((present + late + excused) / totalSessions) * 100) : 100;
+
+        setAttendanceStats({
+          present,
+          late,
+          absent,
+          excused,
+          totalSessions,
+          averageScore,
+          subjectBreakdown
+        });
+
+        setAttendanceRecords(deduplicatedLogs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)));
+        setIsLoading(false);
+      }, (err) => {
+        console.warn("Error listening to sessions:", err);
+        setIsLoading(false);
+      });
     } else {
-      sessionsQuery = collection(db, "sessions");
+      setIsLoading(false);
     }
-
-    const unsubSessions = onSnapshot(sessionsQuery, (snap) => {
-      const fetchedSessions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAllSessionsList(fetchedSessions);
-
-      // Map to deduplicate session logs by unique key: (classSlug + date)
-      const sessionMap = new Map();
-
-      fetchedSessions.forEach(session => {
-        if (!session.records || !Array.isArray(session.records)) return;
-        const myRecord = session.records.find(r => r.studentId === user.id);
-        if (!myRecord) return;
-
-        const rawClassId = session.classId || "";
-        const classSlug = rawClassId.includes("_") ? rawClassId.split("_")[1] : rawClassId;
-        const subjectName = session.subject || classSlug || "Classroom";
-        const gradeName = session.gradeLevel || session.grade || user.gradeLevel || "";
-        const sessionDate = session.date || "Unknown Date";
-
-        // Unique session key per subject & date
-        const sessionKey = `${(classSlug || subjectName).toLowerCase()}_${sessionDate}`;
-
-        const existing = sessionMap.get(sessionKey);
-        const currentUpdatedAt = session.updatedAt ? new Date(session.updatedAt).getTime() : 0;
-        const existingUpdatedAt = existing?.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
-
-        if (!existing || currentUpdatedAt >= existingUpdatedAt) {
-          sessionMap.set(sessionKey, {
-            id: session.id || sessionKey,
-            date: sessionDate,
-            rawClassId,
-            classSlug,
-            subject: subjectName,
-            gradeLevel: gradeName,
-            fullSubjectName: `${gradeName} ${subjectName}`.trim(),
-            status: myRecord.status,
-            minutesLate: myRecord.minutesLate || 0,
-            updatedAt: session.updatedAt || session.date
-          });
-        }
-      });
-
-      const deduplicatedLogs = Array.from(sessionMap.values());
-
-      let present = 0, late = 0, absent = 0, excused = 0;
-      const subjectBreakdown = {};
-
-      deduplicatedLogs.forEach(log => {
-        const st = (log.status || "").toLowerCase();
-        if (st === "present") present++;
-        else if (st === "late") late++;
-        else if (st === "absent") absent++;
-        else if (st === "excused") excused++;
-
-        const subjKey = log.fullSubjectName || log.subject;
-        if (!subjectBreakdown[subjKey]) {
-          subjectBreakdown[subjKey] = { total: 0, present: 0, late: 0, absent: 0, excused: 0 };
-        }
-        subjectBreakdown[subjKey].total++;
-        if (st === "present") subjectBreakdown[subjKey].present++;
-        else if (st === "late") subjectBreakdown[subjKey].late++;
-        else if (st === "absent") subjectBreakdown[subjKey].absent++;
-        else if (st === "excused") subjectBreakdown[subjKey].excused++;
-      });
-
-      const totalSessions = present + late + absent + excused;
-      const averageScore = totalSessions > 0 ? Math.round(((present + late + excused) / totalSessions) * 100) : 100;
-
-      setAttendanceStats({
-        present,
-        late,
-        absent,
-        excused,
-        totalSessions,
-        averageScore,
-        subjectBreakdown
-      });
-
-      setAttendanceRecords(deduplicatedLogs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)));
-      setIsLoading(false);
-    }, (err) => {
-      console.warn("Error listening to sessions:", err);
-      setIsLoading(false);
-    });
 
     // 3. Real-time Student Vocab Submissions Listener (For Card Notification Badges)
     const vocabSubQuery = query(
@@ -204,8 +204,9 @@ export default function StudentDashboard() {
       console.warn("Error listening to student vocab submissions:", err);
     });
 
-    // 4. Real-time Tasks Listener
-    const unsubTasks = onSnapshot(collection(db, "tasks"), (tasksSnap) => {
+    // 4. Real-time Tasks Listener (Filtered by published status)
+    const tasksQuery = query(collection(db, "tasks"), where("status", "==", "published"));
+    const unsubTasks = onSnapshot(tasksQuery, (tasksSnap) => {
       const list = tasksSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
       setAllTasks(list);
     }, (err) => {
@@ -231,7 +232,7 @@ export default function StudentDashboard() {
       unsubTasks();
       unsubTaskSubs();
     };
-  }, [user]);
+  }, [user?.id]);
 
   // Handle Submit Daily Diary
   const handleSubmitDiary = async (e) => {
