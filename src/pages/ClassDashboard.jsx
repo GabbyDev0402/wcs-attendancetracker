@@ -3547,6 +3547,7 @@ export default function ClassDashboard() {
                             );
                           }
 
+                          const currentNumber = taskQuestions.slice(0, idx + 1).filter(item => !['section', 'info'].includes(item.type)).length;
                           const typeInfo = questionTypeLabels[q.type] || { label: q.type, color: "slate" };
 
                           return (
@@ -3555,7 +3556,7 @@ export default function ClassDashboard() {
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center space-x-3">
                                   <span className="flex items-center justify-center h-7 w-7 rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-600 dark:text-slate-300">
-                                    {idx + 1}
+                                    {currentNumber}
                                   </span>
                                   <span className="inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
                                     {typeInfo.label}
@@ -4168,7 +4169,46 @@ export default function ClassDashboard() {
                   );
                 }
 
+                let questionCounter = 1;
+
                 return questions.map((q, idx) => {
+                  if (q.type === "section") {
+                    return (
+                      <div key={q.id || idx} className="p-5 rounded-2xl border-2 border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30 space-y-2">
+                        <div className="flex items-center space-x-2 text-indigo-700 dark:text-indigo-300 text-xs font-bold uppercase tracking-wider">
+                          <FolderPlus className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span>Section Header</span>
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 font-heading">{q.title || "Untitled Section"}</h3>
+                        {q.description && (
+                          <p className="text-xs text-slate-600 dark:text-slate-300">{q.description}</p>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  if (q.type === "info") {
+                    return (
+                      <div key={q.id || idx} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 space-y-2">
+                        <div className="flex items-center space-x-2 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                          <Type className="h-4 w-4 text-slate-500 shrink-0" />
+                          <span>Reading Passage / Instructions</span>
+                        </div>
+                        {q.content && q.content.includes("<") ? (
+                          <div 
+                            className="prose prose-sm prose-slate dark:prose-invert max-w-none text-slate-800 dark:text-slate-100 font-medium"
+                            dangerouslySetInnerHTML={{ __html: q.content.replace(/&nbsp;/g, ' ') }}
+                          />
+                        ) : (
+                          <div className="prose prose-sm prose-slate dark:prose-invert max-w-none text-slate-800 dark:text-slate-100 font-medium">
+                            {q.content}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  const currentNumber = questionCounter++;
                   const pts = Number(q.points) || 1;
                   const promptHtml = q.prompt || q.text || "";
 
@@ -4177,11 +4217,11 @@ export default function ClassDashboard() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-start space-x-2.5 flex-1 min-w-0">
                           <span className="flex items-center justify-center h-6 w-6 rounded-md bg-brand-50 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400 font-extrabold text-xs shrink-0 mt-0.5">
-                            {idx + 1}
+                            {currentNumber}
                           </span>
                           <div 
                             className="prose prose-sm prose-slate max-w-none dark:prose-invert text-slate-800 dark:text-slate-100 font-bold leading-snug break-words" 
-                            dangerouslySetInnerHTML={{ __html: promptHtml || `Question ${idx + 1}` }} 
+                            dangerouslySetInnerHTML={{ __html: promptHtml || `Question ${currentNumber}` }} 
                           />
                         </div>
                         <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg shrink-0">
