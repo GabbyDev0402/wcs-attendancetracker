@@ -83,15 +83,16 @@ const questionTypeLabels = {
 };
 
 export default function ClassDashboard() {
+  const { classId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+
   const fetchedTabsRef = useRef({});
 
   useEffect(() => {
     fetchedTabsRef.current = {};
   }, [classId]);
-  const { classId } = useParams();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const { user } = useAuth();
 
   // Tab State: 'roster' | 'attendance' | 'vocabularies' | 'exams'
   const currentTabParam = searchParams.get("tab") || "roster";
@@ -1278,6 +1279,7 @@ export default function ClassDashboard() {
     if (!classId || !user) return;
     setRecordDataLoading(true);
     try {
+      const tag = `${user.id}_${classId}`;
       const classIdVariants = Array.from(new Set([tag, classId, decodeURIComponent(classId)]));
 
       const examsQ = query(collection(db, "exams"), where("classId", "==", tag));
