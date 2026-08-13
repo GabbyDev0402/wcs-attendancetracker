@@ -439,7 +439,8 @@ export default function ClassDashboard() {
       const targetClassTag = `${user?.id}_${classId}`;
       const q = query(
         collection(db, "sessions"),
-        where("date", "==", attendanceDate)
+        where("date", "==", attendanceDate),
+        where("teacherId", "==", user.id)
       );
       const snap = await getDocs(q);
 

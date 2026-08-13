@@ -90,9 +90,12 @@ export default function StudentClassDashboard() {
     setIsLoading(true);
 
     // 1. Real-time Sessions Listener (Vocab Assignments)
-    const sessionsQuery = extractedTeacherId
-      ? query(collection(db, "sessions"), where("teacherId", "==", extractedTeacherId))
-      : collection(db, "sessions");
+    if (!extractedTeacherId) {
+      console.warn("StudentClassDashboard: extractedTeacherId is empty, skipping all listeners to prevent unscoped reads.");
+      setIsLoading(false);
+      return;
+    }
+    const sessionsQuery = query(collection(db, "sessions"), where("teacherId", "==", extractedTeacherId));
 
     const unsubSessions = onSnapshot(sessionsQuery, (sessionsSnap) => {
       const rawSessions = sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));

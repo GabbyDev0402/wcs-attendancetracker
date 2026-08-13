@@ -148,7 +148,8 @@ export default function AttendanceLog() {
         const targetClassTag = `${user?.id}_${selectedClassId}`;
         const q = query(
           collection(db, "sessions"),
-          where("date", "==", date)
+          where("date", "==", date),
+          where("teacherId", "==", user.id)
         );
         const snap = await getDocs(q);
 
@@ -233,7 +234,7 @@ export default function AttendanceLog() {
     };
 
     loadSessionRecord();
-  }, [selectedClassId, date, students, activeClass]);
+  }, [selectedClassId, date, students.length, activeClass?.tag]);
 
   const handleStatusChange = (studentId, status) => {
     setAttendance(prev => {
