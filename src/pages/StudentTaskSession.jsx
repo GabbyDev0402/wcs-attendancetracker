@@ -496,12 +496,9 @@ export default function StudentTaskSession() {
                       const vocabSentences = studentAnswers[q.id] || {};
                       return (
                         <div key={pair.id || pIdx} className="space-y-1.5 p-4 rounded-2xl bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/70">
-                          <label className="block text-xs font-bold text-brand-600 dark:text-brand-400">
+                          <label className="block text-xs font-bold text-brand-600 dark:text-brand-400 mb-2">
                             Word #{pIdx + 1}: <span className="text-slate-800 dark:text-slate-100 text-sm font-black">{pair.word}</span>
                           </label>
-                          {pair.definition && (
-                            <p className="text-[11px] text-slate-500 italic mb-2">Definition: {pair.definition}</p>
-                          )}
                           <textarea
                             rows={2}
                             disabled={alreadySubmitted}
