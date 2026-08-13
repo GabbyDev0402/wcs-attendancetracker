@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import ReactDOM from "react-dom";
 
@@ -83,6 +83,11 @@ const questionTypeLabels = {
 };
 
 export default function ClassDashboard() {
+  const fetchedTabsRef = useRef({});
+
+  useEffect(() => {
+    fetchedTabsRef.current = {};
+  }, [classId]);
   const { classId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -862,7 +867,12 @@ export default function ClassDashboard() {
   const classTag = `${user?.id}_${classId}`;
 
   useEffect(() => {
-    if (activeTab === "exams") loadExams();
+    if (activeTab === "exams") {
+      if (!fetchedTabsRef.current["exams"]) {
+        loadExams();
+        fetchedTabsRef.current["exams"] = true;
+      }
+    }
   }, [activeTab, classId, user?.id]);
 
   const loadExams = async () => {
@@ -886,12 +896,11 @@ export default function ClassDashboard() {
       });
       setExams(fetchedExams);
 
-      // Fetch exam submissions for this class
-      const subSnap = await getDocs(collection(db, "exam_submissions"));
-      const allSubs = subSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
-      const classSubs = allSubs.filter(sub => {
-        return sub.classId === tag || sub.classId === classId || sub.classId === decodeURIComponent(classId);
-      });
+      // Fetch exam submissions for this class (CONSTRAINED BY classIdVariants)
+      const classIdVariants = Array.from(new Set([tag, classId, decodeURIComponent(classId)]));
+      const subQ = query(collection(db, "exam_submissions"), where("classId", "in", classIdVariants));
+      const subSnap = await getDocs(subQ);
+      const classSubs = subSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
       setExamSubmissions(classSubs);
     } catch (e) {
       console.error("Error loading exams & submissions:", e);
@@ -1100,8 +1109,11 @@ export default function ClassDashboard() {
   // -------------------------------------------------------------
   useEffect(() => {
     if (activeTab === "tasks") {
-      loadTasks();
-      loadTaskSubmissions();
+      if (!fetchedTabsRef.current["tasks"]) {
+        loadTasks();
+        loadTaskSubmissions();
+        fetchedTabsRef.current["tasks"] = true;
+      }
     }
   }, [activeTab, classId, user?.id]);
 
@@ -1254,14 +1266,19 @@ export default function ClassDashboard() {
   // TAB 6: E-CLASS RECORD LOGIC (PHASE 3)
   // -------------------------------------------------------------
   useEffect(() => {
-    if (activeTab === "record") loadEClassRecordData();
+    if (activeTab === "record") {
+      if (!fetchedTabsRef.current["record"]) {
+        loadEClassRecordData();
+        fetchedTabsRef.current["record"] = true;
+      }
+    }
   }, [activeTab, classId, user?.id]);
 
   const loadEClassRecordData = async () => {
     if (!classId || !user) return;
     setRecordDataLoading(true);
     try {
-      const tag = `${user.id}_${classId}`;
+      const classIdVariants = Array.from(new Set([tag, classId, decodeURIComponent(classId)]));
 
       const examsQ = query(collection(db, "exams"), where("classId", "==", tag));
       const examsSnap = await getDocs(examsQ);
@@ -1271,14 +1288,16 @@ export default function ClassDashboard() {
       const tasksSnap = await getDocs(tasksQ);
       setAllClassTasks(tasksSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
 
-      const examSubsSnap = await getDocs(collection(db, "exam_submissions"));
+      const examSubsQ = query(collection(db, "exam_submissions"), where("classId", "in", classIdVariants));
+      const examSubsSnap = await getDocs(examSubsQ);
       setAllClassExamSubs(examSubsSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
 
       const taskSubsQ = query(collection(db, "task_submissions"), where("classId", "==", tag));
       const taskSubsSnap = await getDocs(taskSubsQ);
       setAllClassTaskSubs(taskSubsSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
 
-      const vocabSubsSnap = await getDocs(collection(db, "vocab_submissions"));
+      const vocabSubsQ = query(collection(db, "vocab_submissions"), where("classId", "in", classIdVariants));
+      const vocabSubsSnap = await getDocs(vocabSubsQ);
       setAllClassVocabSubs(vocabSubsSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
 
       const diariesQ = query(collection(db, "diaries"), where("mathTeacherId", "==", user.id));

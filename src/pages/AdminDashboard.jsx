@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { auth, db, provisionUserSecondary, generateStudentAccount } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
@@ -98,9 +98,12 @@ export default function AdminDashboard() {
   const [reportFilterExamCategory, setReportFilterExamCategory] = useState("All Categories");
   const [reportSearchQuery, setReportSearchQuery] = useState("");
 
+  const hasLoadedAcademicRef = useRef(false);
+
   useEffect(() => {
-    if (activeTab === "academic") {
+    if (activeTab === "academic" && !hasLoadedAcademicRef.current) {
       loadAcademicData();
+      hasLoadedAcademicRef.current = true;
     }
   }, [activeTab]);
 
@@ -160,9 +163,12 @@ export default function AdminDashboard() {
     document.body.removeChild(link);
   };
 
+  const hasLoadedComplianceRef = useRef(false);
+
   useEffect(() => {
-    if (activeTab === "compliance") {
+    if (activeTab === "compliance" && !hasLoadedComplianceRef.current) {
       loadComplianceData();
+      hasLoadedComplianceRef.current = true;
     }
   }, [activeTab]);
 
