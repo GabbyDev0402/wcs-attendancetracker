@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "firebase/firestore";
@@ -209,6 +209,7 @@ export default function TeacherDashboard() {
   };
 
   // Load students and sessions from Firestore to compute dashboard states
+  const hasLoadedDashboardRef = useRef(false);
   useEffect(() => {
     const fetchDashboardState = async () => {
       if (teacherClasses.length === 0) {
@@ -221,6 +222,9 @@ export default function TeacherDashboard() {
         setAtRiskStudents([]);
         return;
       }
+
+      if (hasLoadedDashboardRef.current) return;
+      hasLoadedDashboardRef.current = true;
 
       setIsDataLoading(true);
       try {
@@ -428,7 +432,7 @@ export default function TeacherDashboard() {
     };
 
     fetchDashboardState();
-  }, [teacherClasses, todayStr]);
+  }, [teacherClasses.length, todayStr]);
 
   const norm = (s) => (s || "").toString().toLowerCase().trim();
 

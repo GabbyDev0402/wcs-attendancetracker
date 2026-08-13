@@ -314,8 +314,10 @@ export default function ClassDashboard() {
   // TAB 1: ROSTER LOGIC
   // -------------------------------------------------------------
   useEffect(() => {
+    if (activeTab !== "roster" || fetchedTabsRef.current["roster"]) return;
     loadClassRoster();
-  }, [classId, user?.id]);
+    fetchedTabsRef.current["roster"] = true;
+  }, [activeTab, classId, user?.id]);
 
   const loadClassRoster = async () => {
     if (!classId || !user) return;
@@ -738,20 +740,15 @@ export default function ClassDashboard() {
 
     // 2. Real-time Pending Student Vocab Submissions Listener
     const classTag = `${user.id}_${classId}`;
+    const classIdVariants = Array.from(new Set([classTag, classId, decodeURIComponent(classId)]));
     const pendingVocabQuery = query(
       collection(db, "vocab_submissions"),
-      where("status", "==", "pending")
+      where("status", "==", "pending"),
+      where("classId", "in", classIdVariants)
     );
 
     const unsubPendingVocab = onSnapshot(pendingVocabQuery, (snap) => {
-      const items = snap.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(sub =>
-          sub.classId === classTag ||
-          sub.classId === classId ||
-          sub.rawClassId === classId ||
-          (sub.teacherId === user.id && (sub.classId.includes(classId) || sub.classId === classId))
-        );
+      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setPendingVocabSubmissions(items);
       setIsPendingVocabLoading(false);
     }, (e) => {
@@ -763,18 +760,12 @@ export default function ClassDashboard() {
     setIsGradedVocabLoading(true);
     const gradedVocabQuery = query(
       collection(db, "vocab_submissions"),
-      where("status", "==", "graded")
+      where("status", "==", "graded"),
+      where("classId", "in", classIdVariants)
     );
 
     const unsubGradedVocab = onSnapshot(gradedVocabQuery, (snap) => {
-      let items = snap.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(sub =>
-          sub.classId === classTag ||
-          sub.classId === classId ||
-          sub.rawClassId === classId ||
-          (sub.teacherId === user.id && (sub.classId.includes(classId) || sub.classId === classId))
-        );
+      let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       if (gradedVocabDateFilter) {
         items = items.filter(sub => sub.date === gradedVocabDateFilter);
