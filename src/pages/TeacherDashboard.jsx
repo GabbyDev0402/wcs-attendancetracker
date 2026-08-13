@@ -145,15 +145,15 @@ export default function TeacherDashboard() {
 
     const qPendingVocabs = query(
       collection(db, "vocab_submissions"),
-      where("status", "==", "pending")
+      where("status", "==", "pending"),
+      where("teacherId", "==", user.id)
     );
 
     const unsubPendingVocabs = onSnapshot(qPendingVocabs, (snap) => {
       const counts = {};
       snap.docs.forEach(docSnap => {
         const data = docSnap.data();
-        const isMySubmission = data.teacherId === user.id || (data.classId && data.classId.startsWith(`${user.id}_`));
-        if (isMySubmission && data.classId) {
+        if (data.classId) {
           const cId = data.classId;
           const rawId = data.rawClassId || (cId.includes("_") ? cId.split("_")[1] : cId);
 

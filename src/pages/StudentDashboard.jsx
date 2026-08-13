@@ -204,14 +204,31 @@ export default function StudentDashboard() {
       console.warn("Error listening to student vocab submissions:", err);
     });
 
-    // 4. Real-time Tasks Listener (Filtered by published status)
-    const tasksQuery = query(collection(db, "tasks"), where("status", "==", "published"));
-    const unsubTasks = onSnapshot(tasksQuery, (tasksSnap) => {
-      const list = tasksSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
-      setAllTasks(list);
-    }, (err) => {
-      console.warn("Error listening to tasks:", err);
-    });
+    // 4. Real-time Tasks Listener (Scoped to student's enrolled classes)
+    const enrolledClasses = user?.enrolledClasses || [];
+    let unsubTasks = () => {};
+    if (enrolledClasses.length > 0 && enrolledClasses.length <= 30) {
+      const tasksQuery = query(
+        collection(db, "tasks"),
+        where("status", "==", "published"),
+        where("classId", "in", enrolledClasses)
+      );
+      unsubTasks = onSnapshot(tasksQuery, (tasksSnap) => {
+        const list = tasksSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
+        setAllTasks(list);
+      }, (err) => {
+        console.warn("Error listening to tasks:", err);
+      });
+    } else if (enrolledClasses.length > 30) {
+      // Firestore "in" supports max 30; fallback to unscoped + client filter
+      const tasksQuery = query(collection(db, "tasks"), where("status", "==", "published"));
+      unsubTasks = onSnapshot(tasksQuery, (tasksSnap) => {
+        const list = tasksSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
+        setAllTasks(list.filter(t => enrolledClasses.includes(t.classId)));
+      }, (err) => {
+        console.warn("Error listening to tasks:", err);
+      });
+    }
 
     // 5. Real-time Student Task Submissions Listener
     const taskSubQuery = query(
