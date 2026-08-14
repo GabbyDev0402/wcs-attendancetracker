@@ -314,10 +314,10 @@ export default function ClassDashboard() {
   // TAB 1: ROSTER LOGIC
   // -------------------------------------------------------------
   useEffect(() => {
-    if (activeTab !== "roster" || fetchedTabsRef.current["roster"]) return;
+    if (!classId || !user?.id || fetchedTabsRef.current["roster"]) return;
     loadClassRoster();
     fetchedTabsRef.current["roster"] = true;
-  }, [activeTab, classId, user?.id]);
+  }, [classId, user?.id]);
 
   const loadClassRoster = async () => {
     if (!classId || !user) return;

@@ -146,15 +146,15 @@ export default function StudentClassDashboard() {
       setIsLoading(false);
     });
 
-    // 3. Real-time Exams Listener (Filtered by published status)
-    const examsQuery = query(collection(db, "exams"), where("status", "==", "published"));
+    // 3. Real-time Exams Listener (Filtered by published status & scoped to this classroom)
+    const classIdVariants = Array.from(new Set([targetClassTag, extractedClassId, decodeURIComponent(targetClassTag)].filter(Boolean)));
+    const examsQuery = query(
+      collection(db, "exams"),
+      where("status", "==", "published"),
+      where("classId", "in", classIdVariants)
+    );
     const unsubExams = onSnapshot(examsQuery, (examsSnap) => {
-      const allExams = examsSnap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
-      const relevantExams = allExams.filter((ex) => {
-        const isPublished = ex.status === "published";
-        const matchesClassTag = ex.classId === targetClassTag || ex.classId === extractedClassId;
-        return isPublished && matchesClassTag;
-      });
+      const relevantExams = examsSnap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
 
       relevantExams.sort((a, b) => {
         const timeA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
@@ -241,16 +241,14 @@ export default function StudentClassDashboard() {
     if (!user || !targetClassTag) return;
     setIsTasksLoading(true);
     try {
+      const classIdVariants = Array.from(new Set([targetClassTag, extractedClassId, decodeURIComponent(targetClassTag)].filter(Boolean)));
       const qTasks = query(
         collection(db, "tasks"),
-        where("status", "==", "published")
+        where("status", "==", "published"),
+        where("classId", "in", classIdVariants)
       );
       const tasksSnap = await getDocs(qTasks);
-      const allTasks = tasksSnap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
-
-      const relevantTasks = allTasks.filter((tk) => {
-        return tk.classId === targetClassTag || tk.classId === extractedClassId;
-      });
+      const relevantTasks = tasksSnap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
 
       setTasksList(relevantTasks);
 
