@@ -263,8 +263,18 @@ function HistoryCardItem({ session, submission, wordsList, sessionDate }) {
     if (!user || !targetClassTag) return;
     setIsLoading(true);
 
-    // 1. Listen to class sessions with STRICT classroom filtering
-    const sessionsQuery = collection(db, "sessions");
+    // Guard: Prevent unscoped reads if extractedTeacherId is missing
+    if (!extractedTeacherId) {
+      console.warn("StudentVocabHistory: extractedTeacherId is missing, skipping sessions listener.");
+      setIsLoading(false);
+      return;
+    }
+
+    // 1. Listen to class sessions with STRICT classroom filtering (Scoped by teacherId)
+    const sessionsQuery = query(
+      collection(db, "sessions"),
+      where("teacherId", "==", extractedTeacherId)
+    );
     const unsubSessions = onSnapshot(sessionsQuery, (snap) => {
       const allSessions = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
@@ -324,7 +334,7 @@ function HistoryCardItem({ session, submission, wordsList, sessionDate }) {
       unsubSessions();
       unsubSubmissions();
     };
-  }, [user, targetClassTag, extractedClassId, expectedGrade, expectedSubject, extractedTeacherId]);
+  }, [user?.id, targetClassTag, extractedClassId, expectedGrade, expectedSubject, extractedTeacherId]);
 
   // Filter for past assignments (date < todayStr)
   const pastSessions = vocabSessions.filter((s) => {

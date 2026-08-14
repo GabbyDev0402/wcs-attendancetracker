@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "firebase/firestore";
@@ -52,7 +52,7 @@ export default function TeacherDashboard() {
   const [isGradingDiary, setIsGradingDiary] = useState(false);
 
   // Graded Diaries Archive State
-  const [gradedDiaries, setGradedDiaries] = useState([]);
+  const [rawGradedDiaries, setRawGradedDiaries] = useState([]);
   const [gradedDiaryDateFilter, setGradedDiaryDateFilter] = useState(todayStr);
   const [isGradedDiariesLoading, setIsGradedDiariesLoading] = useState(false);
 
@@ -113,20 +113,11 @@ export default function TeacherDashboard() {
     );
 
     const unsubGraded = onSnapshot(qGraded, (snap) => {
-      let items = snap.docs
+      const items = snap.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(d => d.mathTeacherId === currentTeacherUid);
 
-      if (gradedDiaryDateFilter) {
-        items = items.filter(d => d.date === gradedDiaryDateFilter);
-      } else {
-        const nowObj = new Date();
-        const sevenDaysAgoStr = new Date(nowObj.setDate(nowObj.getDate() - 7)).toISOString().split("T")[0];
-        items = items.filter(d => !d.date || d.date >= sevenDaysAgoStr);
-      }
-
-      items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-      setGradedDiaries(items);
+      setRawGradedDiaries(items);
       setIsGradedDiariesLoading(false);
     }, (e) => {
       console.error("Error listening to graded diaries archive:", e);
@@ -137,7 +128,22 @@ export default function TeacherDashboard() {
       unsubPending();
       unsubGraded();
     };
-  }, [isMathTeacher, gradedDiaryDateFilter, user?.id]);
+  }, [isMathTeacher, user?.id]);
+
+  // Derived In-Memory Filtered Graded Diaries Archive
+  const gradedDiaries = useMemo(() => {
+    let items = [...rawGradedDiaries];
+    if (gradedDiaryDateFilter) {
+      items = items.filter(d => d.date === gradedDiaryDateFilter);
+    } else {
+      const nowObj = new Date();
+      const sevenDaysAgoStr = new Date(nowObj.setDate(nowObj.getDate() - 7)).toISOString().split("T")[0];
+      items = items.filter(d => !d.date || d.date >= sevenDaysAgoStr);
+    }
+
+    items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    return items;
+  }, [rawGradedDiaries, gradedDiaryDateFilter]);
 
   // Real-time Pending Vocab Submissions by Class Listener
   useEffect(() => {

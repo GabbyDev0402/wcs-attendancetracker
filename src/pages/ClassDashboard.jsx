@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
 import ReactDOM from "react-dom";
 
@@ -183,7 +183,7 @@ export default function ClassDashboard() {
   const [isGradingVocab, setIsGradingVocab] = useState(false);
 
   // Vocabularies & Submissions State (Tab 3)
-  const [classSessionsHistory, setClassSessionsHistory] = useState([]);
+  const [rawClassSessionsHistory, setRawClassSessionsHistory] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyRangeFilter, setHistoryRangeFilter] = useState("7days");
   const [historyDateFilter, setHistoryDateFilter] = useState("");
@@ -193,7 +193,7 @@ export default function ClassDashboard() {
   const [vocabFeedbackInput, setVocabFeedbackInput] = useState("");
 
   // Graded Vocab Submissions Archive State (Tab 3 Middle Section)
-  const [gradedVocabSubmissions, setGradedVocabSubmissions] = useState([]);
+  const [rawGradedVocabSubmissions, setRawGradedVocabSubmissions] = useState([]);
   const [gradedVocabDateFilter, setGradedVocabDateFilter] = useState(todayStr);
   const [isGradedVocabLoading, setIsGradedVocabLoading] = useState(false);
 
@@ -703,36 +703,7 @@ export default function ClassDashboard() {
         return matchesTag || matchesGradeSubject;
       });
 
-      // Date Range Filtering
-      const now = new Date();
-      now.setHours(23, 59, 59, 999);
-
-      if (historyDateFilter) {
-        historyDocs = historyDocs.filter(d => d.date === historyDateFilter);
-      } else if (historyRangeFilter === "7days") {
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(now.getDate() - 7);
-        sevenDaysAgo.setHours(0, 0, 0, 0);
-
-        historyDocs = historyDocs.filter(d => {
-          if (!d.date) return false;
-          const sessionDate = new Date(d.date);
-          return !isNaN(sessionDate.getTime()) ? sessionDate >= sevenDaysAgo : true;
-        });
-      } else if (historyRangeFilter === "30days") {
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(now.getDate() - 30);
-        thirtyDaysAgo.setHours(0, 0, 0, 0);
-
-        historyDocs = historyDocs.filter(d => {
-          if (!d.date) return false;
-          const sessionDate = new Date(d.date);
-          return !isNaN(sessionDate.getTime()) ? sessionDate >= thirtyDaysAgo : true;
-        });
-      }
-
-      historyDocs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-      setClassSessionsHistory(historyDocs);
+      setRawClassSessionsHistory(historyDocs);
       setIsHistoryLoading(false);
     }, (e) => {
       console.error("Error listening to class session history:", e);
@@ -766,18 +737,8 @@ export default function ClassDashboard() {
     );
 
     const unsubGradedVocab = onSnapshot(gradedVocabQuery, (snap) => {
-      let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      if (gradedVocabDateFilter) {
-        items = items.filter(sub => sub.date === gradedVocabDateFilter);
-      } else {
-        const nowObj = new Date();
-        const sevenDaysAgoStr = new Date(nowObj.setDate(nowObj.getDate() - 7)).toISOString().split("T")[0];
-        items = items.filter(sub => !sub.date || sub.date >= sevenDaysAgoStr);
-      }
-
-      items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-      setGradedVocabSubmissions(items);
+      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setRawGradedVocabSubmissions(items);
       setIsGradedVocabLoading(false);
     }, (e) => {
       console.error("Error listening to graded vocab submissions archive:", e);
@@ -789,7 +750,57 @@ export default function ClassDashboard() {
       unsubPendingVocab();
       unsubGradedVocab();
     };
-  }, [activeTab, classId, historyRangeFilter, historyDateFilter, gradedVocabDateFilter, classInfo?.grade, classInfo?.subject, user?.id]);
+  }, [activeTab, classId, classInfo?.grade, classInfo?.subject, user?.id]);
+
+  // Derived In-Memory Filtered Class Lesson History
+  const classSessionsHistory = useMemo(() => {
+    let historyDocs = [...rawClassSessionsHistory];
+    const now = new Date();
+    now.setHours(23, 59, 59, 999);
+
+    if (historyDateFilter) {
+      historyDocs = historyDocs.filter(d => d.date === historyDateFilter);
+    } else if (historyRangeFilter === "7days") {
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(now.getDate() - 7);
+      sevenDaysAgo.setHours(0, 0, 0, 0);
+
+      historyDocs = historyDocs.filter(d => {
+        if (!d.date) return false;
+        const sessionDate = new Date(d.date);
+        return !isNaN(sessionDate.getTime()) ? sessionDate >= sevenDaysAgo : true;
+      });
+    } else if (historyRangeFilter === "30days") {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(now.getDate() - 30);
+      thirtyDaysAgo.setHours(0, 0, 0, 0);
+
+      historyDocs = historyDocs.filter(d => {
+        if (!d.date) return false;
+        const sessionDate = new Date(d.date);
+        return !isNaN(sessionDate.getTime()) ? sessionDate >= thirtyDaysAgo : true;
+      });
+    }
+
+    historyDocs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    return historyDocs;
+  }, [rawClassSessionsHistory, historyRangeFilter, historyDateFilter]);
+
+  // Derived In-Memory Filtered Graded Vocab Submissions Archive
+  const gradedVocabSubmissions = useMemo(() => {
+    let items = [...rawGradedVocabSubmissions];
+
+    if (gradedVocabDateFilter) {
+      items = items.filter(sub => sub.date === gradedVocabDateFilter);
+    } else {
+      const nowObj = new Date();
+      const sevenDaysAgoStr = new Date(nowObj.setDate(nowObj.getDate() - 7)).toISOString().split("T")[0];
+      items = items.filter(sub => !sub.date || sub.date >= sevenDaysAgoStr);
+    }
+
+    items.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    return items;
+  }, [rawGradedVocabSubmissions, gradedVocabDateFilter]);
 
   const loadClassHistory = () => { };
   const loadPendingVocabSubmissions = () => { };
