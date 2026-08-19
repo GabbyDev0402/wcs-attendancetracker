@@ -257,6 +257,7 @@ export default function ClassDashboard() {
 
   const [isGradingQuizModalOpen, setIsGradingQuizModalOpen] = useState(false);
   const [selectedQuizSub, setSelectedQuizSub] = useState(null);
+  const [manualQuizObjScores, setManualQuizObjScores] = useState({});
   const [manualQuizSubjScores, setManualQuizSubjScores] = useState({});
   const [isSavingQuizGrade, setIsSavingQuizGrade] = useState(false);
 
@@ -1228,11 +1229,49 @@ export default function ClassDashboard() {
 
   const handleOpenQuizGradingModal = (sub) => {
     setSelectedQuizSub(sub);
+    const targetTask = tasks.find(t => t.firestoreId === sub.taskId || t.id === sub.taskId);
+    const questions = targetTask?.questions || [];
+
+    // 1. Initialize Subjective Scores
     if (sub.subjScoresDetail) {
       setManualQuizSubjScores(sub.subjScoresDetail);
     } else {
-      setManualQuizSubjScores({});
+      const initialSubj = {};
+      questions.forEach(q => {
+        if (['fileUpload', 'essay', 'vocabulary'].includes(q.type)) {
+          initialSubj[q.id] = 0;
+        }
+      });
+      setManualQuizSubjScores(initialSubj);
     }
+
+    // 2. Initialize Objective Scores (Supports editing auto-graded points)
+    if (sub.objScoresDetail) {
+      setManualQuizObjScores(sub.objScoresDetail);
+    } else {
+      const initialObj = {};
+      questions.forEach(q => {
+        if (['multipleChoice', 'checkboxes', 'identification'].includes(q.type)) {
+          const pts = Number(q.points) || 1;
+          const ans = sub.answers?.[q.id];
+          let isCorrect = false;
+          if (q.type === 'multipleChoice') {
+            isCorrect = Number(ans) === Number(q.correctOptionIndex);
+          } else if (q.type === 'checkboxes') {
+            const studentIndices = Array.isArray(ans) ? [...ans].sort((a, b) => a - b) : [];
+            const teacherIndices = Array.isArray(q.correctOptionIndices) ? [...q.correctOptionIndices].sort((a, b) => a - b) : [Number(q.correctOptionIndex) || 0];
+            isCorrect = JSON.stringify(studentIndices) === JSON.stringify(teacherIndices);
+          } else if (q.type === 'identification') {
+            const studentText = (ans || '').toString().trim().toLowerCase();
+            const correctText = (q.correctAnswer || '').toString().trim().toLowerCase();
+            isCorrect = !!studentText && studentText === correctText;
+          }
+          initialObj[q.id] = isCorrect ? pts : 0;
+        }
+      });
+      setManualQuizObjScores(initialObj);
+    }
+
     setIsGradingQuizModalOpen(true);
   };
 
@@ -1244,11 +1283,16 @@ export default function ClassDashboard() {
         (sum, pts) => sum + (Number(pts) || 0),
         0
       );
-      const objScore = Number(selectedQuizSub.objScore) || 0;
-      const totalFinalScore = objScore + calculatedSubjScore;
+      const calculatedObjScore = Object.values(manualQuizObjScores).reduce(
+        (sum, pts) => sum + (Number(pts) || 0),
+        0
+      );
+      const totalFinalScore = calculatedObjScore + calculatedSubjScore;
 
       const subDocId = selectedQuizSub.firestoreId || selectedQuizSub.id;
       await updateDoc(doc(db, "task_submissions", subDocId), {
+        objScore: calculatedObjScore,
+        objScoresDetail: manualQuizObjScores,
         subjScore: calculatedSubjScore,
         subjScoresDetail: manualQuizSubjScores,
         score: totalFinalScore,
@@ -1257,6 +1301,7 @@ export default function ClassDashboard() {
 
       setIsGradingQuizModalOpen(false);
       setSelectedQuizSub(null);
+      setManualQuizObjScores({});
       setManualQuizSubjScores({});
       loadTaskSubmissions();
     } catch (err) {
@@ -4159,8 +4204,10 @@ export default function ClassDashboard() {
             <div className="px-6 py-3 bg-brand-50/50 dark:bg-brand-900/20 border-b border-brand-100/50 dark:border-brand-800/50 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
               <div className="flex items-center space-x-4">
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">Auto Obj Score:</span>{" "}
-                  <span className="font-bold text-brand-700 dark:text-brand-300">{selectedQuizSub.objScore || 0} pts</span>
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Obj Score:</span>{" "}
+                  <span className="font-bold text-brand-700 dark:text-brand-300">
+                    {Object.values(manualQuizObjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} pts
+                  </span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-bold">Manual Subj Score:</span>{" "}
@@ -4171,7 +4218,7 @@ export default function ClassDashboard() {
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-bold">Total Score:</span>{" "}
                   <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
-                    {(selectedQuizSub.objScore || 0) + Object.values(manualQuizSubjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} / {selectedQuizSub.maxScore || 0} pts
+                    {Object.values(manualQuizObjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0) + Object.values(manualQuizSubjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} / {selectedQuizSub.maxScore || 0} pts
                   </span>
                 </div>
               </div>
@@ -4266,10 +4313,15 @@ export default function ClassDashboard() {
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Multiple Choice Selection</span>
                               {(() => {
-                                const isCorrect = Number(studentAnswers[q.id]) === Number(q.correctOptionIndex);
-                                return isCorrect ? (
+                                const currentScore = manualQuizObjScores[q.id] ?? 0;
+                                const isFull = currentScore >= pts;
+                                return isFull ? (
                                   <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                    ✓ Correct (+{pts} pts)
+                                    ✓ Correct ({currentScore}/{pts} pts)
+                                  </span>
+                                ) : currentScore > 0 ? (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                    Partial Credit ({currentScore}/{pts} pts)
                                   </span>
                                 ) : (
                                   <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
@@ -4299,7 +4351,24 @@ export default function ClassDashboard() {
                               );
                             })}
                           </div>
-                          <div className="text-[10px] font-bold text-slate-400">Auto-graded Objective Question.</div>
+
+                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
+                              <span>Award Points (Max: {pts} pts):</span>
+                              <span className="text-[10px] font-normal text-slate-400">(Auto-graded, editable)</span>
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={pts}
+                              value={manualQuizObjScores[q.id] ?? 0}
+                              onChange={(e) => {
+                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                setManualQuizObjScores(prev => ({ ...prev, [q.id]: val }));
+                              }}
+                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                            />
+                          </div>
                         </div>
                       )}
 
@@ -4310,12 +4379,15 @@ export default function ClassDashboard() {
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Checkboxes Selection</span>
                               {(() => {
-                                const studentIndices = Array.isArray(studentAnswers[q.id]) ? [...studentAnswers[q.id]].sort((a, b) => a - b) : [];
-                                const teacherIndices = Array.isArray(q.correctOptionIndices) ? [...q.correctOptionIndices].sort((a, b) => a - b) : [Number(q.correctOptionIndex) || 0];
-                                const isCorrect = JSON.stringify(studentIndices) === JSON.stringify(teacherIndices);
-                                return isCorrect ? (
+                                const currentScore = manualQuizObjScores[q.id] ?? 0;
+                                const isFull = currentScore >= pts;
+                                return isFull ? (
                                   <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                    ✓ Correct (+{pts} pts)
+                                    ✓ Correct ({currentScore}/{pts} pts)
+                                  </span>
+                                ) : currentScore > 0 ? (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                    Partial Credit ({currentScore}/{pts} pts)
                                   </span>
                                 ) : (
                                   <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
@@ -4349,7 +4421,24 @@ export default function ClassDashboard() {
                               );
                             })}
                           </div>
-                          <div className="text-[10px] font-bold text-slate-400">Auto-graded Objective Question.</div>
+
+                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
+                              <span>Award Points (Max: {pts} pts):</span>
+                              <span className="text-[10px] font-normal text-slate-400">(Auto-graded, editable)</span>
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={pts}
+                              value={manualQuizObjScores[q.id] ?? 0}
+                              onChange={(e) => {
+                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                setManualQuizObjScores(prev => ({ ...prev, [q.id]: val }));
+                              }}
+                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                            />
+                          </div>
                         </div>
                       )}
 
@@ -4360,12 +4449,15 @@ export default function ClassDashboard() {
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Identification Answer Comparison</span>
                               {(() => {
-                                const studentText = (studentAnswers[q.id] || "").toString().trim().toLowerCase();
-                                const correctText = (q.correctAnswer || "").toString().trim().toLowerCase();
-                                const isCorrect = !!studentText && studentText === correctText;
-                                return isCorrect ? (
+                                const currentScore = manualQuizObjScores[q.id] ?? 0;
+                                const isFull = currentScore >= pts;
+                                return isFull ? (
                                   <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                                    ✓ Correct (+{pts} pts)
+                                    ✓ Correct ({currentScore}/{pts} pts)
+                                  </span>
+                                ) : currentScore > 0 ? (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                    Partial Credit ({currentScore}/{pts} pts)
                                   </span>
                                 ) : (
                                   <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
@@ -4385,7 +4477,24 @@ export default function ClassDashboard() {
                               </div>
                             </div>
                           </div>
-                          <div className="text-[10px] font-bold text-slate-400">Auto-graded Objective Question.</div>
+
+                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
+                              <span>Award Points (Max: {pts} pts):</span>
+                              <span className="text-[10px] font-normal text-slate-400">(Auto-graded, editable)</span>
+                            </label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={pts}
+                              value={manualQuizObjScores[q.id] ?? 0}
+                              onChange={(e) => {
+                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                setManualQuizObjScores(prev => ({ ...prev, [q.id]: val }));
+                              }}
+                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                            />
+                          </div>
                         </div>
                       )}
 
