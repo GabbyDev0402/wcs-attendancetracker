@@ -221,7 +221,8 @@ export default function ClassDashboard() {
   // Rapid 'Input Scores' Modal State
   const [isInputScoresModalOpen, setIsInputScoresModalOpen] = useState(false);
   const [selectedExamForScores, setSelectedExamForScores] = useState(null);
-  const [scoreInputs, setScoreInputs] = useState({});
+  const [objScoreInputs, setObjScoreInputs] = useState({});
+  const [subjScoreInputs, setSubjScoreInputs] = useState({});
   const [scoresSearchQuery, setScoresSearchQuery] = useState("");
   const [isSavingScores, setIsSavingScores] = useState(false);
   const [examSubmissions, setExamSubmissions] = useState([]);
@@ -1032,15 +1033,18 @@ export default function ClassDashboard() {
     setSelectedExamForScores(exam);
     const examDocId = exam.firestoreId || exam.id;
 
-    const initialInputs = {};
+    const initialObjInputs = {};
+    const initialSubjInputs = {};
     const subsForThisExam = examSubmissions.filter(sub => sub.examId === examDocId || sub.examId === exam.id);
     subsForThisExam.forEach(sub => {
       if (sub.studentId) {
-        initialInputs[sub.studentId] = sub.objScore !== undefined ? sub.objScore : (sub.score !== undefined ? sub.score : "");
+        initialObjInputs[sub.studentId] = sub.objScore !== undefined ? sub.objScore : (sub.score !== undefined ? sub.score : "");
+        initialSubjInputs[sub.studentId] = sub.subjScore !== undefined ? sub.subjScore : "";
       }
     });
 
-    setScoreInputs(initialInputs);
+    setObjScoreInputs(initialObjInputs);
+    setSubjScoreInputs(initialSubjInputs);
     setScoresSearchQuery("");
     setIsInputScoresModalOpen(true);
   };
@@ -1049,16 +1053,39 @@ export default function ClassDashboard() {
     if (!selectedExamForScores) return;
     const examDocId = selectedExamForScores.firestoreId || selectedExamForScores.id;
     const tag = `${user.id}_${classId}`;
+    const maxScore = Number(selectedExamForScores.maxScore || 100);
+
+    // Validation: Check if any student's total score exceeds maxScore
+    const allStudentIds = classStudents.map(s => s.uid || s.id);
+    const hasExceeded = allStudentIds.some(stId => {
+      const rawObj = objScoreInputs[stId];
+      const rawSubj = subjScoreInputs[stId];
+      const hasInput = (rawObj !== "" && rawObj !== null && rawObj !== undefined) || (rawSubj !== "" && rawSubj !== null && rawSubj !== undefined);
+      if (!hasInput) return false;
+      const totalEarned = (Number(rawObj) || 0) + (Number(rawSubj) || 0);
+      return totalEarned > maxScore;
+    });
+
+    if (hasExceeded) {
+      alert(`One or more students have scores exceeding the maximum of ${maxScore} points. Please adjust them before saving.`);
+      return;
+    }
 
     setIsSavingScores(true);
     try {
-      const batchPromises = Object.entries(scoreInputs).map(async ([studentId, rawScore]) => {
+      const batchPromises = classStudents.map(async (studentObj) => {
+        const studentId = studentObj.uid || studentObj.id;
         const subDocId = `${studentId}_${examDocId}`;
-        const studentObj = classStudents.find(s => (s.uid || s.id) === studentId);
-        const studentName = studentObj ? formatStudentName(studentObj) : "Student";
+        const studentName = formatStudentName(studentObj);
 
-        if (rawScore === "" || rawScore === null || rawScore === undefined) {
-          // If score was cleared/deleted, delete submission doc to unsubmit/reset!
+        const rawObj = objScoreInputs[studentId];
+        const rawSubj = subjScoreInputs[studentId];
+
+        const hasObj = rawObj !== "" && rawObj !== null && rawObj !== undefined;
+        const hasSubj = rawSubj !== "" && rawSubj !== null && rawSubj !== undefined;
+
+        if (!hasObj && !hasSubj) {
+          // If both scores were cleared/deleted, delete submission doc to unsubmit/reset!
           try {
             await deleteDoc(doc(db, "exam_submissions", subDocId));
           } catch (e) {
@@ -1067,6 +1094,10 @@ export default function ClassDashboard() {
           return;
         }
 
+        const objScore = hasObj ? (Number(rawObj) || 0) : 0;
+        const subjScore = hasSubj ? (Number(rawSubj) || 0) : 0;
+        const totalScore = objScore + subjScore;
+
         const payload = {
           examId: examDocId,
           classId: tag,
@@ -1074,9 +1105,10 @@ export default function ClassDashboard() {
           studentName: studentName,
           quarter: selectedExamForScores.quarter || "1st Quarter",
           category: selectedExamForScores.category || "1st Monthly Exam",
-          objScore: Number(rawScore) || 0,
-          subjScore: 0,
-          maxScore: Number(selectedExamForScores.maxScore || 100),
+          objScore: objScore,
+          subjScore: subjScore,
+          score: totalScore,
+          maxScore: maxScore,
           status: "graded",
           academicYear: CURRENT_ACADEMIC_YEAR,
           updatedAt: serverTimestamp()
@@ -1089,7 +1121,8 @@ export default function ClassDashboard() {
 
       setIsInputScoresModalOpen(false);
       setSelectedExamForScores(null);
-      setScoreInputs({});
+      setObjScoreInputs({});
+      setSubjScoreInputs({});
       setExamGradeSuccessToast(true);
       setTimeout(() => setExamGradeSuccessToast(false), 3000);
       loadExams();
@@ -1502,7 +1535,10 @@ export default function ClassDashboard() {
     } else {
       const sub = (allClassExamSubs || []).find(s => (s?.studentId === sUid || s?.studentId === studentObj?.id) && (s?.examId === item.id || s?.examId === item.firestoreId));
       if (!sub) return 0;
-      const rawVal = sub.objScore ?? sub.score ?? sub.totalScore;
+      if (sub.objScore !== undefined || sub.subjScore !== undefined) {
+        return (Number(sub.objScore) || 0) + (Number(sub.subjScore) || 0);
+      }
+      const rawVal = sub.score ?? sub.totalScore;
       return rawVal !== undefined && rawVal !== null ? Number(rawVal) || 0 : 0;
     }
   };
@@ -4975,7 +5011,7 @@ export default function ClassDashboard() {
       {/* MODAL 3: Rapid 'Input Scores' Spreadsheet Modal */}
       {isInputScoresModalOpen && selectedExamForScores && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-3xl w-full p-6 shadow-2xl space-y-5 transition-all my-8 max-h-[90vh] flex flex-col">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-5 transition-all my-8 max-h-[90vh] flex flex-col">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 shrink-0">
               <div>
@@ -4986,7 +5022,7 @@ export default function ClassDashboard() {
                   </h3>
                 </div>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Enter student scores out of <strong className="text-brand-600 dark:text-brand-400 font-mono">{selectedExamForScores.maxScore || 100} pts</strong>. Scores save directly into E-Class Record.
+                  Enter student Objective and Subjective scores out of <strong className="text-brand-600 dark:text-brand-400 font-mono">{selectedExamForScores.maxScore || 100} pts</strong>. Scores save directly into E-Class Record.
                 </p>
               </div>
               <button
@@ -5020,11 +5056,13 @@ export default function ClassDashboard() {
               <table className="w-full border-collapse text-left">
                 <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider z-10">
                   <tr>
-                    <th className="px-5 py-3">#</th>
-                    <th className="px-5 py-3">Student Name</th>
-                    <th className="px-5 py-3 text-center">Score Input (Max: {selectedExamForScores.maxScore || 100})</th>
-                    <th className="px-5 py-3 text-center">Percentage</th>
-                    <th className="px-5 py-3 text-right">Status</th>
+                    <th className="px-4 py-3">#</th>
+                    <th className="px-4 py-3">Student Name</th>
+                    <th className="px-3 py-3 text-center">Obj. Score</th>
+                    <th className="px-3 py-3 text-center">Subj. Score</th>
+                    <th className="px-4 py-3 text-center">Total (Max: {selectedExamForScores.maxScore || 100})</th>
+                    <th className="px-3 py-3 text-center">Percentage</th>
+                    <th className="px-4 py-3 text-right">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200">
@@ -5036,47 +5074,101 @@ export default function ClassDashboard() {
                     })
                     .map((st, sIdx) => {
                       const stId = st.uid || st.id;
-                      const currentVal = scoreInputs[stId] ?? "";
-                      const numVal = Number(currentVal);
+                      const rawObj = objScoreInputs[stId] ?? "";
+                      const rawSubj = subjScoreInputs[stId] ?? "";
+                      const hasObj = rawObj !== "" && rawObj !== null && rawObj !== undefined;
+                      const hasSubj = rawSubj !== "" && rawSubj !== null && rawSubj !== undefined;
+                      const hasAny = hasObj || hasSubj;
+
+                      const objNum = hasObj ? (Number(rawObj) || 0) : 0;
+                      const subjNum = hasSubj ? (Number(rawSubj) || 0) : 0;
+                      const totalEarned = objNum + subjNum;
+
                       const maxSc = Number(selectedExamForScores.maxScore || 100);
-                      const pct = currentVal !== "" && !isNaN(numVal) ? Math.min(100, Math.round((numVal / maxSc) * 100)) : null;
+                      const isExceeded = hasAny && totalEarned > maxSc;
+                      const pct = hasAny && !isExceeded ? Math.min(100, Math.round((totalEarned / maxSc) * 100)) : null;
 
                       return (
-                        <tr key={stId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="px-5 py-3 font-mono text-[11px] text-slate-400 font-bold">
+                        <tr key={stId} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors ${isExceeded ? "bg-red-50/30 dark:bg-red-950/20" : ""}`}>
+                          <td className="px-4 py-3 font-mono text-[11px] text-slate-400 font-bold">
                             {sIdx + 1}
                           </td>
-                          <td className="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">
+                          <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-100">
                             {formatStudentName(st)}
                           </td>
-                          <td className="px-5 py-3 text-center">
+                          <td className="px-3 py-3 text-center">
                             <input
                               type="number"
                               min="0"
                               max={maxSc}
-                              value={currentVal}
+                              value={rawObj}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                setScoreInputs(prev => ({ ...prev, [stId]: val }));
+                                setObjScoreInputs(prev => ({ ...prev, [stId]: val }));
                               }}
                               placeholder="0"
-                              className="w-24 text-center text-xs font-bold font-mono border border-slate-200 dark:border-slate-700 rounded-xl py-1.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all"
+                              className={`w-20 text-center text-xs font-bold font-mono border rounded-xl py-1.5 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all ${
+                                isExceeded 
+                                  ? "border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/30" 
+                                  : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                              }`}
                             />
                           </td>
-                          <td className="px-5 py-3 text-center font-mono font-semibold">
-                            {pct !== null ? (
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${pct >= 75 ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
-                                  pct >= 50 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
-                                    "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                                }`}>
+                          <td className="px-3 py-3 text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              max={maxSc}
+                              value={rawSubj}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setSubjScoreInputs(prev => ({ ...prev, [stId]: val }));
+                              }}
+                              placeholder="0"
+                              className={`w-20 text-center text-xs font-bold font-mono border rounded-xl py-1.5 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all ${
+                                isExceeded 
+                                  ? "border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/30" 
+                                  : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                              }`}
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-center font-mono">
+                            <div className="flex flex-col items-center justify-center">
+                              <span className={`text-xs font-extrabold ${
+                                isExceeded 
+                                  ? "text-red-600 dark:text-red-400" 
+                                  : hasAny 
+                                    ? "text-emerald-600 dark:text-emerald-400" 
+                                    : "text-slate-400 dark:text-slate-500"
+                              }`}>
+                                {hasAny ? totalEarned : 0} / {maxSc} pts
+                              </span>
+                              {isExceeded && (
+                                <span className="text-[9px] font-bold text-red-500 uppercase tracking-tight">
+                                  Exceeds Max!
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-center font-mono font-semibold">
+                            {isExceeded ? (
+                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                                Invalid
+                              </span>
+                            ) : pct !== null ? (
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${
+                                pct >= 75 ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                                pct >= 50 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                                "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                              }`}>
                                 {pct}%
                               </span>
                             ) : (
                               <span className="text-slate-300 dark:text-slate-600">—</span>
                             )}
                           </td>
-                          <td className="px-5 py-3 text-right">
-                            {currentVal !== "" ? (
+                          <td className="px-4 py-3 text-right">
+                            {hasAny ? (
                               <div className="flex items-center justify-end space-x-2">
                                 <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
                                   <CheckCircle className="h-3 w-3" />
@@ -5084,7 +5176,10 @@ export default function ClassDashboard() {
                                 </span>
                                 <button
                                   type="button"
-                                  onClick={() => setScoreInputs(prev => ({ ...prev, [stId]: "" }))}
+                                  onClick={() => {
+                                    setObjScoreInputs(prev => ({ ...prev, [stId]: "" }));
+                                    setSubjScoreInputs(prev => ({ ...prev, [stId]: "" }));
+                                  }}
                                   title="Unsubmit / Clear Score"
                                   className="text-[10px] font-bold text-slate-400 hover:text-red-500 underline cursor-pointer"
                                 >
@@ -5108,7 +5203,12 @@ export default function ClassDashboard() {
             <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4 shrink-0">
               <div className="text-xs font-semibold text-slate-500 dark:border-slate-400">
                 <span className="font-bold text-brand-600 dark:text-brand-400">
-                  {Object.values(scoreInputs).filter(v => v !== "" && v !== null && v !== undefined).length}
+                  {classStudents.filter(st => {
+                    const id = st.uid || st.id;
+                    const o = objScoreInputs[id];
+                    const s = subjScoreInputs[id];
+                    return (o !== "" && o !== null && o !== undefined) || (s !== "" && s !== null && s !== undefined);
+                  }).length}
                 </span>{" "}
                 of {classStudents.length} Students Graded
               </div>

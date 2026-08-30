@@ -878,7 +878,9 @@ export default function AdminDashboard() {
     const quarter = sub.quarter || exam.quarter || "1st Quarter";
     const subjectClass = formatCleanClassName(sub.classId || exam.classId);
 
-    const earnedScore = Number(sub.objScore || 0) + Number(sub.subjScore || 0);
+    const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined)
+      ? ((Number(sub.objScore) || 0) + (Number(sub.subjScore) || 0))
+      : (Number(sub.score) || 0);
     const maxScore = Number(exam.maxScore || sub.maxScore) || 100;
     const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
 

@@ -911,7 +911,7 @@ export default function StudentClassDashboard() {
                             Final Score:
                           </div>
                           <div className="text-sm font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
-                            Score: {mySubmission.objScore} / {ex.maxScore || 100} pts
+                            Score: {(Number(mySubmission.objScore) || 0) + (Number(mySubmission.subjScore) || 0)} / {ex.maxScore || 100} pts
                           </div>
                         </div>
                       ) : isTurnedIn ? (
