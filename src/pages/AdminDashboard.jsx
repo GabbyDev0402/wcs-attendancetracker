@@ -146,7 +146,7 @@ export default function AdminDashboard() {
   const [reportFilterGrade, setReportFilterGrade] = useState("All");
   const [reportFilterCommunity, setReportFilterCommunity] = useState("All");
   const [reportFilterQuarter, setReportFilterQuarter] = useState("All");
-  const [reportFilterExamCategory, setReportFilterExamCategory] = useState("All Categories");
+  const [reportFilterExamCategory, setReportFilterExamCategory] = useState("1st Monthly Exam");
   const [reportSearchQuery, setReportSearchQuery] = useState("");
   const [academicViewMode, setAcademicViewMode] = useState("matrix"); // "matrix" | "detailed"
 
@@ -180,47 +180,104 @@ export default function AdminDashboard() {
   };
 
   const handleExportAcademicReportCSV = () => {
-    if (filteredAcademicReports.length === 0) {
-      alert("No academic records available to export.");
-      return;
-    }
-
-    const rows = [];
-
     if (academicViewMode === "matrix") {
-      const headers = [
-        "Student Name",
-        "Student Code",
-        "Grade Level",
-        "Community",
-        ...matrixSubjects.map(s => `"${s.name.replace(/"/g, '""')}"`),
-        "General Average (%)",
-        "Subjects Completed"
-      ];
-      rows.push(headers.join(","));
+      if (standardStudents.length === 0 && eslStudents.length === 0) {
+        alert("No academic records available to export.");
+        return;
+      }
 
-      matrixStudentRows.forEach(row => {
-        const rowCols = [
-          `"${(row.studentName || 'Student').replace(/"/g, '""')}"`,
-          `"${(row.studentCode || '').replace(/"/g, '""')}"`,
-          `"${(row.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
-          `"${(row.community || 'Main').replace(/"/g, '""')}"`,
+      const rows = [];
+
+      // Export Standard Curriculum if populated
+      if (standardStudents.length > 0) {
+        rows.push(`"--- STANDARD CURRICULUM MASTER REPORT (${reportFilterExamCategory} - ${reportFilterQuarter}) ---"`);
+        const stdHeaders = [
+          "Student Name",
+          "Student Code",
+          "Grade Level",
+          "Community",
+          ...standardSubjects.map(s => `"${s.replace(/"/g, '""')}"`),
+          "General Average (%)",
+          "Subjects Completed"
         ];
+        rows.push(stdHeaders.join(","));
 
-        matrixSubjects.forEach(s => {
-          const sc = row.subjectScores[s.name];
-          if (sc) {
-            rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
-          } else {
-            rowCols.push('"—"');
-          }
+        standardStudents.forEach(row => {
+          const rowCols = [
+            `"${(row.studentName || 'Student').replace(/"/g, '""')}"`,
+            `"${(row.studentCode || '').replace(/"/g, '""')}"`,
+            `"${(row.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
+            `"${(row.community || 'Main').replace(/"/g, '""')}"`,
+          ];
+
+          standardSubjects.forEach(s => {
+            const sc = row.subjectScores[s];
+            if (sc && sc.hasScore) {
+              rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
+            } else {
+              rowCols.push('"—"');
+            }
+          });
+
+          rowCols.push(`"${row.generalAverage}%"`);
+          rowCols.push(`"${row.completedCount} of ${row.totalSubjectsCount}"`);
+          rows.push(rowCols.join(","));
         });
 
-        rowCols.push(`"${row.generalAverage}%"`);
-        rowCols.push(`"${row.completedSubjectsCount} of ${matrixSubjects.length}"`);
-        rows.push(rowCols.join(","));
-      });
+        rows.push(""); // Spacer
+      }
+
+      // Export ESL Program if populated
+      if (eslStudents.length > 0) {
+        rows.push(`"--- ESL PROGRAM MASTER REPORT (${reportFilterExamCategory} - ${reportFilterQuarter}) ---"`);
+        const eslHeaders = [
+          "Student Name",
+          "Student Code",
+          "Level / Grade",
+          "Community",
+          ...eslSubjects.map(s => `"${s.replace(/"/g, '""')}"`),
+          "General Average (%)",
+          "Subjects Completed"
+        ];
+        rows.push(eslHeaders.join(","));
+
+        eslStudents.forEach(row => {
+          const rowCols = [
+            `"${(row.studentName || 'Student').replace(/"/g, '""')}"`,
+            `"${(row.studentCode || '').replace(/"/g, '""')}"`,
+            `"${(row.gradeLevel || 'E1').replace(/"/g, '""')}"`,
+            `"${(row.community || 'Main').replace(/"/g, '""')}"`,
+          ];
+
+          eslSubjects.forEach(s => {
+            const sc = row.subjectScores[s];
+            if (sc && sc.hasScore) {
+              rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
+            } else {
+              rowCols.push('"—"');
+            }
+          });
+
+          rowCols.push(`"${row.generalAverage}%"`);
+          rowCols.push(`"${row.completedCount} of ${row.totalSubjectsCount}"`);
+          rows.push(rowCols.join(","));
+        });
+      }
+
+      const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `Academic_Master_Pivot_${new Date().toISOString().split("T")[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     } else {
+      if (filteredAcademicReports.length === 0) {
+        alert("No academic records available to export.");
+        return;
+      }
+
       const headers = [
         "Student Name",
         "Student Code",
@@ -236,7 +293,7 @@ export default function AdminDashboard() {
         "Max Score",
         "Percentage (%)"
       ];
-      rows.push(headers.join(","));
+      const rows = [headers.join(",")];
 
       filteredAcademicReports.forEach(item => {
         const obj = Number(item.objScore) || 0;
@@ -259,16 +316,16 @@ export default function AdminDashboard() {
           `"${item.percentage}%"`
         ].join(","));
       });
-    }
 
-    const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Academic_Report_${academicViewMode === "matrix" ? "Matrix" : "Detailed"}_${new Date().toISOString().split("T")[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `Academic_Detailed_Report_${new Date().toISOString().split("T")[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const hasLoadedComplianceRef = useRef(false);
@@ -1044,6 +1101,206 @@ export default function AdminDashboard() {
     return match ? parseInt(match[0], 10) : 0;
   };
 
+  const getEslGradeRank = (gradeStr) => {
+    if (!gradeStr) return 0;
+    const s = gradeStr.toUpperCase().trim();
+    const num = parseInt(s.replace(/\D/g, "") || "0", 10);
+    if (s.startsWith("H")) return 30 + num;
+    if (s.startsWith("M")) return 20 + num;
+    if (s.startsWith("E")) return 10 + num;
+    return num;
+  };
+
+  const matchExamGrade = (exam, studentGrade) => {
+    if (!exam || !studentGrade) return false;
+    const sGradeClean = studentGrade.toLowerCase().replace(/[\s-]/g, "");
+    
+    if (exam.grade) {
+      const eGradeClean = exam.grade.toLowerCase().replace(/[\s-]/g, "");
+      if (eGradeClean === sGradeClean) return true;
+    }
+    
+    if (exam.classId) {
+      const classIdClean = exam.classId.toLowerCase().replace(/[\s_]/g, "-");
+      if (classIdClean.includes(studentGrade.toLowerCase().replace(/\s+/g, "-")) || classIdClean.includes(sGradeClean)) {
+        return true;
+      }
+    }
+
+    const sNum = studentGrade.match(/\d+/)?.[0];
+    if (sNum && studentGrade.toLowerCase().includes("grade")) {
+      const examText = `${exam.title || ""} ${exam.classId || ""} ${exam.grade || ""}`.toLowerCase();
+      const gradePattern = new RegExp(`grade[\\s-]?${sNum}\\b`, 'i');
+      if (gradePattern.test(examText)) return true;
+    }
+
+    return false;
+  };
+
+  // 1. Filtered exams by selected Category and Quarter
+  const filteredExams = React.useMemo(() => {
+    return academicExams.filter(exam => {
+      if (reportFilterExamCategory !== "All Categories" && exam.category !== reportFilterExamCategory) return false;
+      if (reportFilterQuarter !== "All" && exam.quarter !== reportFilterQuarter) return false;
+      return true;
+    });
+  }, [academicExams, reportFilterExamCategory, reportFilterQuarter]);
+
+  // 2. Dynamic Subject Extraction segregated into Standard and ESL
+  const { standardSubjects, eslSubjects } = React.useMemo(() => {
+    const stdSet = new Set();
+    const eslSet = new Set();
+
+    filteredExams.forEach(exam => {
+      const sName = extractSubjectName(exam);
+      const isEsl = exam.grade 
+        ? !exam.grade.toLowerCase().includes("grade") 
+        : (exam.classId && /^(e|m|h)\d+/i.test(exam.classId.split("_").pop() || ""));
+      
+      if (isEsl) {
+        eslSet.add(sName);
+      } else {
+        stdSet.add(sName);
+      }
+    });
+
+    const sortSubjects = (subjSet) => {
+      return Array.from(subjSet).map(name => {
+        const canonical = CANONICAL_SUBJECTS.find(cs => cs.name.toLowerCase() === name.toLowerCase());
+        return {
+          name,
+          order: canonical ? canonical.order : 99
+        };
+      }).sort((a, b) => {
+        if (a.order !== b.order) return a.order - b.order;
+        return a.name.localeCompare(b.name);
+      }).map(s => s.name);
+    };
+
+    return {
+      standardSubjects: sortSubjects(stdSet),
+      eslSubjects: sortSubjects(eslSet)
+    };
+  }, [filteredExams]);
+
+  // 3. Processed and Segregated Student Pivot Data (Standard vs ESL)
+  const { standardStudents, eslStudents } = React.useMemo(() => {
+    const matchingStudents = students.filter(st => {
+      if (st.role !== "student") return false;
+      const gLevel = st.grade || st.gradeLevel || "Grade 1";
+      const comm = st.communityName || st.communityCenter || st.community || "Main";
+      const sName = st.internationalName || st.fullName || st.name || formatStudentName(st) || "Student";
+      
+      if (reportFilterGrade !== "All" && gLevel !== reportFilterGrade) return false;
+      if (reportFilterCommunity !== "All" && comm !== reportFilterCommunity) return false;
+      if (reportSearchQuery.trim()) {
+        const q = reportSearchQuery.toLowerCase();
+        const matchName = sName.toLowerCase().includes(q);
+        const matchCode = (st.studentCode || "").toLowerCase().includes(q);
+        if (!matchName && !matchCode) return false;
+      }
+      return true;
+    });
+
+    const stdRaw = [];
+    const eslRaw = [];
+
+    matchingStudents.forEach(st => {
+      const gLevel = st.grade || st.gradeLevel || "Grade 1";
+      if (gLevel.toLowerCase().includes("grade")) {
+        stdRaw.push(st);
+      } else {
+        eslRaw.push(st);
+      }
+    });
+
+    const buildStudentRow = (st, subjectList, isEsl) => {
+      const sId = st.id || st.uid || "";
+      const sName = st.internationalName || st.fullName || st.name || formatStudentName(st) || "Student";
+      const sCode = st.studentCode || "";
+      const gLevel = st.grade || st.gradeLevel || (isEsl ? "E1" : "Grade 1");
+      const comm = st.communityName || st.communityCenter || st.community || "Main";
+
+      const subjectScores = {};
+      const percentages = [];
+
+      subjectList.forEach(subjectName => {
+        const matchedExam = filteredExams.find(ex => {
+          const exSubj = extractSubjectName(ex);
+          return exSubj.toLowerCase() === subjectName.toLowerCase() && matchExamGrade(ex, gLevel);
+        });
+
+        if (matchedExam) {
+          const sub = academicExamSubs.find(s => 
+            (s.examId === matchedExam.firestoreId || s.examId === matchedExam.id) &&
+            (s.studentId === sId || s.studentId === st.uid || s.studentId === st.id)
+          );
+
+          if (sub) {
+            const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
+            const subjScore = Number(sub.subjScore) || 0;
+            const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
+            const maxScore = Number(matchedExam.maxScore || sub.maxScore) || 100;
+            const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
+
+            subjectScores[subjectName] = {
+              hasScore: true,
+              earnedScore,
+              maxScore,
+              percentage,
+              objScore,
+              subjScore,
+              examTitle: matchedExam.title
+            };
+            percentages.push(percentage);
+          } else {
+            subjectScores[subjectName] = { hasScore: false, noSubmission: true, examTitle: matchedExam.title };
+          }
+        } else {
+          subjectScores[subjectName] = { hasScore: false, noExam: true };
+        }
+      });
+
+      const generalAverage = percentages.length > 0
+        ? Math.round(percentages.reduce((sum, p) => sum + p, 0) / percentages.length)
+        : 0;
+
+      return {
+        id: sId,
+        studentName: sName,
+        studentCode: sCode,
+        gradeLevel: gLevel,
+        community: comm,
+        subjectScores,
+        generalAverage,
+        completedCount: percentages.length,
+        totalSubjectsCount: subjectList.length
+      };
+    };
+
+    const stdRows = stdRaw.map(st => buildStudentRow(st, standardSubjects, false)).sort((a, b) => {
+      const gradeA = getGradeNum(a.gradeLevel);
+      const gradeB = getGradeNum(b.gradeLevel);
+      if (gradeB !== gradeA) return gradeB - gradeA;
+      if (b.generalAverage !== a.generalAverage) return b.generalAverage - a.generalAverage;
+      return a.studentName.localeCompare(b.studentName);
+    });
+
+    const eslRows = eslRaw.map(st => buildStudentRow(st, eslSubjects, true)).sort((a, b) => {
+      const rankA = getEslGradeRank(a.gradeLevel);
+      const rankB = getEslGradeRank(b.gradeLevel);
+      if (rankB !== rankA) return rankB - rankA;
+      if (b.generalAverage !== a.generalAverage) return b.generalAverage - a.generalAverage;
+      return a.studentName.localeCompare(b.studentName);
+    });
+
+    return {
+      standardStudents: stdRows,
+      eslStudents: eslRows
+    };
+  }, [students, filteredExams, academicExamSubs, standardSubjects, eslSubjects, reportFilterGrade, reportFilterCommunity, reportSearchQuery]);
+
+  // Detailed records list (for itemized list view mode)
   const processedAcademicReports = academicExamSubs.map((sub) => {
     const student = students.find(s => s.id === sub.studentId || s.uid === sub.studentId) || {};
     const exam = academicExams.find(e => e.firestoreId === sub.examId || e.id === sub.examId) || {};
@@ -1060,7 +1317,6 @@ export default function AdminDashboard() {
     const quarter = sub.quarter || exam.quarter || "1st Quarter";
     const subjectClass = formatCleanClassName(sub.classId || exam.classId);
 
-    // Legacy data safe extraction
     const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
     const subjScore = Number(sub.subjScore) || 0;
     const earnedScore = objScore + subjScore;
@@ -1087,7 +1343,18 @@ export default function AdminDashboard() {
     };
   });
 
-  const uniqueExamCategories = ["All Categories", ...new Set(processedAcademicReports.map(r => r.category).filter(Boolean))];
+  const uniqueExamCategories = [
+    "1st Monthly Exam",
+    "2nd Monthly Exam",
+    "1st Quarterly Exam",
+    "2nd Quarterly Exam",
+    "3rd Monthly Exam",
+    "3rd Quarterly Exam",
+    "4th Monthly Exam",
+    "4th Quarterly Exam",
+    "All Categories",
+    ...new Set(academicExams.map(e => e.category).filter(Boolean))
+  ].filter((v, i, a) => a.indexOf(v) === i);
 
   const filteredAcademicReports = processedAcademicReports
     .filter((item) => {
@@ -1106,99 +1373,14 @@ export default function AdminDashboard() {
       return true;
     })
     .sort((a, b) => {
-      // Sort Priority 1: Grade Level Descending (Higher grades e.g. Grade 12 before Grade 6)
-      const gradeA = getGradeNum(a.gradeLevel);
-      const gradeB = getGradeNum(b.gradeLevel);
-      if (gradeB !== gradeA) {
-        return gradeB - gradeA;
-      }
-
-      // Sort Priority 2: Score Percentage Descending (Highest score at top)
-      const pctA = ((Number(a.objScore) || 0) + (Number(a.subjScore) || 0)) / (Number(a.maxScore) || 1);
-      const pctB = ((Number(b.objScore) || 0) + (Number(b.subjScore) || 0)) / (Number(b.maxScore) || 1);
-      if (pctB !== pctA) {
-        return pctB - pctA;
-      }
-
-      // Sort Priority 3: Student Name Alphabetical
-      return (a.studentName || "").localeCompare(b.studentName || "");
-    });
-
-  // Dynamic matrix data: unique subjects ordered by canonical curriculum
-  const matrixSubjects = React.useMemo(() => {
-    const subjectMap = new Map();
-    filteredAcademicReports.forEach(item => {
-      const sName = item.subjectName || "Subject";
-      if (!subjectMap.has(sName)) {
-        const canonical = CANONICAL_SUBJECTS.find(cs => cs.name.toLowerCase() === sName.toLowerCase());
-        const order = canonical ? canonical.order : 99;
-        subjectMap.set(sName, {
-          name: sName,
-          order,
-          maxScore: item.maxScore
-        });
-      }
-    });
-    return Array.from(subjectMap.values()).sort((a, b) => {
-      if (a.order !== b.order) return a.order - b.order;
-      return a.name.localeCompare(b.name);
-    });
-  }, [filteredAcademicReports]);
-
-  const matrixStudentRows = React.useMemo(() => {
-    const studentMap = new Map();
-
-    filteredAcademicReports.forEach(item => {
-      const stKey = item.studentId || item.studentName;
-      if (!studentMap.has(stKey)) {
-        studentMap.set(stKey, {
-          studentId: item.studentId,
-          studentName: item.studentName,
-          studentCode: item.studentCode,
-          gradeLevel: item.gradeLevel,
-          community: item.community,
-          subjectScores: {},
-          totalPercentages: [],
-          totalEarned: 0,
-          totalMax: 0
-        });
-      }
-
-      const stRow = studentMap.get(stKey);
-      const sName = item.subjectName || "Subject";
-      stRow.subjectScores[sName] = {
-        earnedScore: item.earnedScore,
-        maxScore: item.maxScore,
-        percentage: item.percentage,
-        objScore: item.objScore,
-        subjScore: item.subjScore,
-        examTitle: item.examTitle
-      };
-      stRow.totalPercentages.push(item.percentage);
-      stRow.totalEarned += item.earnedScore;
-      stRow.totalMax += item.maxScore;
-    });
-
-    const rows = Array.from(studentMap.values()).map(row => {
-      const avgPct = row.totalPercentages.length > 0
-        ? Math.round(row.totalPercentages.reduce((sum, p) => sum + p, 0) / row.totalPercentages.length)
-        : 0;
-      return {
-        ...row,
-        generalAverage: avgPct,
-        completedSubjectsCount: Object.keys(row.subjectScores).length
-      };
-    });
-
-    // Hierarchical Sorting: Grade Level Descending -> General Average Descending -> Student Name
-    return rows.sort((a, b) => {
       const gradeA = getGradeNum(a.gradeLevel);
       const gradeB = getGradeNum(b.gradeLevel);
       if (gradeB !== gradeA) return gradeB - gradeA;
-      if (b.generalAverage !== a.generalAverage) return b.generalAverage - a.generalAverage;
-      return a.studentName.localeCompare(b.studentName);
+      const pctA = ((Number(a.objScore) || 0) + (Number(a.subjScore) || 0)) / (Number(a.maxScore) || 1);
+      const pctB = ((Number(b.objScore) || 0) + (Number(b.subjScore) || 0)) / (Number(b.maxScore) || 1);
+      if (pctB !== pctA) return pctB - pctA;
+      return (a.studentName || "").localeCompare(b.studentName || "");
     });
-  }, [filteredAcademicReports]);
 
   // Send password reset magic link email
   const handleSendResetEmail = async (teacherEmail) => {
@@ -1981,7 +2163,7 @@ export default function AdminDashboard() {
             <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
               {academicViewMode === "matrix" ? (
                 <span>
-                  Showing <strong className="text-slate-800 dark:text-slate-200">{matrixStudentRows.length} Students</strong> across <strong className="text-slate-800 dark:text-slate-200">{matrixSubjects.length} Subject{matrixSubjects.length !== 1 ? "s" : ""}</strong>
+                  Showing <strong className="text-slate-800 dark:text-slate-200">{standardStudents.length} Standard</strong> & <strong className="text-slate-800 dark:text-slate-200">{eslStudents.length} ESL</strong> Students for <strong className="text-brand-600 dark:text-brand-400">{reportFilterExamCategory}</strong>
                 </span>
               ) : (
                 <span>
@@ -1991,121 +2173,258 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Academic Report Data Table */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
-            {isAcademicLoading ? (
-              <div className="py-16 text-center text-slate-400 text-sm font-medium">
-                Loading school-wide academic data...
-              </div>
-            ) : academicViewMode === "matrix" ? (
-              matrixStudentRows.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        <th className="p-4 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10">Student Name</th>
-                        <th className="p-4">Grade Level</th>
-                        <th className="p-4">Community</th>
-                        {matrixSubjects.map((subj) => (
-                          <th key={subj.name} className="p-4 text-center whitespace-nowrap min-w-[140px]">
-                            {subj.name}
-                          </th>
-                        ))}
-                        <th className="p-4 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-10">
-                          General Average
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
-                      {matrixStudentRows.map((st) => {
-                        const genAvg = st.generalAverage;
-                        const avgBadge =
-                          genAvg >= 90
-                            ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                            : genAvg >= 80
-                            ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800"
-                            : genAvg >= 75
-                            ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
-                            : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+          {/* Academic Report Data Tables */}
+          {isAcademicLoading ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-16 text-center text-slate-400 text-sm font-medium shadow-sm">
+              Loading school-wide academic data...
+            </div>
+          ) : academicViewMode === "matrix" ? (
+            <div className="space-y-8">
+              {/* ── Table 1: Standard Curriculum Master Report ── */}
+              {standardStudents.length > 0 && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm space-y-4">
+                  <div className="p-5 pb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="h-3 w-3 rounded-full bg-brand-500" />
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
+                        Standard Curriculum Master Report
+                      </h3>
+                    </div>
+                    <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
+                      {standardStudents.length} Students • {standardSubjects.length} Subject Columns
+                    </span>
+                  </div>
 
-                        return (
-                          <tr key={st.studentId || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                            <td className="p-4 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10">
-                              {st.studentName}
-                              {st.studentCode && (
-                                <span className="block text-[10px] text-slate-400 font-mono font-normal">
-                                  {st.studentCode}
-                                </span>
-                              )}
-                            </td>
-                            <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                              {st.gradeLevel}
-                            </td>
-                            <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                              {st.community}
-                            </td>
-                            {matrixSubjects.map((subj) => {
-                              const sc = st.subjectScores[subj.name];
-                              if (!sc) {
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          <th className="p-4 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10">Student Name</th>
+                          <th className="p-4">Grade Level</th>
+                          <th className="p-4">Community</th>
+                          {standardSubjects.map((subj) => (
+                            <th key={subj} className="p-4 text-center whitespace-nowrap min-w-[140px] uppercase">
+                              {subj}
+                            </th>
+                          ))}
+                          <th className="p-4 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-10">
+                            General Average
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
+                        {standardStudents.map((st) => {
+                          const genAvg = st.generalAverage;
+                          const avgBadge =
+                            genAvg >= 90
+                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                              : genAvg >= 80
+                              ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800"
+                              : genAvg >= 75
+                              ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                              : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
+                          return (
+                            <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                              <td className="p-4 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10">
+                                {st.studentName}
+                                {st.studentCode && (
+                                  <span className="block text-[10px] text-slate-400 font-mono font-normal">
+                                    {st.studentCode}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                {st.gradeLevel}
+                              </td>
+                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                {st.community}
+                              </td>
+                              {standardSubjects.map((subj) => {
+                                const sc = st.subjectScores[subj];
+                                if (!sc || !sc.hasScore) {
+                                  return (
+                                    <td key={subj} className="p-4 text-center text-slate-300 dark:text-slate-600 font-mono">
+                                      —
+                                    </td>
+                                  );
+                                }
+
+                                const pct = sc.percentage;
+                                const badgeStyle =
+                                  pct >= 80
+                                    ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                                    : pct >= 70
+                                    ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                                    : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
                                 return (
-                                  <td key={subj.name} className="p-4 text-center text-slate-300 dark:text-slate-600 font-mono">
-                                    —
+                                  <td key={subj} className="p-4 text-center font-mono">
+                                    <div className="flex flex-col items-center justify-center space-y-0.5">
+                                      <div className="flex items-center space-x-1.5">
+                                        <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                                          {sc.earnedScore}/{sc.maxScore}
+                                        </span>
+                                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
+                                          {pct}%
+                                        </span>
+                                      </div>
+                                      {(sc.objScore > 0 || sc.subjScore > 0) && (
+                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
+                                          MC: {sc.objScore} | V/E: {sc.subjScore}
+                                        </span>
+                                      )}
+                                    </div>
                                   </td>
                                 );
-                              }
-
-                              const pct = sc.percentage;
-                              const badgeStyle =
-                                pct >= 80
-                                  ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                                  : pct >= 70
-                                  ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
-                                  : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
-
-                              return (
-                                <td key={subj.name} className="p-4 text-center font-mono">
-                                  <div className="flex flex-col items-center justify-center space-y-0.5">
-                                    <div className="flex items-center space-x-1.5">
-                                      <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
-                                        {sc.earnedScore}/{sc.maxScore}
-                                      </span>
-                                      <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
-                                        {pct}%
-                                      </span>
-                                    </div>
-                                    {(sc.objScore > 0 || sc.subjScore > 0) && (
-                                      <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
-                                        MC: {sc.objScore} | V/E: {sc.subjScore}
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                              );
-                            })}
-                            <td className="p-4 text-center sticky right-0 bg-white dark:bg-slate-900 z-10">
-                              <div className="flex flex-col items-center justify-center space-y-1">
-                                <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge}`}>
-                                  <span>{genAvg}%</span>
-                                </span>
-                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold">
-                                  {st.completedSubjectsCount} of {matrixSubjects.length} subjects
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              })}
+                              <td className="p-4 text-center sticky right-0 bg-white dark:bg-slate-900 z-10">
+                                <div className="flex flex-col items-center justify-center space-y-1">
+                                  <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge}`}>
+                                    <span>{genAvg}%</span>
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold">
+                                    {st.completedCount} of {st.totalSubjectsCount} subjects
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              ) : (
-                <div className="py-16 text-center space-y-2">
+              )}
+
+              {/* ── Table 2: ESL Program Master Report ── */}
+              {eslStudents.length > 0 && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm space-y-4">
+                  <div className="p-5 pb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="h-3 w-3 rounded-full bg-teal-500" />
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
+                        ESL Program Master Report
+                      </h3>
+                    </div>
+                    <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800">
+                      {eslStudents.length} Students • {eslSubjects.length} Subject Columns
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          <th className="p-4 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10">Student Name</th>
+                          <th className="p-4">Level / Grade</th>
+                          <th className="p-4">Community</th>
+                          {eslSubjects.map((subj) => (
+                            <th key={subj} className="p-4 text-center whitespace-nowrap min-w-[140px] uppercase">
+                              {subj}
+                            </th>
+                          ))}
+                          <th className="p-4 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-10">
+                            General Average
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
+                        {eslStudents.map((st) => {
+                          const genAvg = st.generalAverage;
+                          const avgBadge =
+                            genAvg >= 90
+                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                              : genAvg >= 80
+                              ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800"
+                              : genAvg >= 75
+                              ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                              : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
+                          return (
+                            <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                              <td className="p-4 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10">
+                                {st.studentName}
+                                {st.studentCode && (
+                                  <span className="block text-[10px] text-slate-400 font-mono font-normal">
+                                    {st.studentCode}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                {st.gradeLevel}
+                              </td>
+                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                {st.community}
+                              </td>
+                              {eslSubjects.map((subj) => {
+                                const sc = st.subjectScores[subj];
+                                if (!sc || !sc.hasScore) {
+                                  return (
+                                    <td key={subj} className="p-4 text-center text-slate-300 dark:text-slate-600 font-mono">
+                                      —
+                                    </td>
+                                  );
+                                }
+
+                                const pct = sc.percentage;
+                                const badgeStyle =
+                                  pct >= 80
+                                    ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                                    : pct >= 70
+                                    ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                                    : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
+                                return (
+                                  <td key={subj} className="p-4 text-center font-mono">
+                                    <div className="flex flex-col items-center justify-center space-y-0.5">
+                                      <div className="flex items-center space-x-1.5">
+                                        <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                                          {sc.earnedScore}/{sc.maxScore}
+                                        </span>
+                                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
+                                          {pct}%
+                                        </span>
+                                      </div>
+                                      {(sc.objScore > 0 || sc.subjScore > 0) && (
+                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
+                                          MC: {sc.objScore} | V/E: {sc.subjScore}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                );
+                              })}
+                              <td className="p-4 text-center sticky right-0 bg-white dark:bg-slate-900 z-10">
+                                <div className="flex flex-col items-center justify-center space-y-1">
+                                  <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge}`}>
+                                    <span>{genAvg}%</span>
+                                  </span>
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold">
+                                    {st.completedCount} of {st.totalSubjectsCount} subjects
+                                  </span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Empty state when neither standard nor ESL students match */}
+              {standardStudents.length === 0 && eslStudents.length === 0 && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-16 text-center space-y-2 shadow-sm">
                   <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Graded Exam Submissions Found</p>
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Students or Exam Submissions Found</p>
                   <p className="text-xs text-slate-400">Try adjusting your filters or search query above.</p>
                 </div>
-              )
-            ) : filteredAcademicReports.length > 0 ? (
+              )}
+            </div>
+          ) : filteredAcademicReports.length > 0 ? (
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
@@ -2187,14 +2506,14 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </div>
-            ) : (
-              <div className="py-16 text-center space-y-2">
-                <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Graded Exam Submissions Found</p>
-                <p className="text-xs text-slate-400">Try adjusting your filters or search query above.</p>
-              </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-16 text-center space-y-2 shadow-sm">
+              <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Graded Exam Submissions Found</p>
+              <p className="text-xs text-slate-400">Try adjusting your filters or search query above.</p>
+            </div>
+          )}
         </div>
       )}
 
