@@ -253,7 +253,7 @@ export default function StudentExamSession() {
       alert(
         finalStatus === "Graded"
           ? `🎉 Exam Submitted & Auto-Graded!\nYour Score: ${objScore} / ${totalExamPoints} pts`
-          : `✅ Exam Submitted Successfully!\nObjective Score: ${objScore} / ${maxObjPoints} pts.\nEssay/Vocabulary/Project link questions are pending teacher review.`
+          : `✅ Exam Submitted Successfully!\nMultiple Choice Score: ${objScore} / ${maxObjPoints} pts.\nEssay/Vocabulary/Project link questions are pending teacher review.`
       );
 
       navigate(`/student/class/${encodeURIComponent(classId)}`);

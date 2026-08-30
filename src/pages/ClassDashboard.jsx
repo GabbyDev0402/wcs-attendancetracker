@@ -4240,13 +4240,13 @@ export default function ClassDashboard() {
             <div className="px-6 py-3 bg-brand-50/50 dark:bg-brand-900/20 border-b border-brand-100/50 dark:border-brand-800/50 flex flex-wrap items-center justify-between gap-3 text-xs shrink-0">
               <div className="flex items-center space-x-4">
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">Obj Score:</span>{" "}
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Multiple Choice Score:</span>{" "}
                   <span className="font-bold text-brand-700 dark:text-brand-300">
                     {Object.values(manualQuizObjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} pts
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-bold">Manual Subj Score:</span>{" "}
+                  <span className="text-[10px] text-slate-400 uppercase font-bold">Vocabs/Essay Score:</span>{" "}
                   <span className="font-bold text-amber-600 dark:text-amber-400">
                     {Object.values(manualQuizSubjScores).reduce((sum, pts) => sum + (Number(pts) || 0), 0)} pts
                   </span>
@@ -5022,7 +5022,7 @@ export default function ClassDashboard() {
                   </h3>
                 </div>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Enter student Objective and Subjective scores out of <strong className="text-brand-600 dark:text-brand-400 font-mono">{selectedExamForScores.maxScore || 100} pts</strong>. Scores save directly into E-Class Record.
+                  Enter student Multiple Choice and Vocabs/Essay scores out of <strong className="text-brand-600 dark:text-brand-400 font-mono">{selectedExamForScores.maxScore || 100} pts</strong>. Scores save directly into E-Class Record.
                 </p>
               </div>
               <button
@@ -5058,8 +5058,8 @@ export default function ClassDashboard() {
                   <tr>
                     <th className="px-4 py-3">#</th>
                     <th className="px-4 py-3">Student Name</th>
-                    <th className="px-3 py-3 text-center">Obj. Score</th>
-                    <th className="px-3 py-3 text-center">Subj. Score</th>
+                    <th className="px-3 py-3 text-center">Multiple Choice Score</th>
+                    <th className="px-3 py-3 text-center">Vocabs/Essay Score</th>
                     <th className="px-4 py-3 text-center">Total (Max: {selectedExamForScores.maxScore || 100})</th>
                     <th className="px-3 py-3 text-center">Percentage</th>
                     <th className="px-4 py-3 text-right">Status</th>
