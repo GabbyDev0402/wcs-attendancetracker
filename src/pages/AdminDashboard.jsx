@@ -78,6 +78,55 @@ const createDefaultAssignment = () => ({
   daysOfWeek: ["Monday", "Wednesday", "Friday"]
 });
 
+// Canonical School Curriculum Subjects & Aliases
+const CANONICAL_SUBJECTS = [
+  {
+    name: "Math",
+    order: 1,
+    keywords: ["math", "mathematics", "algebra", "calculus", "geometry", "statistics", "trigonometry", "numeracy", "lifepac math", "general math", "basic calculus", "pre-calculus"]
+  },
+  {
+    name: "English",
+    order: 2,
+    keywords: ["english", "grammar", "reading", "vocabulary", "language arts", "writing", "communication arts", "laos english", "oral communication", "reading and writing"]
+  },
+  {
+    name: "Science",
+    order: 3,
+    keywords: ["science", "biology", "physics", "chemistry", "earth science", "general science", "astronomy", "integrated science", "physical science", "earth and life science"]
+  },
+  {
+    name: "Social Science",
+    order: 4,
+    keywords: ["social science", "social studies", "social", "history", "araling panlipunan", "ap", "geography", "civics", "economics", "diss", "philippine history", "world history", "asian studies", "kasaysayan", "philippine politics", "ucsp"]
+  },
+  {
+    name: "Values",
+    order: 5,
+    keywords: ["values", "values education", "esp", "edukasyon sa pagpapakatao", "character", "ethics", "moral", "good manners", "christian living", "clve", "homeroom"]
+  },
+  {
+    name: "MAPEH",
+    order: 6,
+    keywords: ["mapeh", "music", "arts", "aces in mapeh", "music and arts"]
+  },
+  {
+    name: "Physical Education",
+    order: 7,
+    keywords: ["physical education", "pe", "p.e.", "p.e", "hope", "health-optimizing physical education", "health optimizing physical education", "hope 1", "hope 2", "hope 3", "hope 4", "physical education and health", "pe and health", "pe & health", "phys ed"]
+  },
+  {
+    name: "Literature",
+    order: 8,
+    keywords: ["literature", "philippine literature", "world literature", "lit", "contemporary arts", "panitikan", "creative writing", "21st century literature"]
+  },
+  {
+    name: "TLE",
+    order: 9,
+    keywords: ["tle", "technology and livelihood education", "livelihood", "ict", "home economics", "agri-fishery", "industrial arts", "computer", "epp", "empowerment technologies"]
+  }
+];
+
 export default function AdminDashboard() {
   const [teachers, setTeachers] = useState([]);
   const [students, setStudents] = useState([]);
@@ -918,81 +967,63 @@ export default function AdminDashboard() {
     return clean.replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  // Extract readable subject name from exam metadata using Teacher/Classroom Assignments (Priority 1)
+  // Extract readable subject name from exam metadata using Canonical Subjects Dictionary & Classroom Lookup
   const extractSubjectName = (exam, sub) => {
     // 1. Direct explicit subject property
-    if (exam?.subject && typeof exam.subject === "string" && exam.subject.trim()) {
-      return exam.subject.trim();
-    }
-    if (sub?.subject && typeof sub.subject === "string" && sub.subject.trim()) {
-      return sub.subject.trim();
+    const rawSubj = exam?.subject || sub?.subject;
+    if (rawSubj && typeof rawSubj === "string" && rawSubj.trim()) {
+      const trimmed = rawSubj.trim();
+      const canonicalMatch = CANONICAL_SUBJECTS.find(cs => 
+        cs.name.toLowerCase() === trimmed.toLowerCase() || 
+        cs.keywords.some(kw => trimmed.toLowerCase().includes(kw))
+      );
+      if (canonicalMatch) return canonicalMatch.name;
+      return trimmed;
     }
 
+    const examTitle = (exam?.title || sub?.examTitle || "").toLowerCase();
     const rawClassId = sub?.classId || exam?.classId || "";
     const teacherId = exam?.teacherId || sub?.teacherId || (rawClassId.includes("_") ? rawClassId.split("_")[0] : "");
     const slug = rawClassId.includes("_") ? rawClassId.split("_").pop() : rawClassId;
-    const cleanSlug = (slug || "").toLowerCase().replace(/[^a-z0-9]/g, "-");
+    const cleanSlug = (slug || "").toLowerCase().replace(/[^a-z0-9]/g, " ");
 
-    // 2. Classroom & Teacher Assignment Lookup (Priority 1)
+    // 2. Search Canonical Subjects in Exam Title (handles multiple subjects inside one classroom, e.g. "1st Monthly Exam - Grade 8 MAPEH" inside Math)
+    for (const cs of CANONICAL_SUBJECTS) {
+      if (cs.keywords.some(kw => {
+        const regex = new RegExp(`\\b${kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b|\\(${kw}\\)`, 'i');
+        return regex.test(examTitle) || examTitle.includes(kw);
+      })) {
+        return cs.name;
+      }
+    }
+
+    // 3. Search Canonical Subjects in Classroom Slug & Teacher Assignments
+    let teacherAsgsText = "";
     if (teacherId && teachers.length > 0) {
       const teacher = teachers.find(t => t.id === teacherId || t.uid === teacherId);
-      if (teacher && Array.isArray(teacher.assignments) && teacher.assignments.length > 0) {
-        // A. Exact slug match
-        const exactMatch = teacher.assignments.find(a => {
-          const asgSlug = `${(a.grade || a.gradeLevel || "").replace(/\s+/g, "-")}-${(a.subject || "").replace(/\s+/g, "-")}`.toLowerCase().replace(/[^a-z0-9]/g, "-");
-          return asgSlug === cleanSlug;
-        });
-        if (exactMatch && exactMatch.subject && exactMatch.subject.trim()) {
-          return exactMatch.subject.trim();
-        }
-
-        // B. Subject substring match in classroom slug
-        const subMatch = teacher.assignments.find(a => {
-          const asgSubjClean = (a.subject || "").toLowerCase().replace(/[^a-z0-9]/g, "-");
-          return asgSubjClean && (cleanSlug.includes(asgSubjClean) || asgSubjClean.includes(cleanSlug));
-        });
-        if (subMatch && subMatch.subject && subMatch.subject.trim()) {
-          return subMatch.subject.trim();
-        }
-
-        // C. Single assignment for that specific grade level
-        const gradeMatch = slug.match(/grade-?\d+/i);
-        if (gradeMatch) {
-          const gradeNum = gradeMatch[0].match(/\d+/)?.[0];
-          const gradeAsgs = teacher.assignments.filter(a => {
-            const aGradeNum = (a.grade || a.gradeLevel || "").match(/\d+/)?.[0];
-            return aGradeNum && aGradeNum === gradeNum;
-          });
-          if (gradeAsgs.length === 1 && gradeAsgs[0].subject && gradeAsgs[0].subject.trim()) {
-            return gradeAsgs[0].subject.trim();
-          }
-        }
+      if (teacher && Array.isArray(teacher.assignments)) {
+        teacherAsgsText = teacher.assignments.map(a => `${a.grade || ""} ${a.subject || ""}`).join(" ").toLowerCase();
       }
     }
 
-    // 3. School-wide Classroom Assignment Lookup (match slug against all teachers)
-    if (cleanSlug && teachers.length > 0) {
-      for (const t of teachers) {
-        if (Array.isArray(t.assignments)) {
-          const match = t.assignments.find(a => {
-            const asgSlug = `${(a.grade || a.gradeLevel || "").replace(/\s+/g, "-")}-${(a.subject || "").replace(/\s+/g, "-")}`.toLowerCase().replace(/[^a-z0-9]/g, "-");
-            return asgSlug === cleanSlug;
-          });
-          if (match && match.subject && match.subject.trim()) {
-            return match.subject.trim();
-          }
-        }
+    const classroomText = `${cleanSlug} ${teacherAsgsText}`;
+    for (const cs of CANONICAL_SUBJECTS) {
+      if (cs.keywords.some(kw => {
+        const regex = new RegExp(`\\b${kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+        return regex.test(classroomText) || classroomText.includes(kw);
+      })) {
+        return cs.name;
       }
     }
 
-    // 4. Parentheses in Exam Title (e.g. "1st Monthly Examination: Grade 12 (Mathematics)" -> "Mathematics")
+    // 4. Parentheses in Exam Title (e.g. "1st Monthly Examination: Grade 12 (Special Subject)" -> "Special Subject")
     const title = exam?.title || sub?.examTitle || "";
     const parenMatch = title.match(/\(([^)]+)\)/);
     if (parenMatch && parenMatch[1].trim()) {
       return parenMatch[1].trim();
     }
 
-    // 5. Clean Classroom Slug fallback (e.g. "grade-12-health-optimizing-physical-education-3" -> "Health Optimizing Physical Education 3")
+    // 5. Clean Classroom Slug fallback
     if (rawClassId) {
       const parts = slug.split("-").filter(p => !p.match(/^grade\d*$/i) && !p.match(/^\d+$/));
       if (parts.length > 0) {
@@ -1000,7 +1031,7 @@ export default function AdminDashboard() {
       }
     }
 
-    return title || "Subject";
+    return title || "General Subject";
   };
 
   // Compute processed and filtered academic performance reports
@@ -1093,19 +1124,25 @@ export default function AdminDashboard() {
       return (a.studentName || "").localeCompare(b.studentName || "");
     });
 
-  // Dynamic matrix data: unique subjects and student-grouped rows
+  // Dynamic matrix data: unique subjects ordered by canonical curriculum
   const matrixSubjects = React.useMemo(() => {
     const subjectMap = new Map();
     filteredAcademicReports.forEach(item => {
       const sName = item.subjectName || "Subject";
       if (!subjectMap.has(sName)) {
+        const canonical = CANONICAL_SUBJECTS.find(cs => cs.name.toLowerCase() === sName.toLowerCase());
+        const order = canonical ? canonical.order : 99;
         subjectMap.set(sName, {
           name: sName,
+          order,
           maxScore: item.maxScore
         });
       }
     });
-    return Array.from(subjectMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(subjectMap.values()).sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      return a.name.localeCompare(b.name);
+    });
   }, [filteredAcademicReports]);
 
   const matrixStudentRows = React.useMemo(() => {
