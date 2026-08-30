@@ -142,8 +142,8 @@ export default function AdminDashboard() {
       "Category",
       "Quarter",
       "Subject / Class",
-      "OBJ. SCORE",
-      "SUBJ. SCORE",
+      "Multiple Choice Score",
+      "Vocabs/Essay Score",
       "Total Score",
       "Max Score",
       "Percentage (%)"
@@ -1730,8 +1730,8 @@ export default function AdminDashboard() {
                       <th className="p-4">Exam Title</th>
                       <th className="p-4">Quarter</th>
                       <th className="p-4">Subject / Class</th>
-                      <th className="p-4 text-center">OBJ. SCORE</th>
-                      <th className="p-4 text-center">SUBJ. SCORE</th>
+                      <th className="p-4 text-center">Multiple Choice Score</th>
+                      <th className="p-4 text-center">Vocabs/Essay Score</th>
                       <th className="p-4 text-center">TOTAL & %</th>
                     </tr>
                   </thead>
