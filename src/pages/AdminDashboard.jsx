@@ -918,8 +918,9 @@ export default function AdminDashboard() {
     return clean.replace(/\b\w/g, l => l.toUpperCase());
   };
 
-  // Extract readable subject name from exam metadata
+  // Extract readable subject name from exam metadata using Teacher/Classroom Assignments (Priority 1)
   const extractSubjectName = (exam, sub) => {
+    // 1. Direct explicit subject property
     if (exam?.subject && typeof exam.subject === "string" && exam.subject.trim()) {
       return exam.subject.trim();
     }
@@ -927,15 +928,72 @@ export default function AdminDashboard() {
       return sub.subject.trim();
     }
 
+    const rawClassId = sub?.classId || exam?.classId || "";
+    const teacherId = exam?.teacherId || sub?.teacherId || (rawClassId.includes("_") ? rawClassId.split("_")[0] : "");
+    const slug = rawClassId.includes("_") ? rawClassId.split("_").pop() : rawClassId;
+    const cleanSlug = (slug || "").toLowerCase().replace(/[^a-z0-9]/g, "-");
+
+    // 2. Classroom & Teacher Assignment Lookup (Priority 1)
+    if (teacherId && teachers.length > 0) {
+      const teacher = teachers.find(t => t.id === teacherId || t.uid === teacherId);
+      if (teacher && Array.isArray(teacher.assignments) && teacher.assignments.length > 0) {
+        // A. Exact slug match
+        const exactMatch = teacher.assignments.find(a => {
+          const asgSlug = `${(a.grade || a.gradeLevel || "").replace(/\s+/g, "-")}-${(a.subject || "").replace(/\s+/g, "-")}`.toLowerCase().replace(/[^a-z0-9]/g, "-");
+          return asgSlug === cleanSlug;
+        });
+        if (exactMatch && exactMatch.subject && exactMatch.subject.trim()) {
+          return exactMatch.subject.trim();
+        }
+
+        // B. Subject substring match in classroom slug
+        const subMatch = teacher.assignments.find(a => {
+          const asgSubjClean = (a.subject || "").toLowerCase().replace(/[^a-z0-9]/g, "-");
+          return asgSubjClean && (cleanSlug.includes(asgSubjClean) || asgSubjClean.includes(cleanSlug));
+        });
+        if (subMatch && subMatch.subject && subMatch.subject.trim()) {
+          return subMatch.subject.trim();
+        }
+
+        // C. Single assignment for that specific grade level
+        const gradeMatch = slug.match(/grade-?\d+/i);
+        if (gradeMatch) {
+          const gradeNum = gradeMatch[0].match(/\d+/)?.[0];
+          const gradeAsgs = teacher.assignments.filter(a => {
+            const aGradeNum = (a.grade || a.gradeLevel || "").match(/\d+/)?.[0];
+            return aGradeNum && aGradeNum === gradeNum;
+          });
+          if (gradeAsgs.length === 1 && gradeAsgs[0].subject && gradeAsgs[0].subject.trim()) {
+            return gradeAsgs[0].subject.trim();
+          }
+        }
+      }
+    }
+
+    // 3. School-wide Classroom Assignment Lookup (match slug against all teachers)
+    if (cleanSlug && teachers.length > 0) {
+      for (const t of teachers) {
+        if (Array.isArray(t.assignments)) {
+          const match = t.assignments.find(a => {
+            const asgSlug = `${(a.grade || a.gradeLevel || "").replace(/\s+/g, "-")}-${(a.subject || "").replace(/\s+/g, "-")}`.toLowerCase().replace(/[^a-z0-9]/g, "-");
+            return asgSlug === cleanSlug;
+          });
+          if (match && match.subject && match.subject.trim()) {
+            return match.subject.trim();
+          }
+        }
+      }
+    }
+
+    // 4. Parentheses in Exam Title (e.g. "1st Monthly Examination: Grade 12 (Mathematics)" -> "Mathematics")
     const title = exam?.title || sub?.examTitle || "";
     const parenMatch = title.match(/\(([^)]+)\)/);
     if (parenMatch && parenMatch[1].trim()) {
       return parenMatch[1].trim();
     }
 
-    const rawClassId = sub?.classId || exam?.classId || "";
+    // 5. Clean Classroom Slug fallback (e.g. "grade-12-health-optimizing-physical-education-3" -> "Health Optimizing Physical Education 3")
     if (rawClassId) {
-      const slug = rawClassId.includes("_") ? rawClassId.split("_").pop() : rawClassId;
       const parts = slug.split("-").filter(p => !p.match(/^grade\d*$/i) && !p.match(/^\d+$/));
       if (parts.length > 0) {
         return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");

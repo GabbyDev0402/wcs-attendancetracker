@@ -971,6 +971,8 @@ export default function ClassDashboard() {
         teacherId: user?.id || user?.uid,
         academicYear: CURRENT_ACADEMIC_YEAR,
         title: scopeTitle.trim(),
+        subject: classInfo.subject || "",
+        grade: classInfo.grade || "",
         scopeText: scopeText || "",
         quarter: scopeQuarter,
         category: scopeCategory,
