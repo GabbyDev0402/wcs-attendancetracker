@@ -1036,6 +1036,18 @@ export default function AdminDashboard() {
 
   // Extract readable subject name from exam metadata using Canonical Subjects Dictionary & Classroom Lookup
   const extractSubjectName = (exam, sub) => {
+    // 0. Explicit specificSubject property from Exam Builder
+    const explicitSpecific = exam?.specificSubject || sub?.specificSubject;
+    if (explicitSpecific && typeof explicitSpecific === "string" && explicitSpecific.trim()) {
+      const trimmed = explicitSpecific.trim();
+      const canonicalMatch = CANONICAL_SUBJECTS.find(cs => 
+        cs.name.toLowerCase() === trimmed.toLowerCase() || 
+        cs.keywords.some(kw => trimmed.toLowerCase().includes(kw))
+      );
+      if (canonicalMatch) return canonicalMatch.name;
+      return trimmed;
+    }
+
     // 1. Direct explicit subject property
     const rawSubj = exam?.subject || sub?.subject;
     if (rawSubj && typeof rawSubj === "string" && rawSubj.trim()) {
@@ -1224,14 +1236,36 @@ export default function AdminDashboard() {
       }
     });
 
-    const matchPillarSubject = (examSubj, targetSubject) => {
-      if (!examSubj || !targetSubject) return false;
-      const es = examSubj.toLowerCase();
-      const ts = targetSubject.toLowerCase();
-      if (es === ts) return true;
-      if (ts === "mapeh" && (es === "physical education" || es.includes("pe") || es.includes("hope"))) {
+    const matchPillarSubject = (exam, targetSubject) => {
+      if (!exam || !targetSubject) return false;
+      const ts = targetSubject.toLowerCase().trim();
+
+      // Priority 1: Exact specificSubject property on exam doc
+      if (exam.specificSubject && typeof exam.specificSubject === "string" && exam.specificSubject.trim()) {
+        const spec = exam.specificSubject.toLowerCase().trim();
+        if (spec === ts) return true;
+        if (ts === "mapeh" && (spec === "physical education" || spec.includes("pe") || spec.includes("hope"))) {
+          return true;
+        }
+        return false;
+      }
+
+      // Priority 2: Direct subject property on exam doc
+      if (exam.subject && typeof exam.subject === "string" && exam.subject.trim()) {
+        const subj = exam.subject.toLowerCase().trim();
+        if (subj === ts) return true;
+        if (ts === "mapeh" && (subj === "physical education" || subj.includes("pe") || subj.includes("hope"))) {
+          return true;
+        }
+      }
+
+      // Priority 3: Fallback title / classroom subject extraction for legacy exams
+      const extracted = extractSubjectName(exam).toLowerCase().trim();
+      if (extracted === ts) return true;
+      if (ts === "mapeh" && (extracted === "physical education" || extracted.includes("pe") || extracted.includes("hope"))) {
         return true;
       }
+
       return false;
     };
 
@@ -1248,8 +1282,7 @@ export default function AdminDashboard() {
       STANDARD_PILLARS.forEach(pillar => {
         [pillar.core, pillar.added].forEach(subjKey => {
           const matchedExam = filteredExams.find(ex => {
-            const exSubj = extractSubjectName(ex);
-            return matchPillarSubject(exSubj, subjKey) && matchExamGrade(ex, gLevel);
+            return matchPillarSubject(ex, subjKey) && matchExamGrade(ex, gLevel);
           });
 
           if (matchedExam) {
@@ -1258,11 +1291,14 @@ export default function AdminDashboard() {
               (s.studentId === sId || s.studentId === st.uid || s.studentId === st.id)
             );
 
+            // Dynamically pull maxScore directly from the matched exam doc
+            const examMaxScore = Number(matchedExam.maxScore) > 0 ? Number(matchedExam.maxScore) : (Number(sub?.maxScore) || 100);
+
             if (sub) {
               const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
               const subjScore = Number(sub.subjScore) || 0;
               const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
-              const maxScore = Number(matchedExam.maxScore || sub.maxScore) || 100;
+              const maxScore = examMaxScore;
               const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
 
               subjectScores[subjKey] = {
@@ -1276,7 +1312,7 @@ export default function AdminDashboard() {
               };
               percentages.push(percentage);
             } else {
-              subjectScores[subjKey] = { hasScore: false, noSubmission: true, examTitle: matchedExam.title };
+              subjectScores[subjKey] = { hasScore: false, noSubmission: true, examTitle: matchedExam.title, maxScore: examMaxScore };
             }
           } else {
             subjectScores[subjKey] = { hasScore: false, noExam: true };
@@ -1323,11 +1359,14 @@ export default function AdminDashboard() {
             (s.studentId === sId || s.studentId === st.uid || s.studentId === st.id)
           );
 
+          // Dynamically pull maxScore directly from the matched exam doc
+          const examMaxScore = Number(matchedExam.maxScore) > 0 ? Number(matchedExam.maxScore) : (Number(sub?.maxScore) || 100);
+
           if (sub) {
             const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
             const subjScore = Number(sub.subjScore) || 0;
             const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
-            const maxScore = Number(matchedExam.maxScore || sub.maxScore) || 100;
+            const maxScore = examMaxScore;
             const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
 
             subjectScores[subjectName] = {
@@ -1341,7 +1380,7 @@ export default function AdminDashboard() {
             };
             percentages.push(percentage);
           } else {
-            subjectScores[subjectName] = { hasScore: false, noSubmission: true, examTitle: matchedExam.title };
+            subjectScores[subjectName] = { hasScore: false, noSubmission: true, examTitle: matchedExam.title, maxScore: examMaxScore };
           }
         } else {
           subjectScores[subjectName] = { hasScore: false, noExam: true };

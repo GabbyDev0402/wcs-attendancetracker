@@ -82,6 +82,41 @@ const questionTypeLabels = {
   info: { label: "Text Block", color: "slate" }
 };
 
+const STANDARD_PILLARS = [
+  { core: 'Math', added: 'MAPEH' },
+  { core: 'Science', added: 'TLE' },
+  { core: 'English', added: 'Literature' },
+  { core: 'Social Science', added: 'Values' }
+];
+
+const getPillarSubjectOptions = (classSubj, grade) => {
+  if (!classSubj) return ["Math", "MAPEH"];
+  const sClean = classSubj.toLowerCase();
+  const isGrade12 = (grade || "").toString().includes("12");
+
+  if (sClean.includes("math")) {
+    return ["Math", isGrade12 ? "Physical Education" : "MAPEH"];
+  }
+  if (sClean.includes("science")) {
+    return ["Science", "TLE"];
+  }
+  if (sClean.includes("english") || sClean.includes("reading") || sClean.includes("grammar")) {
+    return ["English", "Literature"];
+  }
+  if (sClean.includes("social") || sClean.includes("history") || sClean.includes("ap")) {
+    return ["Social Science", "Values"];
+  }
+  
+  const foundPillar = STANDARD_PILLARS.find(p => 
+    p.core.toLowerCase() === sClean || p.added.toLowerCase() === sClean
+  );
+  if (foundPillar) {
+    return [foundPillar.core, (foundPillar.core === "Math" && isGrade12) ? "Physical Education" : foundPillar.added];
+  }
+
+  return [classSubj];
+};
+
 export default function ClassDashboard() {
   const { classId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -206,6 +241,7 @@ export default function ClassDashboard() {
   const [isAddExamScopeModalOpen, setIsAddExamScopeModalOpen] = useState(false);
   const [editingExamScope, setEditingExamScope] = useState(null);
   const [scopeTitle, setScopeTitle] = useState("");
+  const [scopeSpecificSubject, setScopeSpecificSubject] = useState("");
   const [scopeText, setScopeText] = useState("");
   const [scopeQuarter, setScopeQuarter] = useState("1st Quarter");
   const [scopeCategory, setScopeCategory] = useState("1st Monthly Exam");
@@ -920,6 +956,8 @@ export default function ClassDashboard() {
   const handleOpenAddExamScopeModal = () => {
     setEditingExamScope(null);
     setScopeTitle("");
+    const subjectOpts = getPillarSubjectOptions(classInfo.subject, classInfo.grade);
+    setScopeSpecificSubject(subjectOpts[0] || classInfo.subject || "Math");
     setScopeText("");
     setScopeQuarter("1st Quarter");
     setScopeCategory("1st Monthly Exam");
@@ -931,6 +969,8 @@ export default function ClassDashboard() {
   const handleOpenEditExamScopeModal = (exam) => {
     setEditingExamScope(exam);
     setScopeTitle(exam.title || "");
+    const subjectOpts = getPillarSubjectOptions(classInfo.subject, classInfo.grade);
+    setScopeSpecificSubject(exam.specificSubject || exam.subject || subjectOpts[0] || "Math");
     setScopeText(exam.scopeText || "");
     setScopeQuarter(exam.quarter || "1st Quarter");
     setScopeCategory(exam.category || "1st Monthly Exam");
@@ -966,12 +1006,14 @@ export default function ClassDashboard() {
     setIsSavingScope(true);
     try {
       const tag = `${user.id}_${classId}`;
+      const chosenSubject = scopeSpecificSubject.trim() || classInfo.subject || "";
       const payload = {
         classId: tag,
         teacherId: user?.id || user?.uid,
         academicYear: CURRENT_ACADEMIC_YEAR,
         title: scopeTitle.trim(),
-        subject: classInfo.subject || "",
+        specificSubject: chosenSubject,
+        subject: chosenSubject,
         grade: classInfo.grade || "",
         scopeText: scopeText || "",
         quarter: scopeQuarter,
@@ -4831,18 +4873,37 @@ export default function ClassDashboard() {
             </div>
 
             <div className="space-y-4">
-              {/* Exam Title */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                  Exam Title / Topic *
-                </label>
-                <input
-                  type="text"
-                  value={scopeTitle}
-                  onChange={(e) => setScopeTitle(e.target.value)}
-                  placeholder="e.g., 1st Periodical Examination — English & Reading"
-                  className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                />
+              {/* Exam Title & Subject Scope */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    Exam Title / Topic *
+                  </label>
+                  <input
+                    type="text"
+                    value={scopeTitle}
+                    onChange={(e) => setScopeTitle(e.target.value)}
+                    placeholder="e.g., 1st Monthly Exam — Reading Comprehension"
+                    className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    Exam Subject Scope *
+                  </label>
+                  <select
+                    value={scopeSpecificSubject}
+                    onChange={(e) => setScopeSpecificSubject(e.target.value)}
+                    className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  >
+                    {getPillarSubjectOptions(classInfo.subject, classInfo.grade).map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Quarter, Category, Max Score */}
