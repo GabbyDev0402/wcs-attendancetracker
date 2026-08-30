@@ -30,7 +30,9 @@ import {
   ShieldAlert,
   Printer,
   Settings,
-  Download
+  Download,
+  Table,
+  ListFilter
 } from "lucide-react";
 
 // Categorized options for Grade levels (Standard & ESL)
@@ -97,6 +99,7 @@ export default function AdminDashboard() {
   const [reportFilterQuarter, setReportFilterQuarter] = useState("All");
   const [reportFilterExamCategory, setReportFilterExamCategory] = useState("All Categories");
   const [reportSearchQuery, setReportSearchQuery] = useState("");
+  const [academicViewMode, setAcademicViewMode] = useState("matrix"); // "matrix" | "detailed"
 
   const hasLoadedAcademicRef = useRef(false);
 
@@ -133,51 +136,87 @@ export default function AdminDashboard() {
       return;
     }
 
-    const headers = [
-      "Student Name",
-      "Student Code",
-      "Grade Level",
-      "Community",
-      "Exam Title",
-      "Category",
-      "Quarter",
-      "Subject / Class",
-      "Multiple Choice Score",
-      "Vocabs/Essay Score",
-      "Total Score",
-      "Max Score",
-      "Percentage (%)"
-    ];
-    
-    const rows = [headers.join(",")];
-    
-    filteredAcademicReports.forEach(item => {
-      const obj = Number(item.objScore) || 0;
-      const subj = Number(item.subjScore) || 0;
-      const total = obj + subj;
+    const rows = [];
 
-      rows.push([
-        `"${(item.studentName || 'Student').replace(/"/g, '""')}"`,
-        `"${(item.studentCode || '').replace(/"/g, '""')}"`,
-        `"${(item.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
-        `"${(item.community || 'Main').replace(/"/g, '""')}"`,
-        `"${(item.examTitle || 'Exam').replace(/"/g, '""')}"`,
-        `"${(item.category || '1st Monthly Exam').replace(/"/g, '""')}"`,
-        `"${(item.quarter || '1st Quarter').replace(/"/g, '""')}"`,
-        `"${(item.subjectClass || 'General').replace(/"/g, '""')}"`,
-        obj,
-        subj,
-        total,
-        item.maxScore,
-        `"${item.percentage}%"`
-      ].join(","));
-    });
+    if (academicViewMode === "matrix") {
+      const headers = [
+        "Student Name",
+        "Student Code",
+        "Grade Level",
+        "Community",
+        ...matrixSubjects.map(s => `"${s.name.replace(/"/g, '""')}"`),
+        "General Average (%)",
+        "Subjects Completed"
+      ];
+      rows.push(headers.join(","));
+
+      matrixStudentRows.forEach(row => {
+        const rowCols = [
+          `"${(row.studentName || 'Student').replace(/"/g, '""')}"`,
+          `"${(row.studentCode || '').replace(/"/g, '""')}"`,
+          `"${(row.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
+          `"${(row.community || 'Main').replace(/"/g, '""')}"`,
+        ];
+
+        matrixSubjects.forEach(s => {
+          const sc = row.subjectScores[s.name];
+          if (sc) {
+            rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
+          } else {
+            rowCols.push('"—"');
+          }
+        });
+
+        rowCols.push(`"${row.generalAverage}%"`);
+        rowCols.push(`"${row.completedSubjectsCount} of ${matrixSubjects.length}"`);
+        rows.push(rowCols.join(","));
+      });
+    } else {
+      const headers = [
+        "Student Name",
+        "Student Code",
+        "Grade Level",
+        "Community",
+        "Exam Title",
+        "Category",
+        "Quarter",
+        "Subject / Class",
+        "Multiple Choice Score",
+        "Vocabs/Essay Score",
+        "Total Score",
+        "Max Score",
+        "Percentage (%)"
+      ];
+      rows.push(headers.join(","));
+
+      filteredAcademicReports.forEach(item => {
+        const obj = Number(item.objScore) || 0;
+        const subj = Number(item.subjScore) || 0;
+        const total = obj + subj;
+
+        rows.push([
+          `"${(item.studentName || 'Student').replace(/"/g, '""')}"`,
+          `"${(item.studentCode || '').replace(/"/g, '""')}"`,
+          `"${(item.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
+          `"${(item.community || 'Main').replace(/"/g, '""')}"`,
+          `"${(item.examTitle || 'Exam').replace(/"/g, '""')}"`,
+          `"${(item.category || '1st Monthly Exam').replace(/"/g, '""')}"`,
+          `"${(item.quarter || '1st Quarter').replace(/"/g, '""')}"`,
+          `"${(item.subjectClass || 'General').replace(/"/g, '""')}"`,
+          obj,
+          subj,
+          total,
+          item.maxScore,
+          `"${item.percentage}%"`
+        ].join(","));
+      });
+    }
 
     const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Academic_Report_${new Date().toISOString().split("T")[0]}.csv`);
+    link.setAttribute("download", `Academic_Report_${academicViewMode === "matrix" ? "Matrix" : "Detailed"}_${new Date().toISOString().split("T")[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -879,6 +918,33 @@ export default function AdminDashboard() {
     return clean.replace(/\b\w/g, l => l.toUpperCase());
   };
 
+  // Extract readable subject name from exam metadata
+  const extractSubjectName = (exam, sub) => {
+    if (exam?.subject && typeof exam.subject === "string" && exam.subject.trim()) {
+      return exam.subject.trim();
+    }
+    if (sub?.subject && typeof sub.subject === "string" && sub.subject.trim()) {
+      return sub.subject.trim();
+    }
+
+    const title = exam?.title || sub?.examTitle || "";
+    const parenMatch = title.match(/\(([^)]+)\)/);
+    if (parenMatch && parenMatch[1].trim()) {
+      return parenMatch[1].trim();
+    }
+
+    const rawClassId = sub?.classId || exam?.classId || "";
+    if (rawClassId) {
+      const slug = rawClassId.includes("_") ? rawClassId.split("_").pop() : rawClassId;
+      const parts = slug.split("-").filter(p => !p.match(/^grade\d*$/i) && !p.match(/^\d+$/));
+      if (parts.length > 0) {
+        return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+      }
+    }
+
+    return title || "Subject";
+  };
+
   // Compute processed and filtered academic performance reports
   const uniqueGradeLevels = ["All", ...new Set(students.map(s => s.grade || s.gradeLevel).filter(Boolean))];
   const uniqueCommunities = ["All", ...new Set(students.map(s => s.communityName || s.communityCenter || s.community).filter(Boolean))];
@@ -893,12 +959,14 @@ export default function AdminDashboard() {
     const student = students.find(s => s.id === sub.studentId || s.uid === sub.studentId) || {};
     const exam = academicExams.find(e => e.firestoreId === sub.examId || e.id === sub.examId) || {};
 
+    const studentId = sub.studentId || student.id || student.uid || "";
     const studentName = student.internationalName || student.fullName || student.name || formatStudentName(student) || sub.studentName || "Student";
     const studentCode = student.studentCode || "";
     const gradeLevel = student.grade || student.gradeLevel || sub.gradeLevel || "Grade 1";
     const community = student.communityName || student.communityCenter || student.community || "Main";
 
     const examTitle = exam.title || sub.examTitle || "Exam";
+    const subjectName = extractSubjectName(exam, sub);
     const category = exam.category || sub.category || "1st Monthly Exam";
     const quarter = sub.quarter || exam.quarter || "1st Quarter";
     const subjectClass = formatCleanClassName(sub.classId || exam.classId);
@@ -912,11 +980,13 @@ export default function AdminDashboard() {
 
     return {
       id: sub.firestoreId || sub.id,
+      studentId,
       studentName,
       studentCode,
       gradeLevel,
       community,
       examTitle,
+      subjectName,
       category,
       quarter,
       subjectClass,
@@ -940,8 +1010,9 @@ export default function AdminDashboard() {
         const q = reportSearchQuery.toLowerCase();
         const matchName = item.studentName.toLowerCase().includes(q);
         const matchExam = item.examTitle.toLowerCase().includes(q);
+        const matchSubject = item.subjectName.toLowerCase().includes(q);
         const matchCategory = item.category ? item.category.toLowerCase().includes(q) : false;
-        if (!matchName && !matchExam && !matchCategory) return false;
+        if (!matchName && !matchExam && !matchSubject && !matchCategory) return false;
       }
       return true;
     })
@@ -963,6 +1034,76 @@ export default function AdminDashboard() {
       // Sort Priority 3: Student Name Alphabetical
       return (a.studentName || "").localeCompare(b.studentName || "");
     });
+
+  // Dynamic matrix data: unique subjects and student-grouped rows
+  const matrixSubjects = React.useMemo(() => {
+    const subjectMap = new Map();
+    filteredAcademicReports.forEach(item => {
+      const sName = item.subjectName || "Subject";
+      if (!subjectMap.has(sName)) {
+        subjectMap.set(sName, {
+          name: sName,
+          maxScore: item.maxScore
+        });
+      }
+    });
+    return Array.from(subjectMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredAcademicReports]);
+
+  const matrixStudentRows = React.useMemo(() => {
+    const studentMap = new Map();
+
+    filteredAcademicReports.forEach(item => {
+      const stKey = item.studentId || item.studentName;
+      if (!studentMap.has(stKey)) {
+        studentMap.set(stKey, {
+          studentId: item.studentId,
+          studentName: item.studentName,
+          studentCode: item.studentCode,
+          gradeLevel: item.gradeLevel,
+          community: item.community,
+          subjectScores: {},
+          totalPercentages: [],
+          totalEarned: 0,
+          totalMax: 0
+        });
+      }
+
+      const stRow = studentMap.get(stKey);
+      const sName = item.subjectName || "Subject";
+      stRow.subjectScores[sName] = {
+        earnedScore: item.earnedScore,
+        maxScore: item.maxScore,
+        percentage: item.percentage,
+        objScore: item.objScore,
+        subjScore: item.subjScore,
+        examTitle: item.examTitle
+      };
+      stRow.totalPercentages.push(item.percentage);
+      stRow.totalEarned += item.earnedScore;
+      stRow.totalMax += item.maxScore;
+    });
+
+    const rows = Array.from(studentMap.values()).map(row => {
+      const avgPct = row.totalPercentages.length > 0
+        ? Math.round(row.totalPercentages.reduce((sum, p) => sum + p, 0) / row.totalPercentages.length)
+        : 0;
+      return {
+        ...row,
+        generalAverage: avgPct,
+        completedSubjectsCount: Object.keys(row.subjectScores).length
+      };
+    });
+
+    // Hierarchical Sorting: Grade Level Descending -> General Average Descending -> Student Name
+    return rows.sort((a, b) => {
+      const gradeA = getGradeNum(a.gradeLevel);
+      const gradeB = getGradeNum(b.gradeLevel);
+      if (gradeB !== gradeA) return gradeB - gradeA;
+      if (b.generalAverage !== a.generalAverage) return b.generalAverage - a.generalAverage;
+      return a.studentName.localeCompare(b.studentName);
+    });
+  }, [filteredAcademicReports]);
 
   // Send password reset magic link email
   const handleSendResetEmail = async (teacherEmail) => {
@@ -1713,12 +1854,162 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {/* View Mode Switcher and Summary Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-4 print:hidden">
+            <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setAcademicViewMode("matrix")}
+                className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  academicViewMode === "matrix"
+                    ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                <Table className="h-3.5 w-3.5" />
+                <span>Student Matrix (Subject Columns)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAcademicViewMode("detailed")}
+                className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  academicViewMode === "detailed"
+                    ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm"
+                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                <ListFilter className="h-3.5 w-3.5" />
+                <span>Detailed Records List</span>
+              </button>
+            </div>
+
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+              {academicViewMode === "matrix" ? (
+                <span>
+                  Showing <strong className="text-slate-800 dark:text-slate-200">{matrixStudentRows.length} Students</strong> across <strong className="text-slate-800 dark:text-slate-200">{matrixSubjects.length} Subject{matrixSubjects.length !== 1 ? "s" : ""}</strong>
+                </span>
+              ) : (
+                <span>
+                  Showing <strong className="text-slate-800 dark:text-slate-200">{filteredAcademicReports.length} Submission Records</strong>
+                </span>
+              )}
+            </div>
+          </div>
+
           {/* Academic Report Data Table */}
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
             {isAcademicLoading ? (
               <div className="py-16 text-center text-slate-400 text-sm font-medium">
                 Loading school-wide academic data...
               </div>
+            ) : academicViewMode === "matrix" ? (
+              matrixStudentRows.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        <th className="p-4 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10">Student Name</th>
+                        <th className="p-4">Grade Level</th>
+                        <th className="p-4">Community</th>
+                        {matrixSubjects.map((subj) => (
+                          <th key={subj.name} className="p-4 text-center whitespace-nowrap min-w-[140px]">
+                            {subj.name}
+                          </th>
+                        ))}
+                        <th className="p-4 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-10">
+                          General Average
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
+                      {matrixStudentRows.map((st) => {
+                        const genAvg = st.generalAverage;
+                        const avgBadge =
+                          genAvg >= 90
+                            ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                            : genAvg >= 80
+                            ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800"
+                            : genAvg >= 75
+                            ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                            : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
+                        return (
+                          <tr key={st.studentId || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                            <td className="p-4 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10">
+                              {st.studentName}
+                              {st.studentCode && (
+                                <span className="block text-[10px] text-slate-400 font-mono font-normal">
+                                  {st.studentCode}
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                              {st.gradeLevel}
+                            </td>
+                            <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                              {st.community}
+                            </td>
+                            {matrixSubjects.map((subj) => {
+                              const sc = st.subjectScores[subj.name];
+                              if (!sc) {
+                                return (
+                                  <td key={subj.name} className="p-4 text-center text-slate-300 dark:text-slate-600 font-mono">
+                                    —
+                                  </td>
+                                );
+                              }
+
+                              const pct = sc.percentage;
+                              const badgeStyle =
+                                pct >= 80
+                                  ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                                  : pct >= 70
+                                  ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                                  : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
+                              return (
+                                <td key={subj.name} className="p-4 text-center font-mono">
+                                  <div className="flex flex-col items-center justify-center space-y-0.5">
+                                    <div className="flex items-center space-x-1.5">
+                                      <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                                        {sc.earnedScore}/{sc.maxScore}
+                                      </span>
+                                      <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
+                                        {pct}%
+                                      </span>
+                                    </div>
+                                    {(sc.objScore > 0 || sc.subjScore > 0) && (
+                                      <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
+                                        MC: {sc.objScore} | V/E: {sc.subjScore}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                            <td className="p-4 text-center sticky right-0 bg-white dark:bg-slate-900 z-10">
+                              <div className="flex flex-col items-center justify-center space-y-1">
+                                <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge}`}>
+                                  <span>{genAvg}%</span>
+                                </span>
+                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold">
+                                  {st.completedSubjectsCount} of {matrixSubjects.length} subjects
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="py-16 text-center space-y-2">
+                  <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Graded Exam Submissions Found</p>
+                  <p className="text-xs text-slate-400">Try adjusting your filters or search query above.</p>
+                </div>
+              )
             ) : filteredAcademicReports.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
