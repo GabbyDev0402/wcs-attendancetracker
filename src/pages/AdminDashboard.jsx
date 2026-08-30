@@ -133,11 +133,29 @@ export default function AdminDashboard() {
       return;
     }
 
-    const headers = ["Student Name", "Student Code", "Grade Level", "Community", "Exam Title", "Category", "Quarter", "Subject / Class", "Score Earned", "Max Score", "Percentage (%)"];
+    const headers = [
+      "Student Name",
+      "Student Code",
+      "Grade Level",
+      "Community",
+      "Exam Title",
+      "Category",
+      "Quarter",
+      "Subject / Class",
+      "OBJ. SCORE",
+      "SUBJ. SCORE",
+      "Total Score",
+      "Max Score",
+      "Percentage (%)"
+    ];
     
     const rows = [headers.join(",")];
     
     filteredAcademicReports.forEach(item => {
+      const obj = Number(item.objScore) || 0;
+      const subj = Number(item.subjScore) || 0;
+      const total = obj + subj;
+
       rows.push([
         `"${(item.studentName || 'Student').replace(/"/g, '""')}"`,
         `"${(item.studentCode || '').replace(/"/g, '""')}"`,
@@ -147,7 +165,9 @@ export default function AdminDashboard() {
         `"${(item.category || '1st Monthly Exam').replace(/"/g, '""')}"`,
         `"${(item.quarter || '1st Quarter').replace(/"/g, '""')}"`,
         `"${(item.subjectClass || 'General').replace(/"/g, '""')}"`,
-        item.earnedScore,
+        obj,
+        subj,
+        total,
         item.maxScore,
         `"${item.percentage}%"`
       ].join(","));
@@ -864,6 +884,11 @@ export default function AdminDashboard() {
   const uniqueCommunities = ["All", ...new Set(students.map(s => s.communityName || s.communityCenter || s.community).filter(Boolean))];
   const quarterOptions = ["All", "1st Quarter", "2nd Quarter", "3rd Quarter", "4th Quarter"];
 
+  const getGradeNum = (gradeStr) => {
+    const match = (gradeStr || "").toString().match(/\d+/);
+    return match ? parseInt(match[0], 10) : 0;
+  };
+
   const processedAcademicReports = academicExamSubs.map((sub) => {
     const student = students.find(s => s.id === sub.studentId || s.uid === sub.studentId) || {};
     const exam = academicExams.find(e => e.firestoreId === sub.examId || e.id === sub.examId) || {};
@@ -878,9 +903,10 @@ export default function AdminDashboard() {
     const quarter = sub.quarter || exam.quarter || "1st Quarter";
     const subjectClass = formatCleanClassName(sub.classId || exam.classId);
 
-    const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined)
-      ? ((Number(sub.objScore) || 0) + (Number(sub.subjScore) || 0))
-      : (Number(sub.score) || 0);
+    // Legacy data safe extraction
+    const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
+    const subjScore = Number(sub.subjScore) || 0;
+    const earnedScore = objScore + subjScore;
     const maxScore = Number(exam.maxScore || sub.maxScore) || 100;
     const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
 
@@ -894,6 +920,8 @@ export default function AdminDashboard() {
       category,
       quarter,
       subjectClass,
+      objScore,
+      subjScore,
       earnedScore,
       maxScore,
       percentage
@@ -902,20 +930,39 @@ export default function AdminDashboard() {
 
   const uniqueExamCategories = ["All Categories", ...new Set(processedAcademicReports.map(r => r.category).filter(Boolean))];
 
-  const filteredAcademicReports = processedAcademicReports.filter((item) => {
-    if (reportFilterGrade !== "All" && item.gradeLevel !== reportFilterGrade) return false;
-    if (reportFilterCommunity !== "All" && item.community !== reportFilterCommunity) return false;
-    if (reportFilterQuarter !== "All" && item.quarter !== reportFilterQuarter) return false;
-    if (reportFilterExamCategory !== "All Categories" && item.category !== reportFilterExamCategory) return false;
-    if (reportSearchQuery.trim()) {
-      const q = reportSearchQuery.toLowerCase();
-      const matchName = item.studentName.toLowerCase().includes(q);
-      const matchExam = item.examTitle.toLowerCase().includes(q);
-      const matchCategory = item.category ? item.category.toLowerCase().includes(q) : false;
-      if (!matchName && !matchExam && !matchCategory) return false;
-    }
-    return true;
-  });
+  const filteredAcademicReports = processedAcademicReports
+    .filter((item) => {
+      if (reportFilterGrade !== "All" && item.gradeLevel !== reportFilterGrade) return false;
+      if (reportFilterCommunity !== "All" && item.community !== reportFilterCommunity) return false;
+      if (reportFilterQuarter !== "All" && item.quarter !== reportFilterQuarter) return false;
+      if (reportFilterExamCategory !== "All Categories" && item.category !== reportFilterExamCategory) return false;
+      if (reportSearchQuery.trim()) {
+        const q = reportSearchQuery.toLowerCase();
+        const matchName = item.studentName.toLowerCase().includes(q);
+        const matchExam = item.examTitle.toLowerCase().includes(q);
+        const matchCategory = item.category ? item.category.toLowerCase().includes(q) : false;
+        if (!matchName && !matchExam && !matchCategory) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      // Sort Priority 1: Grade Level Descending (Higher grades e.g. Grade 12 before Grade 6)
+      const gradeA = getGradeNum(a.gradeLevel);
+      const gradeB = getGradeNum(b.gradeLevel);
+      if (gradeB !== gradeA) {
+        return gradeB - gradeA;
+      }
+
+      // Sort Priority 2: Score Percentage Descending (Highest score at top)
+      const pctA = ((Number(a.objScore) || 0) + (Number(a.subjScore) || 0)) / (Number(a.maxScore) || 1);
+      const pctB = ((Number(b.objScore) || 0) + (Number(b.subjScore) || 0)) / (Number(b.maxScore) || 1);
+      if (pctB !== pctA) {
+        return pctB - pctA;
+      }
+
+      // Sort Priority 3: Student Name Alphabetical
+      return (a.studentName || "").localeCompare(b.studentName || "");
+    });
 
   // Send password reset magic link email
   const handleSendResetEmail = async (teacherEmail) => {
@@ -1683,8 +1730,9 @@ export default function AdminDashboard() {
                       <th className="p-4">Exam Title</th>
                       <th className="p-4">Quarter</th>
                       <th className="p-4">Subject / Class</th>
-                      <th className="p-4 text-center">Score</th>
-                      <th className="p-4 text-center">Percentage</th>
+                      <th className="p-4 text-center">OBJ. SCORE</th>
+                      <th className="p-4 text-center">SUBJ. SCORE</th>
+                      <th className="p-4 text-center">TOTAL & %</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
@@ -1696,6 +1744,10 @@ export default function AdminDashboard() {
                           : pct >= 70
                           ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
                           : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
+                      const obj = Number(item.objScore) || 0;
+                      const subj = Number(item.subjScore) || 0;
+                      const total = obj + subj;
 
                       return (
                         <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
@@ -1727,13 +1779,21 @@ export default function AdminDashboard() {
                           <td className="p-4 font-mono text-[11px] text-slate-500">
                             {item.subjectClass}
                           </td>
-                          <td className="p-4 text-center font-bold font-mono">
-                            {item.earnedScore} / {item.maxScore}
+                          <td className="p-4 text-center font-bold font-mono text-slate-800 dark:text-slate-200">
+                            {obj}
+                          </td>
+                          <td className="p-4 text-center font-bold font-mono text-slate-800 dark:text-slate-200">
+                            {subj}
                           </td>
                           <td className="p-4 text-center">
-                            <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-black border font-mono ${badgeStyle}`}>
-                              {pct}%
-                            </span>
+                            <div className="flex items-center justify-center space-x-2">
+                              <span className="font-extrabold font-mono text-slate-900 dark:text-slate-100">
+                                {total} / {item.maxScore}
+                              </span>
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-black border font-mono ${badgeStyle}`}>
+                                {pct}%
+                              </span>
+                            </div>
                           </td>
                         </tr>
                       );
