@@ -127,6 +127,14 @@ const CANONICAL_SUBJECTS = [
   }
 ];
 
+// Standard Curriculum 4 Core Pillars (Core & Added)
+const STANDARD_PILLARS = [
+  { core: 'Math', added: 'MAPEH' },
+  { core: 'Science', added: 'TLE' },
+  { core: 'English', added: 'Literature' },
+  { core: 'Social Science', added: 'Values' }
+];
+
 export default function AdminDashboard() {
   const [teachers, setTeachers] = useState([]);
   const [students, setStudents] = useState([]);
@@ -196,7 +204,7 @@ export default function AdminDashboard() {
           "Student Code",
           "Grade Level",
           "Community",
-          ...standardSubjects.map(s => `"${s.replace(/"/g, '""')}"`),
+          ...STANDARD_PILLARS.flatMap(p => [`"${p.core} (Core)"`, `"${p.added} (Added)"`]),
           "General Average (%)",
           "Subjects Completed"
         ];
@@ -210,13 +218,15 @@ export default function AdminDashboard() {
             `"${(row.community || 'Main').replace(/"/g, '""')}"`,
           ];
 
-          standardSubjects.forEach(s => {
-            const sc = row.subjectScores[s];
-            if (sc && sc.hasScore) {
-              rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
-            } else {
-              rowCols.push('"—"');
-            }
+          STANDARD_PILLARS.forEach(p => {
+            [p.core, p.added].forEach(subjKey => {
+              const sc = row.subjectScores[subjKey];
+              if (sc && sc.hasScore) {
+                rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
+              } else {
+                rowCols.push('"—"');
+              }
+            });
           });
 
           rowCols.push(`"${row.generalAverage}%"`);
@@ -1214,17 +1224,94 @@ export default function AdminDashboard() {
       }
     });
 
-    const buildStudentRow = (st, subjectList, isEsl) => {
+    const matchPillarSubject = (examSubj, targetSubject) => {
+      if (!examSubj || !targetSubject) return false;
+      const es = examSubj.toLowerCase();
+      const ts = targetSubject.toLowerCase();
+      if (es === ts) return true;
+      if (ts === "mapeh" && (es === "physical education" || es.includes("pe") || es.includes("hope"))) {
+        return true;
+      }
+      return false;
+    };
+
+    const buildStandardStudentRow = (st) => {
       const sId = st.id || st.uid || "";
       const sName = st.internationalName || st.fullName || st.name || formatStudentName(st) || "Student";
       const sCode = st.studentCode || "";
-      const gLevel = st.grade || st.gradeLevel || (isEsl ? "E1" : "Grade 1");
+      const gLevel = st.grade || st.gradeLevel || "Grade 1";
       const comm = st.communityName || st.communityCenter || st.community || "Main";
 
       const subjectScores = {};
       const percentages = [];
 
-      subjectList.forEach(subjectName => {
+      STANDARD_PILLARS.forEach(pillar => {
+        [pillar.core, pillar.added].forEach(subjKey => {
+          const matchedExam = filteredExams.find(ex => {
+            const exSubj = extractSubjectName(ex);
+            return matchPillarSubject(exSubj, subjKey) && matchExamGrade(ex, gLevel);
+          });
+
+          if (matchedExam) {
+            const sub = academicExamSubs.find(s => 
+              (s.examId === matchedExam.firestoreId || s.examId === matchedExam.id) &&
+              (s.studentId === sId || s.studentId === st.uid || s.studentId === st.id)
+            );
+
+            if (sub) {
+              const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
+              const subjScore = Number(sub.subjScore) || 0;
+              const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
+              const maxScore = Number(matchedExam.maxScore || sub.maxScore) || 100;
+              const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
+
+              subjectScores[subjKey] = {
+                hasScore: true,
+                earnedScore,
+                maxScore,
+                percentage,
+                objScore,
+                subjScore,
+                examTitle: matchedExam.title
+              };
+              percentages.push(percentage);
+            } else {
+              subjectScores[subjKey] = { hasScore: false, noSubmission: true, examTitle: matchedExam.title };
+            }
+          } else {
+            subjectScores[subjKey] = { hasScore: false, noExam: true };
+          }
+        });
+      });
+
+      const generalAverage = percentages.length > 0
+        ? Math.round(percentages.reduce((sum, p) => sum + p, 0) / percentages.length)
+        : 0;
+
+      return {
+        id: sId,
+        studentName: sName,
+        studentCode: sCode,
+        gradeLevel: gLevel,
+        community: comm,
+        subjectScores,
+        generalAverage,
+        completedCount: percentages.length,
+        totalSubjectsCount: 8
+      };
+    };
+
+    const buildEslStudentRow = (st) => {
+      const sId = st.id || st.uid || "";
+      const sName = st.internationalName || st.fullName || st.name || formatStudentName(st) || "Student";
+      const sCode = st.studentCode || "";
+      const gLevel = st.grade || st.gradeLevel || "E1";
+      const comm = st.communityName || st.communityCenter || st.community || "Main";
+
+      const subjectScores = {};
+      const percentages = [];
+
+      eslSubjects.forEach(subjectName => {
         const matchedExam = filteredExams.find(ex => {
           const exSubj = extractSubjectName(ex);
           return exSubj.toLowerCase() === subjectName.toLowerCase() && matchExamGrade(ex, gLevel);
@@ -1274,11 +1361,11 @@ export default function AdminDashboard() {
         subjectScores,
         generalAverage,
         completedCount: percentages.length,
-        totalSubjectsCount: subjectList.length
+        totalSubjectsCount: eslSubjects.length
       };
     };
 
-    const stdRows = stdRaw.map(st => buildStudentRow(st, standardSubjects, false)).sort((a, b) => {
+    const stdRows = stdRaw.map(st => buildStandardStudentRow(st)).sort((a, b) => {
       const gradeA = getGradeNum(a.gradeLevel);
       const gradeB = getGradeNum(b.gradeLevel);
       if (gradeB !== gradeA) return gradeB - gradeA;
@@ -1286,7 +1373,7 @@ export default function AdminDashboard() {
       return a.studentName.localeCompare(b.studentName);
     });
 
-    const eslRows = eslRaw.map(st => buildStudentRow(st, eslSubjects, true)).sort((a, b) => {
+    const eslRows = eslRaw.map(st => buildEslStudentRow(st)).sort((a, b) => {
       const rankA = getEslGradeRank(a.gradeLevel);
       const rankB = getEslGradeRank(b.gradeLevel);
       if (rankB !== rankA) return rankB - rankA;
@@ -2191,25 +2278,59 @@ export default function AdminDashboard() {
                       </h3>
                     </div>
                     <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
-                      {standardStudents.length} Students • {standardSubjects.length} Subject Columns
+                      {standardStudents.length} Students • 4 Core Pillars (8 Subjects)
                     </span>
                   </div>
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          <th className="p-4 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10">Student Name</th>
-                          <th className="p-4">Grade Level</th>
-                          <th className="p-4">Community</th>
-                          {standardSubjects.map((subj) => (
-                            <th key={subj} className="p-4 text-center whitespace-nowrap min-w-[140px] uppercase">
-                              {subj}
+                        {/* Row 1: Core Pillars */}
+                        <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          <th rowSpan={2} className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-20 border-r border-slate-200 dark:border-slate-700">
+                            Student Name
+                          </th>
+                          <th rowSpan={2} className="p-3.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-700">
+                            Grade Level
+                          </th>
+                          <th rowSpan={2} className="p-3.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-700">
+                            Community
+                          </th>
+                          {STANDARD_PILLARS.map((pillar, pIdx) => (
+                            <th 
+                              key={pillar.core} 
+                              colSpan={2} 
+                              className={`p-2.5 text-center font-black tracking-wider uppercase border-r border-slate-200 dark:border-slate-700 ${
+                                pIdx % 2 === 0 
+                                  ? "bg-brand-50/70 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300" 
+                                  : "bg-indigo-50/70 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300"
+                              }`}
+                            >
+                              {pillar.core}
                             </th>
                           ))}
-                          <th className="p-4 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-10">
+                          <th rowSpan={2} className="p-3.5 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-20 border-l border-slate-200 dark:border-slate-700">
                             General Average
                           </th>
+                        </tr>
+                        {/* Row 2: Core & Added Sub-headers */}
+                        <tr className="bg-slate-50/60 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          {STANDARD_PILLARS.map((pillar, pIdx) => (
+                            <React.Fragment key={pillar.core}>
+                              <th className={`p-2 text-center min-w-[125px] border-r border-slate-200 dark:border-slate-700 ${
+                                pIdx % 2 === 0 ? "bg-brand-50/30 dark:bg-brand-900/10" : "bg-indigo-50/30 dark:bg-indigo-900/10"
+                              }`}>
+                                <span className="text-slate-700 dark:text-slate-200">{pillar.core}</span>
+                                <span className="block text-[8px] text-brand-600 dark:text-brand-400 font-bold">Core</span>
+                              </th>
+                              <th className={`p-2 text-center min-w-[125px] border-r border-slate-200 dark:border-slate-700 ${
+                                pIdx % 2 === 0 ? "bg-brand-50/30 dark:bg-brand-900/10" : "bg-indigo-50/30 dark:bg-indigo-900/10"
+                              }`}>
+                                <span className="text-slate-700 dark:text-slate-200">{pillar.added}</span>
+                                <span className="block text-[8px] text-slate-400 font-normal">Added</span>
+                              </th>
+                            </React.Fragment>
+                          ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
@@ -2226,7 +2347,7 @@ export default function AdminDashboard() {
 
                           return (
                             <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="p-4 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10">
+                              <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800">
                                 {st.studentName}
                                 {st.studentCode && (
                                   <span className="block text-[10px] text-slate-400 font-mono font-normal">
@@ -2234,51 +2355,55 @@ export default function AdminDashboard() {
                                   </span>
                                 )}
                               </td>
-                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800">
                                 {st.gradeLevel}
                               </td>
-                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800">
                                 {st.community}
                               </td>
-                              {standardSubjects.map((subj) => {
-                                const sc = st.subjectScores[subj];
-                                if (!sc || !sc.hasScore) {
-                                  return (
-                                    <td key={subj} className="p-4 text-center text-slate-300 dark:text-slate-600 font-mono">
-                                      —
-                                    </td>
-                                  );
-                                }
+                              {STANDARD_PILLARS.map((pillar) => (
+                                <React.Fragment key={pillar.core}>
+                                  {[pillar.core, pillar.added].map((subjKey) => {
+                                    const sc = st.subjectScores[subjKey];
+                                    if (!sc || !sc.hasScore) {
+                                      return (
+                                        <td key={subjKey} className="p-3 text-center text-slate-300 dark:text-slate-600 font-mono border-r border-slate-100 dark:border-slate-800">
+                                          —
+                                        </td>
+                                      );
+                                    }
 
-                                const pct = sc.percentage;
-                                const badgeStyle =
-                                  pct >= 80
-                                    ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                                    : pct >= 70
-                                    ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
-                                    : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+                                    const pct = sc.percentage;
+                                    const badgeStyle =
+                                      pct >= 80
+                                        ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                                        : pct >= 70
+                                        ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                                        : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
 
-                                return (
-                                  <td key={subj} className="p-4 text-center font-mono">
-                                    <div className="flex flex-col items-center justify-center space-y-0.5">
-                                      <div className="flex items-center space-x-1.5">
-                                        <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
-                                          {sc.earnedScore}/{sc.maxScore}
-                                        </span>
-                                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
-                                          {pct}%
-                                        </span>
-                                      </div>
-                                      {(sc.objScore > 0 || sc.subjScore > 0) && (
-                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
-                                          MC: {sc.objScore} | V/E: {sc.subjScore}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                );
-                              })}
-                              <td className="p-4 text-center sticky right-0 bg-white dark:bg-slate-900 z-10">
+                                    return (
+                                      <td key={subjKey} className="p-3 text-center font-mono border-r border-slate-100 dark:border-slate-800">
+                                        <div className="flex flex-col items-center justify-center space-y-0.5">
+                                          <div className="flex items-center space-x-1.5">
+                                            <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                                              {sc.earnedScore}/{sc.maxScore}
+                                            </span>
+                                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
+                                              {pct}%
+                                            </span>
+                                          </div>
+                                          {(sc.objScore > 0 || sc.subjScore > 0) && (
+                                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
+                                              MC: {sc.objScore} | V/E: {sc.subjScore}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </td>
+                                    );
+                                  })}
+                                </React.Fragment>
+                              ))}
+                              <td className="p-3.5 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 border-l border-slate-100 dark:border-slate-800">
                                 <div className="flex flex-col items-center justify-center space-y-1">
                                   <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge}`}>
                                     <span>{genAvg}%</span>
