@@ -42,3 +42,58 @@ h1, h2, h3, h4, h5, h6 {
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(241, 245, 249, 0.8);
 }
+
+/* Print Styles & Landscape Page Optimization */
+@media print {
+  @page {
+    size: landscape;
+    margin: 5mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 8pt !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Academic Master Pivot Table Print Fit */
+  .academic-print-card {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    page-break-inside: avoid !important;
+  }
+
+  .academic-print-table-wrap {
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  .academic-print-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    border-collapse: collapse !important;
+    font-size: 7.5pt !important;
+  }
+
+  .academic-print-table th,
+  .academic-print-table td {
+    padding: 3px 3px !important;
+    min-width: 0 !important;
+    position: static !important;
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    word-break: break-word !important;
+  }
+}

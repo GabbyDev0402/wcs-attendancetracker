@@ -186,6 +186,203 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleExportAcademicReportExcel = () => {
+    if (standardStudents.length === 0 && eslStudents.length === 0) {
+      alert("No academic records available to export.");
+      return;
+    }
+
+    let html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>Academic Master Report</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayGridlines/>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
+        <style>
+          body { font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
+          table { border-collapse: collapse; width: 100%; margin-bottom: 30px; }
+          th, td { border: 1px solid #cbd5e1; padding: 7px 10px; font-size: 10pt; text-align: left; vertical-align: middle; }
+          .title-banner { font-size: 13pt; font-weight: bold; background-color: #1e293b; color: #ffffff; text-align: center; padding: 12px; }
+          .header-main { background-color: #f1f5f9; font-weight: bold; font-size: 9.5pt; text-transform: uppercase; color: #334155; }
+          .pillar-header { font-weight: bold; text-align: center; font-size: 10pt; text-transform: uppercase; letter-spacing: 0.5px; }
+          .pillar-math { background-color: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+          .pillar-science { background-color: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
+          .pillar-english { background-color: #ccfbf1; color: #115e59; border: 1px solid #99f6e4; }
+          .pillar-social { background-color: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
+          .sub-header { background-color: #f8fafc; font-size: 8.5pt; text-align: center; font-weight: bold; color: #64748b; }
+          .data-center { text-align: center; }
+          .student-name { font-weight: bold; color: #0f172a; }
+          .student-code { font-size: 8pt; color: #94a3b8; font-family: monospace; }
+          .score-val { font-weight: bold; font-size: 10pt; color: #0f172a; font-family: monospace; }
+          .score-pct { font-size: 8.5pt; font-weight: bold; padding: 2px 4px; border-radius: 4px; }
+          .pct-high { color: #15803d; }
+          .pct-med { color: #b45309; }
+          .pct-low { color: #b91c1c; }
+          .score-breakdown { font-size: 7.5pt; color: #94a3b8; font-family: monospace; }
+          .avg-excellent { background-color: #dcfce7; color: #15803d; font-weight: bold; text-align: center; }
+          .avg-good { background-color: #dbeafe; color: #1d4ed8; font-weight: bold; text-align: center; }
+          .avg-passing { background-color: #fef3c7; color: #b45309; font-weight: bold; text-align: center; }
+          .avg-needs-help { background-color: #fee2e2; color: #b91c1c; font-weight: bold; text-align: center; }
+        </style>
+      </head>
+      <body>
+    `;
+
+    // 1. Standard Curriculum Table
+    if (standardStudents.length > 0) {
+      html += `
+        <table>
+          <thead>
+            <tr>
+              <th colspan="${3 + STANDARD_PILLARS.length * 2 + 1}" class="title-banner">
+                WASHINGTON COMPREHENSIVE SCHOOL • STANDARD CURRICULUM MASTER REPORT (${reportFilterExamCategory} • ${reportFilterQuarter})
+              </th>
+            </tr>
+            <tr class="header-main">
+              <th rowspan="2" style="width: 220px;">STUDENT NAME</th>
+              <th rowspan="2" style="width: 100px;">GRADE LEVEL</th>
+              <th rowspan="2" style="width: 120px;">COMMUNITY</th>
+              ${STANDARD_PILLARS.map(p => {
+                let cls = "pillar-math";
+                if (p.core.toLowerCase().includes("science") && !p.core.toLowerCase().includes("social")) cls = "pillar-science";
+                if (p.core.toLowerCase().includes("english")) cls = "pillar-english";
+                if (p.core.toLowerCase().includes("social")) cls = "pillar-social";
+                return `<th colspan="2" class="pillar-header ${cls}">${p.core.toUpperCase()}</th>`;
+              }).join("")}
+              <th rowspan="2" style="width: 140px; text-align: center;">GENERAL AVERAGE</th>
+            </tr>
+            <tr class="sub-header">
+              ${STANDARD_PILLARS.map(p => `
+                <th>${p.core} (Core)</th>
+                <th>${p.added} (Added)</th>
+              `).join("")}
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      standardStudents.forEach(row => {
+        const avg = row.generalAverage;
+        const avgCls = avg >= 90 ? "avg-excellent" : avg >= 80 ? "avg-good" : avg >= 75 ? "avg-passing" : "avg-needs-help";
+
+        html += `
+          <tr>
+            <td class="student-name">
+              ${row.studentName}
+              ${row.studentCode ? `<br/><span class="student-code">${row.studentCode}</span>` : ""}
+            </td>
+            <td>${row.gradeLevel}</td>
+            <td>${row.community}</td>
+        `;
+
+        STANDARD_PILLARS.forEach(p => {
+          [p.core, p.added].forEach(subjKey => {
+            const sc = row.subjectScores[subjKey];
+            if (sc && sc.hasScore) {
+              const pctCls = sc.percentage >= 80 ? "pct-high" : sc.percentage >= 70 ? "pct-med" : "pct-low";
+              const breakdown = (sc.objScore > 0 || sc.subjScore > 0) ? `<br/><span class="score-breakdown">MC: ${sc.objScore} | V/E: ${sc.subjScore}</span>` : "";
+              html += `<td class="data-center"><span class="score-val">${sc.earnedScore}/${sc.maxScore}</span> <span class="score-pct ${pctCls}">(${sc.percentage}%)</span>${breakdown}</td>`;
+            } else {
+              html += `<td class="data-center" style="color: #cbd5e1;">—</td>`;
+            }
+          });
+        });
+
+        html += `
+            <td class="${avgCls}">
+              ${avg}%
+              <br/><span style="font-size: 8pt; font-weight: normal; color: #64748b;">${row.completedCount} of ${row.totalSubjectsCount} subjects</span>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `</tbody></table>`;
+    }
+
+    // 2. ESL Program Table
+    if (eslStudents.length > 0) {
+      html += `
+        <table>
+          <thead>
+            <tr>
+              <th colspan="${3 + eslSubjects.length + 1}" class="title-banner">
+                WASHINGTON COMPREHENSIVE SCHOOL • ESL PROGRAM MASTER REPORT (${reportFilterExamCategory} • ${reportFilterQuarter})
+              </th>
+            </tr>
+            <tr class="header-main">
+              <th style="width: 220px;">STUDENT NAME</th>
+              <th style="width: 100px;">LEVEL / GRADE</th>
+              <th style="width: 120px;">COMMUNITY</th>
+              ${eslSubjects.map(s => `<th style="text-align: center; text-transform: uppercase;">${s}</th>`).join("")}
+              <th style="width: 140px; text-align: center;">GENERAL AVERAGE</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      eslStudents.forEach(row => {
+        const avg = row.generalAverage;
+        const avgCls = avg >= 90 ? "avg-excellent" : avg >= 80 ? "avg-good" : avg >= 75 ? "avg-passing" : "avg-needs-help";
+
+        html += `
+          <tr>
+            <td class="student-name">
+              ${row.studentName}
+              ${row.studentCode ? `<br/><span class="student-code">${row.studentCode}</span>` : ""}
+            </td>
+            <td>${row.gradeLevel}</td>
+            <td>${row.community}</td>
+        `;
+
+        eslSubjects.forEach(s => {
+          const sc = row.subjectScores[s];
+          if (sc && sc.hasScore) {
+            const pctCls = sc.percentage >= 80 ? "pct-high" : sc.percentage >= 70 ? "pct-med" : "pct-low";
+            const breakdown = (sc.objScore > 0 || sc.subjScore > 0) ? `<br/><span class="score-breakdown">MC: ${sc.objScore} | V/E: ${sc.subjScore}</span>` : "";
+            html += `<td class="data-center"><span class="score-val">${sc.earnedScore}/${sc.maxScore}</span> <span class="score-pct ${pctCls}">(${sc.percentage}%)</span>${breakdown}</td>`;
+          } else {
+            html += `<td class="data-center" style="color: #cbd5e1;">—</td>`;
+          }
+        });
+
+        html += `
+            <td class="${avgCls}">
+              ${avg}%
+              <br/><span style="font-size: 8pt; font-weight: normal; color: #64748b;">${row.completedCount} of ${row.totalSubjectsCount} subjects</span>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `</tbody></table>`;
+    }
+
+    html += `</body></html>`;
+
+    const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Academic_Master_Report_${new Date().toISOString().split("T")[0]}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleExportAcademicReportCSV = () => {
     if (standardStudents.length === 0 && eslStudents.length === 0) {
       alert("No academic records available to export.");
@@ -1148,7 +1345,16 @@ export default function AdminDashboard() {
 
   // Compute processed and filtered academic performance reports
   const uniqueGradeLevels = ["All", ...new Set(students.map(s => s.grade || s.gradeLevel).filter(Boolean))];
-  const uniqueCommunities = ["All", ...new Set(students.map(s => s.communityName || s.communityCenter || s.community).filter(Boolean))];
+  const uniqueCommunities = [
+    "All",
+    ...Array.from(
+      new Set(
+        students
+          .map(s => (s.communityName || s.communityCenter || s.community || "").trim())
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b))
+  ];
   const quarterOptions = ["All", "1st Quarter", "2nd Quarter", "3rd Quarter", "4th Quarter"];
 
   const getGradeNum = (gradeStr) => {
@@ -2156,23 +2362,32 @@ export default function AdminDashboard() {
               </p>
             </div>
 
-            <div className="flex items-center space-x-3 print:hidden">
+            <div className="flex flex-wrap items-center gap-2.5 print:hidden">
               <button
                 onClick={loadAcademicData}
                 disabled={isAcademicLoading}
-                className="inline-flex items-center space-x-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center space-x-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-3.5 py-2.5 text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
                 title="Reload latest exam submissions from Firestore"
               >
                 <RefreshCw className={`h-4 w-4 ${isAcademicLoading ? "animate-spin text-brand-600" : ""}`} />
-                <span>{isAcademicLoading ? "Refreshing..." : "Refresh Data"}</span>
+                <span>{isAcademicLoading ? "Refreshing..." : "Refresh"}</span>
+              </button>
+
+              <button
+                onClick={handleExportAcademicReportExcel}
+                className="inline-flex items-center space-x-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"
+                title="Download formatted Excel spreadsheet with colors, pillars, and grades"
+              >
+                <Download className="h-4 w-4" />
+                <span>Export (Excel)</span>
               </button>
 
               <button
                 onClick={handleExportAcademicReportCSV}
-                className="inline-flex items-center space-x-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"
+                className="inline-flex items-center space-x-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 px-3 py-2.5 text-xs font-bold transition-all cursor-pointer"
+                title="Download raw CSV file"
               >
-                <Download className="h-4 w-4" />
-                <span>Export Report (CSV)</span>
+                <span>CSV</span>
               </button>
 
               <button
@@ -2287,66 +2502,77 @@ export default function AdminDashboard() {
             </div>
           ) : (
             <div className="space-y-8">
+              {/* Print-only School Header Banner */}
+              <div className="hidden print:block mb-6 text-center border-b-2 border-slate-900 pb-3">
+                <h1 className="text-base font-black text-black uppercase tracking-wider">Washington Comprehensive School</h1>
+                <p className="text-xs text-slate-800 font-bold mt-0.5">
+                  Institutional Academic Performance Reports • {reportFilterExamCategory} {reportFilterQuarter !== "All" ? `• ${reportFilterQuarter}` : ""}
+                </p>
+                <p className="text-[9px] text-slate-600 font-mono mt-0.5">
+                  Generated: {new Date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })} • Standard ({standardStudents.length}) & ESL ({eslStudents.length}) Students
+                </p>
+              </div>
+
               {/* ── Table 1: Standard Curriculum Master Report ── */}
               {standardStudents.length > 0 && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm space-y-4">
-                  <div className="p-5 pb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm space-y-4 academic-print-card">
+                  <div className="p-5 pb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4 print:p-0 print:border-none print:mb-2">
                     <div className="flex items-center space-x-2.5">
-                      <div className="h-3 w-3 rounded-full bg-brand-500" />
-                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
+                      <div className="h-3 w-3 rounded-full bg-brand-500 print:hidden" />
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading print:text-sm print:text-black">
                         Standard Curriculum Master Report
                       </h3>
                     </div>
-                    <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
+                    <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 print:border-none print:p-0 print:text-slate-700 print:text-[10px]">
                       {standardStudents.length} Students • 4 Core Pillars (8 Subjects)
                     </span>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
+                  <div className="overflow-x-auto academic-print-table-wrap">
+                    <table className="w-full text-left text-xs border-collapse academic-print-table">
                       <thead>
                         {/* Row 1: Core Pillars */}
-                        <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          <th rowSpan={2} className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-20 border-r border-slate-200 dark:border-slate-700">
+                        <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider print:bg-slate-100 print:text-black">
+                          <th rowSpan={2} className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-20 border-r border-slate-200 dark:border-slate-700 print:static print:bg-slate-100 print:p-1 print:text-[8px]">
                             Student Name
                           </th>
-                          <th rowSpan={2} className="p-3.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-700">
+                          <th rowSpan={2} className="p-3.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-700 print:p-1 print:text-[8px]">
                             Grade Level
                           </th>
-                          <th rowSpan={2} className="p-3.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-700">
+                          <th rowSpan={2} className="p-3.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-700 print:p-1 print:text-[8px]">
                             Community
                           </th>
                           {STANDARD_PILLARS.map((pillar) => (
                             <th
                               key={pillar.core}
                               colSpan={2}
-                              className="p-2.5 text-center font-extrabold border-r border-slate-200 dark:border-slate-700 tracking-wider bg-slate-100/70 dark:bg-slate-800/50"
+                              className="p-2.5 text-center font-extrabold border-r border-slate-200 dark:border-slate-700 tracking-wider bg-slate-100/70 dark:bg-slate-800/50 print:bg-slate-200 print:p-1 print:text-[8px] print:text-black"
                             >
                               {pillar.core.toUpperCase()}
                             </th>
                           ))}
 
-                          <th rowSpan={2} className="p-3.5 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-20 border-l border-slate-200 dark:border-slate-700">
+                          <th rowSpan={2} className="p-3.5 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-20 border-l border-slate-200 dark:border-slate-700 print:static print:bg-slate-100 print:p-1 print:text-[8px] print:min-w-0">
                             General Average
                           </th>
                         </tr>
 
                         {/* Row 2: Sub-headers (Core vs Added) */}
-                        <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                        <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-400 uppercase tracking-wider print:bg-slate-50 print:text-black">
                           {STANDARD_PILLARS.flatMap((pillar) => [
-                            <th key={`${pillar.core}-core`} className="p-2 text-center border-r border-slate-100 dark:border-slate-700 min-w-[100px]">
+                            <th key={`${pillar.core}-core`} className="p-2 text-center border-r border-slate-100 dark:border-slate-700 min-w-[100px] print:min-w-0 print:p-1 print:text-[7.5px]">
                               <div>{pillar.core}</div>
-                              <span className="text-[8px] text-brand-600 dark:text-brand-400 font-semibold lowercase">core</span>
+                              <span className="text-[8px] text-brand-600 dark:text-brand-400 font-semibold lowercase print:text-slate-600">core</span>
                             </th>,
-                            <th key={`${pillar.core}-added`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 min-w-[100px]">
+                            <th key={`${pillar.core}-added`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 min-w-[100px] print:min-w-0 print:p-1 print:text-[7.5px]">
                               <div>{pillar.added}</div>
-                              <span className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold lowercase">added</span>
+                              <span className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold lowercase print:text-slate-600">added</span>
                             </th>
                           ])}
                         </tr>
                       </thead>
 
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200 print:divide-slate-300">
                         {standardStudents.map((st) => {
                           const genAvg = st.generalAverage;
                           const avgBadge =
@@ -2359,24 +2585,24 @@ export default function AdminDashboard() {
                               : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
 
                           return (
-                            <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                            <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors print:hover:bg-transparent">
                               {/* Student Name */}
-                              <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800">
-                                {st.studentName}
+                              <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800 print:static print:bg-white print:p-1 print:text-[8px] print:text-black">
+                                <div>{st.studentName}</div>
                                 {st.studentCode && (
-                                  <span className="block text-[10px] text-slate-400 font-mono font-normal">
+                                  <span className="block text-[10px] text-slate-400 font-mono font-normal print:text-[7px] print:text-slate-500">
                                     {st.studentCode}
                                   </span>
                                 )}
                               </td>
 
                               {/* Grade Level */}
-                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800">
+                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-black">
                                 {st.gradeLevel}
                               </td>
 
                               {/* Community */}
-                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800">
+                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-black">
                                 {st.community}
                               </td>
 
@@ -2386,7 +2612,7 @@ export default function AdminDashboard() {
                                   const sc = st.subjectScores[subjKey];
                                   if (!sc || !sc.hasScore) {
                                     return (
-                                      <td key={subjKey} className="p-3 text-center text-slate-300 dark:text-slate-600 font-mono border-r border-slate-100 dark:border-slate-800">
+                                      <td key={subjKey} className="p-3 text-center text-slate-300 dark:text-slate-600 font-mono border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-slate-400">
                                         —
                                       </td>
                                     );
@@ -2401,18 +2627,18 @@ export default function AdminDashboard() {
                                       : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
 
                                   return (
-                                    <td key={subjKey} className="p-3 text-center font-mono border-r border-slate-100 dark:border-slate-800">
+                                    <td key={subjKey} className="p-3 text-center font-mono border-r border-slate-100 dark:border-slate-800 print:p-1">
                                       <div className="flex flex-col items-center justify-center space-y-0.5">
-                                        <div className="flex items-center space-x-1.5">
-                                          <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                                        <div className="flex items-center space-x-1.5 print:space-x-1">
+                                          <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs print:text-[8px] print:text-black">
                                             {sc.earnedScore}/{sc.maxScore}
                                           </span>
-                                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
+                                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle} print:text-[7px] print:p-0.5`}>
                                             {pct}%
                                           </span>
                                         </div>
                                         {(sc.objScore > 0 || sc.subjScore > 0) && (
-                                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
+                                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal print:text-[6.5px] print:text-slate-600">
                                             MC: {sc.objScore} | V/E: {sc.subjScore}
                                           </span>
                                         )}
@@ -2428,12 +2654,12 @@ export default function AdminDashboard() {
                               })}
 
                               {/* General Average */}
-                              <td className="p-3.5 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 border-l border-slate-100 dark:border-slate-800">
-                                <div className="flex flex-col items-center justify-center space-y-1">
-                                  <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge}`}>
+                              <td className="p-3.5 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 border-l border-slate-100 dark:border-slate-800 print:static print:bg-white print:p-1">
+                                <div className="flex flex-col items-center justify-center space-y-1 print:space-y-0">
+                                  <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge} print:text-[8px] print:p-0.5`}>
                                     <span>{genAvg}%</span>
                                   </span>
-                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold">
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold print:text-[6.5px] print:text-slate-600">
                                     {st.completedCount} of {st.totalSubjectsCount} subjects
                                   </span>
                                 </div>
@@ -2449,37 +2675,37 @@ export default function AdminDashboard() {
 
               {/* ── Table 2: ESL Program Master Report ── */}
               {eslStudents.length > 0 && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm space-y-4">
-                  <div className="p-5 pb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm space-y-4 academic-print-card">
+                  <div className="p-5 pb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4 print:p-0 print:border-none print:mb-2">
                     <div className="flex items-center space-x-2.5">
-                      <div className="h-3 w-3 rounded-full bg-teal-500" />
-                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
+                      <div className="h-3 w-3 rounded-full bg-teal-500 print:hidden" />
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading print:text-sm print:text-black">
                         ESL Program Master Report
                       </h3>
                     </div>
-                    <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800">
+                    <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 print:border-none print:p-0 print:text-slate-700 print:text-[10px]">
                       {eslStudents.length} Students • {eslSubjects.length} Subject Columns
                     </span>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
+                  <div className="overflow-x-auto academic-print-table-wrap">
+                    <table className="w-full text-left text-xs border-collapse academic-print-table">
                       <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          <th className="p-4 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10">Student Name</th>
-                          <th className="p-4">Level / Grade</th>
-                          <th className="p-4">Community</th>
+                        <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider print:bg-slate-100 print:text-black">
+                          <th className="p-4 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10 print:static print:bg-slate-100 print:p-1 print:text-[8px]">Student Name</th>
+                          <th className="p-4 print:p-1 print:text-[8px]">Level / Grade</th>
+                          <th className="p-4 print:p-1 print:text-[8px]">Community</th>
                           {eslSubjects.map((subj) => (
-                            <th key={subj} className="p-4 text-center whitespace-nowrap min-w-[140px] uppercase">
+                            <th key={subj} className="p-4 text-center whitespace-nowrap min-w-[140px] uppercase print:min-w-0 print:p-1 print:text-[8px]">
                               {subj}
                             </th>
                           ))}
-                          <th className="p-4 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-10">
+                          <th className="p-4 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-10 print:static print:bg-slate-100 print:p-1 print:text-[8px] print:min-w-0">
                             General Average
                           </th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200 print:divide-slate-300">
                         {eslStudents.map((st) => {
                           const genAvg = st.generalAverage;
                           const avgBadge =
@@ -2492,26 +2718,26 @@ export default function AdminDashboard() {
                               : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
 
                           return (
-                            <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                              <td className="p-4 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10">
-                                {st.studentName}
+                            <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors print:hover:bg-transparent">
+                              <td className="p-4 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 print:static print:bg-white print:p-1 print:text-[8px] print:text-black">
+                                <div>{st.studentName}</div>
                                 {st.studentCode && (
-                                  <span className="block text-[10px] text-slate-400 font-mono font-normal">
+                                  <span className="block text-[10px] text-slate-400 font-mono font-normal print:text-[7px] print:text-slate-500">
                                     {st.studentCode}
                                   </span>
                                 )}
                               </td>
-                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black">
                                 {st.gradeLevel}
                               </td>
-                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black">
                                 {st.community}
                               </td>
                               {eslSubjects.map((subj) => {
                                 const sc = st.subjectScores[subj];
                                 if (!sc || !sc.hasScore) {
                                   return (
-                                    <td key={subj} className="p-4 text-center text-slate-300 dark:text-slate-600 font-mono">
+                                    <td key={subj} className="p-4 text-center text-slate-300 dark:text-slate-600 font-mono print:p-1 print:text-[8px] print:text-slate-400">
                                       —
                                     </td>
                                   );
@@ -2526,18 +2752,18 @@ export default function AdminDashboard() {
                                     : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
 
                                 return (
-                                  <td key={subj} className="p-4 text-center font-mono">
+                                  <td key={subj} className="p-4 text-center font-mono print:p-1">
                                     <div className="flex flex-col items-center justify-center space-y-0.5">
-                                      <div className="flex items-center space-x-1.5">
-                                        <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                                      <div className="flex items-center space-x-1.5 print:space-x-1">
+                                        <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs print:text-[8px] print:text-black">
                                           {sc.earnedScore}/{sc.maxScore}
                                         </span>
-                                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
+                                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle} print:text-[7px] print:p-0.5`}>
                                           {pct}%
                                         </span>
                                       </div>
                                       {(sc.objScore > 0 || sc.subjScore > 0) && (
-                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
+                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal print:text-[6.5px] print:text-slate-600">
                                           MC: {sc.objScore} | V/E: {sc.subjScore}
                                         </span>
                                       )}
@@ -2545,12 +2771,12 @@ export default function AdminDashboard() {
                                   </td>
                                 );
                               })}
-                              <td className="p-4 text-center sticky right-0 bg-white dark:bg-slate-900 z-10">
-                                <div className="flex flex-col items-center justify-center space-y-1">
-                                  <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge}`}>
+                              <td className="p-4 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 print:static print:bg-white print:p-1">
+                                <div className="flex flex-col items-center justify-center space-y-1 print:space-y-0">
+                                  <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge} print:text-[8px] print:p-0.5`}>
                                     <span>{genAvg}%</span>
                                   </span>
-                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold">
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-semibold print:text-[6.5px] print:text-slate-600">
                                     {st.completedCount} of {st.totalSubjectsCount} subjects
                                   </span>
                                 </div>
