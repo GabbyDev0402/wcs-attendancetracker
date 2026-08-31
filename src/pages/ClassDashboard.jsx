@@ -91,22 +91,30 @@ const STANDARD_PILLARS = [
 
 const getPillarSubjectOptions = (classSubj, grade) => {
   if (!classSubj) return ["Math", "MAPEH"];
-  const sClean = classSubj.toLowerCase();
+  const sClean = classSubj.toLowerCase().trim();
   const isGrade12 = (grade || "").toString().includes("12");
 
-  if (sClean.includes("math")) {
-    return ["Math", isGrade12 ? "Physical Education" : "MAPEH"];
-  }
-  if (sClean.includes("science")) {
-    return ["Science", "TLE"];
-  }
-  if (sClean.includes("english") || sClean.includes("reading") || sClean.includes("grammar")) {
-    return ["English", "Literature"];
-  }
-  if (sClean.includes("social") || sClean.includes("history") || sClean.includes("ap")) {
+  // 1. Social Science & Values (Checked BEFORE Science to prevent "social science" matching "science")
+  if (sClean.includes("social") || sClean.includes("history") || sClean.includes("araling panlipunan") || sClean.includes("ap") || sClean.includes("kasaysayan") || sClean.includes("civics") || sClean.includes("values") || sClean.includes("esp")) {
     return ["Social Science", "Values"];
   }
-  
+
+  // 2. Science & TLE
+  if (sClean.includes("science") || sClean.includes("biology") || sClean.includes("physics") || sClean.includes("chemistry") || sClean.includes("earth") || sClean.includes("tle") || sClean.includes("technology") || sClean.includes("livelihood") || sClean.includes("ict") || sClean.includes("computer")) {
+    return ["Science", "TLE"];
+  }
+
+  // 3. English & Literature
+  if (sClean.includes("english") || sClean.includes("reading") || sClean.includes("grammar") || sClean.includes("language arts") || sClean.includes("literature") || sClean.includes("lit") || sClean.includes("panitikan")) {
+    return ["English", "Literature"];
+  }
+
+  // 4. Math & MAPEH / Physical Education
+  if (sClean.includes("math") || sClean.includes("algebra") || sClean.includes("geometry") || sClean.includes("calculus") || sClean.includes("statistics") || sClean.includes("mapeh") || sClean.includes("music") || sClean.includes("arts") || sClean.includes("physical education") || sClean.includes("pe") || sClean.includes("hope")) {
+    return ["Math", isGrade12 ? "Physical Education" : "MAPEH"];
+  }
+
+  // 5. Check exact match in STANDARD_PILLARS
   const foundPillar = STANDARD_PILLARS.find(p => 
     p.core.toLowerCase() === sClean || p.added.toLowerCase() === sClean
   );
