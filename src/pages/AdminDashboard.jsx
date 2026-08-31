@@ -1365,7 +1365,7 @@ export default function AdminDashboard() {
       new Set(
         students
           .map(s => (s.communityName || s.communityCenter || s.community || "").trim())
-          .filter(Boolean)
+          .filter(c => c && !c.toLowerCase().includes("laos"))
       )
     ).sort((a, b) => a.localeCompare(b))
   ];
@@ -1531,6 +1531,10 @@ export default function AdminDashboard() {
     return academicExams.filter(exam => {
       if (reportFilterExamCategory !== "All Categories" && exam.category !== reportFilterExamCategory) return false;
       if (reportFilterQuarter !== "All" && exam.quarter !== reportFilterQuarter) return false;
+      const classIdStr = (exam.classId || "").toLowerCase();
+      const titleStr = (exam.title || "").toLowerCase();
+      const commStr = (exam.community || "").toLowerCase();
+      if (classIdStr.includes("laos") || titleStr.includes("laos") || commStr.includes("laos")) return false;
       return true;
     });
   }, [academicExams, reportFilterExamCategory, reportFilterQuarter]);
@@ -1585,6 +1589,9 @@ export default function AdminDashboard() {
       const comm = st.communityName || st.communityCenter || st.community || "Main";
       const sName = st.internationalName || st.fullName || st.name || formatStudentName(st) || "Student";
       
+      // Exclude Laos students from academic reports
+      if (comm.toLowerCase().includes("laos") || (st.community || "").toLowerCase().includes("laos")) return false;
+
       if (reportFilterGrade !== "All" && gLevel !== reportFilterGrade) return false;
       if (reportFilterCommunity !== "All" && comm !== reportFilterCommunity) return false;
       if (reportSearchQuery.trim()) {
@@ -1693,9 +1700,9 @@ export default function AdminDashboard() {
       };
     };
 
-    const findTeacherForSubjectAndGrade = (gradeStr, subjectStr) => {
+    const findTeacherForSubjectAndGrade = (gradeStr, subjectStr, fallbackCoreSubject) => {
       if (!gradeStr || !subjectStr) return "Unassigned";
-      const match = teachers.find(t => {
+      let match = teachers.find(t => {
         const asgs = t.assignments || [];
         return asgs.some(a => {
           const aGrade = a.grade || a.gradeLevel || "";
@@ -1703,6 +1710,32 @@ export default function AdminDashboard() {
           return matchExamGrade({ grade: aGrade }, gradeStr) && isExamMatchingSubject(null, { subject: aSubj }, subjectStr);
         });
       });
+
+      if (!match && fallbackCoreSubject) {
+        match = teachers.find(t => {
+          const asgs = t.assignments || [];
+          return asgs.some(a => {
+            const aGrade = a.grade || a.gradeLevel || "";
+            const aSubj = a.subject || "";
+            return matchExamGrade({ grade: aGrade }, gradeStr) && isExamMatchingSubject(null, { subject: aSubj }, fallbackCoreSubject);
+          });
+        });
+      }
+
+      if (!match) {
+        const pillarPair = STANDARD_PILLARS.find(p => p.added.toLowerCase() === subjectStr.toLowerCase() || (subjectStr.toLowerCase() === "physical education" && p.added === "MAPEH"));
+        if (pillarPair) {
+          match = teachers.find(t => {
+            const asgs = t.assignments || [];
+            return asgs.some(a => {
+              const aGrade = a.grade || a.gradeLevel || "";
+              const aSubj = a.subject || "";
+              return matchExamGrade({ grade: aGrade }, gradeStr) && isExamMatchingSubject(null, { subject: aSubj }, pillarPair.core);
+            });
+          });
+        }
+      }
+
       return match ? (match.fullName || match.name || match.email || "Assigned Teacher") : "Unassigned";
     };
 
@@ -1733,7 +1766,7 @@ export default function AdminDashboard() {
           });
         }
 
-        // Added Subject
+        // Added Subject (Pair with Core Teacher)
         const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
         if (addedScore.hasScore) {
           recordedSubjects.push({ subject: effectiveAddedSubject, pillar: pillar.core, type: "Added", score: addedScore });
@@ -1742,7 +1775,7 @@ export default function AdminDashboard() {
             subject: effectiveAddedSubject,
             pillar: pillar.core,
             type: "Added",
-            teacherName: findTeacherForSubjectAndGrade(gLevel, effectiveAddedSubject),
+            teacherName: findTeacherForSubjectAndGrade(gLevel, effectiveAddedSubject, pillar.core),
             reason: addedScore.noExam ? "No exam scope created" : "Score unrecorded / pending"
           });
         }
@@ -2004,20 +2037,32 @@ export default function AdminDashboard() {
         const classIdSlug = `${g.replace(/\s+/g, '-').toLowerCase()}-${subj.replace(/\s+/g, '-').toLowerCase()}`;
         const classTag = `${tId}_${classIdSlug}`;
 
+        // Exclude LAOS classes from compliance exam tracking
+        if (g.toLowerCase().includes("laos") || subj.toLowerCase().includes("laos") || classIdSlug.toLowerCase().includes("laos") || classTag.toLowerCase().includes("laos")) {
+          return;
+        }
+
         // 1. Find matching exam
         const matchedExam = academicExams.find(ex => {
           const matchesCat = complianceFilterExamCategory === "All Categories" || ex.category === complianceFilterExamCategory;
           const matchesQtr = complianceFilterQuarter === "All" || ex.quarter === complianceFilterQuarter;
           if (!matchesCat || !matchesQtr) return false;
 
+          const exClassId = (ex.classId || "").toLowerCase();
+          const exTitle = (ex.title || "").toLowerCase();
+          if (exClassId.includes("laos") || exTitle.includes("laos")) return false;
+
           const matchesTag = ex.classId === classTag || ex.classId === classIdSlug;
           const matchesSubjGrade = isExamMatchingSubject(null, ex, subj) && matchExamGrade(ex, g) && (ex.teacherId === tId || !ex.teacherId);
           return matchesTag || matchesSubjGrade;
         });
 
-        // 2. Find enrolled students for this class
+        // 2. Find enrolled students for this class (excluding Laos)
         const enrolledStudents = students.filter(st => {
           if (st.role !== "student") return false;
+          const comm = (st.communityName || st.communityCenter || st.community || "").toLowerCase();
+          if (comm.includes("laos")) return false;
+
           const hasTag = Array.isArray(st.enrolledClasses) && st.enrolledClasses.includes(classTag);
           const hasLegacy = (Array.isArray(st.enrolledTeachers) && st.enrolledTeachers.includes(tId) && st.classId === classIdSlug) || (st.teacherId === tId && st.classId === classIdSlug);
           const matchesGradeDirect = (st.grade === g || st.gradeLevel === g);
