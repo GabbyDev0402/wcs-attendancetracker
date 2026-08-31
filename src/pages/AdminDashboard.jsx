@@ -1468,21 +1468,27 @@ export default function AdminDashboard() {
       };
     };
 
-    const stdRows = stdRaw.map(st => buildStandardStudentRow(st)).sort((a, b) => {
-      const gradeA = getGradeNum(a.gradeLevel);
-      const gradeB = getGradeNum(b.gradeLevel);
-      if (gradeB !== gradeA) return gradeB - gradeA;
-      if (b.generalAverage !== a.generalAverage) return b.generalAverage - a.generalAverage;
-      return a.studentName.localeCompare(b.studentName);
-    });
+    const stdRows = stdRaw
+      .map(st => buildStandardStudentRow(st))
+      .filter(st => st.completedCount > 0)
+      .sort((a, b) => {
+        const gradeA = getGradeNum(a.gradeLevel);
+        const gradeB = getGradeNum(b.gradeLevel);
+        if (gradeB !== gradeA) return gradeB - gradeA;
+        if (b.generalAverage !== a.generalAverage) return b.generalAverage - a.generalAverage;
+        return a.studentName.localeCompare(b.studentName);
+      });
 
-    const eslRows = eslRaw.map(st => buildEslStudentRow(st)).sort((a, b) => {
-      const rankA = getEslGradeRank(a.gradeLevel);
-      const rankB = getEslGradeRank(b.gradeLevel);
-      if (rankB !== rankA) return rankB - rankA;
-      if (b.generalAverage !== a.generalAverage) return b.generalAverage - a.generalAverage;
-      return a.studentName.localeCompare(b.studentName);
-    });
+    const eslRows = eslRaw
+      .map(st => buildEslStudentRow(st))
+      .filter(st => st.completedCount > 0)
+      .sort((a, b) => {
+        const rankA = getEslGradeRank(a.gradeLevel);
+        const rankB = getEslGradeRank(b.gradeLevel);
+        if (rankB !== rankA) return rankB - rankA;
+        if (b.generalAverage !== a.generalAverage) return b.generalAverage - a.generalAverage;
+        return a.studentName.localeCompare(b.studentName);
+      });
 
     return {
       standardStudents: stdRows,
