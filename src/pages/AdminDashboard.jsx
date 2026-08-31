@@ -96,7 +96,7 @@ const CANONICAL_SUBJECTS = [
   {
     name: "English",
     order: 2,
-    keywords: ["english", "grammar", "reading", "vocabulary", "language arts", "writing", "communication arts", "laos english", "oral communication", "reading and writing"]
+    keywords: ["english", "language arts", "writing", "communication arts", "laos english"]
   },
   {
     name: "Science",
@@ -109,28 +109,48 @@ const CANONICAL_SUBJECTS = [
     keywords: ["social science", "social studies", "social", "history", "araling panlipunan", "ap", "geography", "civics", "economics", "diss", "philippine history", "world history", "asian studies", "kasaysayan", "philippine politics", "ucsp"]
   },
   {
-    name: "Values",
+    name: "Reading",
     order: 5,
+    keywords: ["reading", "reading comprehension", "comprehension", "esl reading"]
+  },
+  {
+    name: "Grammar",
+    order: 6,
+    keywords: ["grammar", "english grammar", "structure", "esl grammar"]
+  },
+  {
+    name: "Speaking",
+    order: 7,
+    keywords: ["speaking", "oral communication", "oral", "speech", "pronunciation", "esl speaking"]
+  },
+  {
+    name: "Vocabulary",
+    order: 8,
+    keywords: ["vocabulary", "vocab", "word bank", "word study", "esl vocabulary"]
+  },
+  {
+    name: "Values",
+    order: 9,
     keywords: ["values", "values education", "esp", "edukasyon sa pagpapakatao", "character", "ethics", "moral", "good manners", "christian living", "clve", "homeroom"]
   },
   {
     name: "MAPEH",
-    order: 6,
+    order: 10,
     keywords: ["mapeh", "music", "arts", "aces in mapeh", "music and arts"]
   },
   {
     name: "Physical Education",
-    order: 7,
+    order: 11,
     keywords: ["physical education", "pe", "p.e.", "p.e", "hope", "health-optimizing physical education", "health optimizing physical education", "hope 1", "hope 2", "hope 3", "hope 4", "physical education and health", "pe and health", "pe & health", "phys ed"]
   },
   {
     name: "Literature",
-    order: 8,
+    order: 12,
     keywords: ["literature", "philippine literature", "world literature", "lit", "contemporary arts", "panitikan", "creative writing", "21st century literature"]
   },
   {
     name: "TLE",
-    order: 9,
+    order: 13,
     keywords: ["tle", "technology and livelihood education", "livelihood", "ict", "home economics", "agri-fishery", "industrial arts", "computer", "epp", "empowerment technologies"]
   }
 ];
@@ -141,6 +161,14 @@ const STANDARD_PILLARS = [
   { core: 'Science', added: 'TLE' },
   { core: 'English', added: 'Literature' },
   { core: 'Social Science', added: 'Values' }
+];
+
+// ESL Program 4 Core Pillars (Core & Added)
+const ESL_PILLARS = [
+  { core: 'Reading', added: 'Values' },
+  { core: 'Grammar', added: 'MAPEH' },
+  { core: 'Speaking', added: 'Literature' },
+  { core: 'Vocabulary', added: 'TLE' }
 ];
 
 export default function AdminDashboard() {
@@ -332,16 +360,22 @@ export default function AdminDashboard() {
         <table>
           <thead>
             <tr>
-              <th colspan="${3 + eslSubjects.length + 1}" class="title-banner">
+              <th colspan="${3 + ESL_PILLARS.length * 2 + 1}" class="title-banner" style="background-color: #0f766e;">
                 WASHINGTON COMPREHENSIVE SCHOOL • ESL PROGRAM MASTER REPORT (${reportFilterExamCategory} • ${reportFilterQuarter})
               </th>
             </tr>
             <tr class="header-main">
-              <th style="width: 220px;">STUDENT NAME</th>
-              <th style="width: 100px;">LEVEL / GRADE</th>
-              <th style="width: 120px;">COMMUNITY</th>
-              ${eslSubjects.map(s => `<th style="text-align: center; text-transform: uppercase;">${s}</th>`).join("")}
-              <th style="width: 140px; text-align: center;">GENERAL AVERAGE</th>
+              <th rowspan="2" style="width: 220px;">STUDENT NAME</th>
+              <th rowspan="2" style="width: 100px;">LEVEL / GRADE</th>
+              <th rowspan="2" style="width: 120px;">COMMUNITY</th>
+              ${ESL_PILLARS.map(p => `<th colspan="2" class="pillar-header" style="background-color: #f0fdfa; color: #0f766e;">${p.core.toUpperCase()}</th>`).join("")}
+              <th rowspan="2" style="width: 140px; text-align: center;">GENERAL AVERAGE</th>
+            </tr>
+            <tr class="sub-header">
+              ${ESL_PILLARS.map(p => `
+                <th>${p.core} (Core)</th>
+                <th>${p.added} (Added)</th>
+              `).join("")}
             </tr>
           </thead>
           <tbody>
@@ -361,15 +395,17 @@ export default function AdminDashboard() {
             <td>${row.community}</td>
         `;
 
-        eslSubjects.forEach(s => {
-          const sc = row.subjectScores[s];
-          if (sc && sc.hasScore) {
-            const pctCls = sc.percentage >= 80 ? "pct-high" : sc.percentage >= 70 ? "pct-med" : "pct-low";
-            const breakdown = (sc.objScore > 0 || sc.subjScore > 0) ? `<br/><span class="score-breakdown">MC: ${sc.objScore} | V/E: ${sc.subjScore}</span>` : "";
-            html += `<td class="data-center"><span class="score-val">${sc.earnedScore}/${sc.maxScore}</span> <span class="score-pct ${pctCls}">(${sc.percentage}%)</span>${breakdown}</td>`;
-          } else {
-            html += `<td class="data-center" style="color: #cbd5e1;">—</td>`;
-          }
+        ESL_PILLARS.forEach(p => {
+          [p.core, p.added].forEach(subjKey => {
+            const sc = row.subjectScores[subjKey];
+            if (sc && sc.hasScore) {
+              const pctCls = sc.percentage >= 80 ? "pct-high" : sc.percentage >= 70 ? "pct-med" : "pct-low";
+              const breakdown = (sc.objScore > 0 || sc.subjScore > 0) ? `<br/><span class="score-breakdown">MC: ${sc.objScore} | V/E: ${sc.subjScore}</span>` : "";
+              html += `<td class="data-center"><span class="score-val">${sc.earnedScore}/${sc.maxScore}</span> <span class="score-pct ${pctCls}">(${sc.percentage}%)</span>${breakdown}</td>`;
+            } else {
+              html += `<td class="data-center" style="color: #cbd5e1;">—</td>`;
+            }
+          });
         });
 
         html += `
@@ -454,7 +490,7 @@ export default function AdminDashboard() {
         "Student Code",
         "Level / Grade",
         "Community",
-        ...eslSubjects.map(s => `"${s.replace(/"/g, '""')}"`),
+        ...ESL_PILLARS.flatMap(p => [`"${p.core} (Core)"`, `"${p.added} (Added)"`]),
         "General Average (%)",
         "Subjects Completed"
       ];
@@ -468,13 +504,15 @@ export default function AdminDashboard() {
           `"${(row.community || 'Main').replace(/"/g, '""')}"`,
         ];
 
-        eslSubjects.forEach(s => {
-          const sc = row.subjectScores[s];
-          if (sc && sc.hasScore) {
-            rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
-          } else {
-            rowCols.push('"—"');
-          }
+        ESL_PILLARS.forEach(p => {
+          [p.core, p.added].forEach(subjKey => {
+            const sc = row.subjectScores[subjKey];
+            if (sc && sc.hasScore) {
+              rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
+            } else {
+              rowCols.push('"—"');
+            }
+          });
         });
 
         rowCols.push(`"${row.generalAverage}%"`);
@@ -1289,10 +1327,22 @@ export default function AdminDashboard() {
       if (ts === "literature" && (spec === "lit" || spec.includes("literature") || spec.includes("panitikan"))) {
         return true;
       }
+      if (ts === "reading" && (spec === "reading" || spec.includes("reading") || spec.includes("comprehension"))) {
+        return true;
+      }
+      if (ts === "grammar" && (spec === "grammar" || spec.includes("grammar") || spec.includes("structure"))) {
+        return true;
+      }
+      if (ts === "speaking" && (spec === "speaking" || spec.includes("speaking") || spec.includes("oral"))) {
+        return true;
+      }
+      if (ts === "vocabulary" && (spec === "vocabulary" || spec.includes("vocab"))) {
+        return true;
+      }
       return false;
     }
 
-    // Priority 2: Title keywords (CRITICAL for multi-subject classrooms like MAPEH inside Math)
+    // Priority 2: Title keywords (CRITICAL for multi-subject classrooms like MAPEH inside Math, or Added inside ESL)
     const title = (exam?.title || sub?.examTitle || "").toLowerCase();
     if (ts === "mapeh") {
       if (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("physical education") || title.includes("pe ") || title.includes("pe-") || title.includes("pe:") || title.includes("(pe)") || title.includes("hope")) {
@@ -1310,6 +1360,22 @@ export default function AdminDashboard() {
       if (title.includes("values") || title.includes("esp") || title.includes("edukasyon sa pagpapakatao") || title.includes("character") || title.includes("ethics") || title.includes("moral") || title.includes("clve")) {
         return true;
       }
+    } else if (ts === "reading") {
+      if ((title.includes("reading") || title.includes("comprehension")) && !title.includes("values") && !title.includes("esp")) {
+        return true;
+      }
+    } else if (ts === "grammar") {
+      if ((title.includes("grammar") || title.includes("structure")) && !title.includes("mapeh") && !title.includes("music") && !title.includes("arts") && !title.includes("pe")) {
+        return true;
+      }
+    } else if (ts === "speaking") {
+      if ((title.includes("speaking") || title.includes("oral") || title.includes("speech") || title.includes("pronunciation")) && !title.includes("literature") && !title.includes("lit")) {
+        return true;
+      }
+    } else if (ts === "vocabulary") {
+      if ((title.includes("vocabulary") || title.includes("vocab") || title.includes("word bank")) && !title.includes("tle") && !title.includes("ict") && !title.includes("technology")) {
+        return true;
+      }
     } else if (ts === "math") {
       if ((title.includes("math") || title.includes("algebra") || title.includes("geometry") || title.includes("calculus") || title.includes("statistics") || title.includes("trigonometry")) && 
           !title.includes("mapeh") && !title.includes("music") && !title.includes("arts") && !title.includes("pe") && !title.includes("physical education") && !title.includes("hope")) {
@@ -1321,8 +1387,8 @@ export default function AdminDashboard() {
         return true;
       }
     } else if (ts === "english") {
-      if ((title.includes("english") || title.includes("reading") || title.includes("grammar") || title.includes("vocabulary") || title.includes("language arts")) && 
-          !title.includes("literature") && !title.includes("contemporary arts")) {
+      if ((title.includes("english") || title.includes("language arts")) && 
+          !title.includes("literature") && !title.includes("reading") && !title.includes("grammar") && !title.includes("speaking") && !title.includes("vocabulary") && !title.includes("contemporary arts")) {
         return true;
       }
     } else if (ts === "social science") {
@@ -1338,8 +1404,12 @@ export default function AdminDashboard() {
       if (subj === ts) {
         if (ts === "math" && (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("pe"))) return false;
         if (ts === "science" && (title.includes("tle") || title.includes("ict") || title.includes("social"))) return false;
-        if (ts === "english" && (title.includes("literature") || title.includes("lit"))) return false;
+        if (ts === "english" && (title.includes("literature") || title.includes("lit") || title.includes("reading") || title.includes("grammar") || title.includes("speaking") || title.includes("vocabulary"))) return false;
         if (ts === "social science" && (title.includes("values") || title.includes("esp"))) return false;
+        if (ts === "reading" && (title.includes("values") || title.includes("esp"))) return false;
+        if (ts === "grammar" && (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("pe"))) return false;
+        if (ts === "speaking" && (title.includes("literature") || title.includes("lit"))) return false;
+        if (ts === "vocabulary" && (title.includes("tle") || title.includes("technology") || title.includes("ict"))) return false;
         return true;
       }
       if (ts === "mapeh" && (subj === "physical education" || subj.includes("pe") || subj.includes("hope"))) {
@@ -1670,16 +1740,21 @@ export default function AdminDashboard() {
       const subjectScores = {};
       const percentages = [];
 
-      eslSubjects.forEach(subjectName => {
-        const matchedExam = filteredExams.find(ex => {
-          const exSubj = extractSubjectName(ex);
-          return exSubj.toLowerCase() === subjectName.toLowerCase() && matchExamGrade(ex, gLevel);
-        });
+      ESL_PILLARS.forEach(pillar => {
+        const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
 
-        const scoreData = resolveStudentScoreForExam(st, matchedExam, subjectName, gLevel, academicExamSubs);
-        subjectScores[subjectName] = scoreData;
-        if (scoreData.hasScore) {
-          percentages.push(scoreData.percentage);
+        // Core Subject (Reading, Grammar, Speaking, Vocabulary)
+        const coreScore = resolveStudentScoreForExam(st, coreExam, pillar.core, gLevel, academicExamSubs);
+        subjectScores[pillar.core] = coreScore;
+        if (coreScore.hasScore) {
+          percentages.push(coreScore.percentage);
+        }
+
+        // Added Subject (Values, MAPEH, Literature, TLE)
+        const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        subjectScores[pillar.added] = addedScore;
+        if (addedScore.hasScore) {
+          percentages.push(addedScore.percentage);
         }
       });
 
@@ -1696,7 +1771,7 @@ export default function AdminDashboard() {
         subjectScores,
         generalAverage,
         completedCount: percentages.length,
-        totalSubjectsCount: eslSubjects.length
+        totalSubjectsCount: 8
       };
     };
 
@@ -1723,7 +1798,8 @@ export default function AdminDashboard() {
       }
 
       if (!match) {
-        const pillarPair = STANDARD_PILLARS.find(p => p.added.toLowerCase() === subjectStr.toLowerCase() || (subjectStr.toLowerCase() === "physical education" && p.added === "MAPEH"));
+        const pillarPair = STANDARD_PILLARS.find(p => p.added.toLowerCase() === subjectStr.toLowerCase() || (subjectStr.toLowerCase() === "physical education" && p.added === "MAPEH"))
+          || ESL_PILLARS.find(p => p.added.toLowerCase() === subjectStr.toLowerCase() || (subjectStr.toLowerCase() === "physical education" && p.added === "MAPEH"));
         if (pillarPair) {
           match = teachers.find(t => {
             const asgs = t.assignments || [];
@@ -1806,20 +1882,34 @@ export default function AdminDashboard() {
       const missingSubjects = [];
       const recordedSubjects = [];
 
-      eslSubjects.forEach(subjectName => {
-        const matchedExam = filteredExams.find(ex => {
-          const exSubj = extractSubjectName(ex);
-          return exSubj.toLowerCase() === subjectName.toLowerCase() && matchExamGrade(ex, gLevel);
-        });
+      ESL_PILLARS.forEach(pillar => {
+        const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
 
-        const scoreData = resolveStudentScoreForExam(st, matchedExam, subjectName, gLevel, academicExamSubs);
-        if (scoreData.hasScore) {
-          recordedSubjects.push({ subject: subjectName, score: scoreData });
+        // Core Subject (Reading, Grammar, Speaking, Vocabulary)
+        const coreScore = resolveStudentScoreForExam(st, coreExam, pillar.core, gLevel, academicExamSubs);
+        if (coreScore.hasScore) {
+          recordedSubjects.push({ subject: pillar.core, pillar: pillar.core, type: "Core", score: coreScore });
         } else {
           missingSubjects.push({
-            subject: subjectName,
-            teacherName: findTeacherForSubjectAndGrade(gLevel, subjectName),
-            reason: scoreData.noExam ? "No exam scope created" : "Score unrecorded / pending"
+            subject: pillar.core,
+            pillar: pillar.core,
+            type: "Core",
+            teacherName: findTeacherForSubjectAndGrade(gLevel, pillar.core),
+            reason: coreScore.noExam ? "No exam scope created" : "Score unrecorded / pending"
+          });
+        }
+
+        // Added Subject (Values, MAPEH, Literature, TLE -> Paired with Core teacher)
+        const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        if (addedScore.hasScore) {
+          recordedSubjects.push({ subject: effectiveAddedSubject, pillar: pillar.core, type: "Added", score: addedScore });
+        } else {
+          missingSubjects.push({
+            subject: effectiveAddedSubject,
+            pillar: pillar.core,
+            type: "Added",
+            teacherName: findTeacherForSubjectAndGrade(gLevel, effectiveAddedSubject, pillar.core),
+            reason: addedScore.noExam ? "No exam scope created" : "Score unrecorded / pending"
           });
         }
       });
@@ -1832,7 +1922,7 @@ export default function AdminDashboard() {
         community: comm,
         completedCount: recordedSubjects.length,
         missingCount: missingSubjects.length,
-        totalSubjectsCount: eslSubjects.length,
+        totalSubjectsCount: 8,
         missingSubjects,
         recordedSubjects,
         isFullyUnrecorded: recordedSubjects.length === 0
@@ -3307,10 +3397,12 @@ export default function AdminDashboard() {
                                   <div
                                     key={idx}
                                     className="inline-flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[11px]"
+                                    title={`Reason: ${m.reason}`}
                                   >
                                     <span className="font-extrabold text-slate-800 dark:text-slate-200">{m.subject}</span>
+                                    <span className="text-[9px] text-slate-400">({m.type})</span>
                                     <span className="text-slate-300 dark:text-slate-600">•</span>
-                                    <span className="font-bold text-amber-600 dark:text-amber-400">{m.teacherName}</span>
+                                    <span className="font-bold text-teal-600 dark:text-teal-400">{m.teacherName}</span>
                                     {m.reason.includes("No exam") && (
                                       <span className="text-[9px] px-1 py-0.2 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded font-semibold">No Exam</span>
                                     )}
@@ -3537,25 +3629,50 @@ export default function AdminDashboard() {
                       </h3>
                     </div>
                     <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 print:border-none print:p-0 print:text-slate-700 print:text-[10px]">
-                      {eslStudents.length} Students • {eslSubjects.length} Subject Columns
+                      {eslStudents.length} Students • 4 Core Pillars (8 Subjects)
                     </span>
                   </div>
 
                   <div className="overflow-x-auto academic-print-table-wrap">
                     <table className="w-full text-left text-xs border-collapse academic-print-table">
                       <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider print:bg-slate-100 print:text-black">
-                          <th className="p-4 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10 print:static print:bg-slate-100 print:p-1 print:text-[8px]">Student Name</th>
-                          <th className="p-4 print:p-1 print:text-[8px]">Level / Grade</th>
-                          <th className="p-4 print:p-1 print:text-[8px]">Community</th>
-                          {eslSubjects.map((subj) => (
-                            <th key={subj} className="p-4 text-center whitespace-nowrap min-w-[140px] uppercase print:min-w-0 print:p-1 print:text-[8px]">
-                              {subj}
+                        {/* Header Row 1: Merged Pillar Categories */}
+                        <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider print:bg-slate-100 print:text-black">
+                          <th rowSpan={2} className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10 print:static print:bg-slate-100 print:p-1 print:text-[8px] border-r border-slate-200 dark:border-slate-700">
+                            Student Name
+                          </th>
+                          <th rowSpan={2} className="p-3.5 print:p-1 print:text-[8px] border-r border-slate-200 dark:border-slate-700">
+                            Level / Grade
+                          </th>
+                          <th rowSpan={2} className="p-3.5 print:p-1 print:text-[8px] border-r border-slate-200 dark:border-slate-700">
+                            Community
+                          </th>
+
+                          {ESL_PILLARS.map((pillar) => (
+                            <th
+                              key={pillar.core}
+                              colSpan={2}
+                              className="p-2.5 text-center text-xs font-black uppercase tracking-wider border-r border-slate-200 dark:border-slate-700 print:p-1 print:text-[8.5px] bg-teal-50/70 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300"
+                            >
+                              {pillar.core}
                             </th>
                           ))}
-                          <th className="p-4 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-10 print:static print:bg-slate-100 print:p-1 print:text-[8px] print:min-w-0">
+
+                          <th rowSpan={2} className="p-3.5 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-10 print:static print:bg-slate-100 print:p-1 print:text-[8px] print:min-w-0 border-l border-slate-200 dark:border-slate-700">
                             General Average
                           </th>
+                        </tr>
+
+                        {/* Header Row 2: Sub-headers for Core & Added */}
+                        <tr className="bg-slate-100/70 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider print:bg-slate-50 print:text-black">
+                          {ESL_PILLARS.flatMap((pillar) => [
+                            <th key={`${pillar.core}-core`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 print:p-0.5 print:text-[7px]">
+                              {pillar.core} <span className="text-[8px] font-normal text-slate-400 dark:text-slate-500 lowercase">(Core)</span>
+                            </th>,
+                            <th key={`${pillar.core}-added`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 print:p-0.5 print:text-[7px]">
+                              {pillar.added} <span className="text-[8px] font-normal text-slate-400 dark:text-slate-500 lowercase">(Added)</span>
+                            </th>
+                          ])}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200 print:divide-slate-300">
@@ -3572,7 +3689,7 @@ export default function AdminDashboard() {
 
                           return (
                             <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors print:hover:bg-transparent">
-                              <td className="p-4 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 print:static print:bg-white print:p-1 print:text-[8px] print:text-black">
+                              <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 print:static print:bg-white print:p-1 print:text-[8px] print:text-black border-r border-slate-100 dark:border-slate-800">
                                 <div>{st.studentName}</div>
                                 {st.studentCode && (
                                   <span className="block text-[10px] text-slate-400 font-mono font-normal print:text-[7px] print:text-slate-500">
@@ -3580,51 +3697,62 @@ export default function AdminDashboard() {
                                   </span>
                                 )}
                               </td>
-                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black">
+                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black border-r border-slate-100 dark:border-slate-800">
                                 {st.gradeLevel}
                               </td>
-                              <td className="p-4 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black">
+                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black border-r border-slate-100 dark:border-slate-800">
                                 {st.community}
                               </td>
-                              {eslSubjects.map((subj) => {
-                                const sc = st.subjectScores[subj];
-                                if (!sc || !sc.hasScore) {
+
+                              {/* 4 Pillars: 8 Data Cells */}
+                              {ESL_PILLARS.flatMap((pillar) => {
+                                const renderCell = (subjKey) => {
+                                  const sc = st.subjectScores[subjKey];
+                                  if (!sc || !sc.hasScore) {
+                                    return (
+                                      <td key={subjKey} className="p-3 text-center text-slate-300 dark:text-slate-600 font-mono border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-slate-400">
+                                        —
+                                      </td>
+                                    );
+                                  }
+
+                                  const pct = sc.percentage;
+                                  const badgeStyle =
+                                    pct >= 80
+                                      ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                                      : pct >= 70
+                                      ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                                      : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
                                   return (
-                                    <td key={subj} className="p-4 text-center text-slate-300 dark:text-slate-600 font-mono print:p-1 print:text-[8px] print:text-slate-400">
-                                      —
+                                    <td key={subjKey} className="p-3 text-center font-mono border-r border-slate-100 dark:border-slate-800 print:p-1">
+                                      <div className="flex flex-col items-center justify-center space-y-0.5">
+                                        <div className="flex items-center space-x-1.5 print:space-x-1">
+                                          <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs print:text-[8px] print:text-black">
+                                            {sc.earnedScore}/{sc.maxScore}
+                                          </span>
+                                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle} print:text-[7px] print:p-0.5`}>
+                                            {pct}%
+                                          </span>
+                                        </div>
+                                        {(sc.objScore > 0 || sc.subjScore > 0) && (
+                                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal print:text-[6.5px] print:text-slate-600">
+                                            MC: {sc.objScore} | V/E: {sc.subjScore}
+                                          </span>
+                                        )}
+                                      </div>
                                     </td>
                                   );
-                                }
+                                };
 
-                                const pct = sc.percentage;
-                                const badgeStyle =
-                                  pct >= 80
-                                    ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                                    : pct >= 70
-                                    ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
-                                    : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
-
-                                return (
-                                  <td key={subj} className="p-4 text-center font-mono print:p-1">
-                                    <div className="flex flex-col items-center justify-center space-y-0.5">
-                                      <div className="flex items-center space-x-1.5 print:space-x-1">
-                                        <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs print:text-[8px] print:text-black">
-                                          {sc.earnedScore}/{sc.maxScore}
-                                        </span>
-                                        <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle} print:text-[7px] print:p-0.5`}>
-                                          {pct}%
-                                        </span>
-                                      </div>
-                                      {(sc.objScore > 0 || sc.subjScore > 0) && (
-                                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal print:text-[6.5px] print:text-slate-600">
-                                          MC: {sc.objScore} | V/E: {sc.subjScore}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                );
+                                return [
+                                  renderCell(pillar.core),
+                                  renderCell(pillar.added)
+                                ];
                               })}
-                              <td className="p-4 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 print:static print:bg-white print:p-1">
+
+                              {/* General Average */}
+                              <td className="p-3.5 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 border-l border-slate-100 dark:border-slate-800 print:static print:bg-white print:p-1">
                                 <div className="flex flex-col items-center justify-center space-y-1 print:space-y-0">
                                   <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge} print:text-[8px] print:p-0.5`}>
                                     <span>{genAvg}%</span>
