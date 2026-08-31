@@ -141,17 +141,17 @@ const CANONICAL_SUBJECTS = [
   {
     name: "Physical Education",
     order: 11,
-    keywords: ["physical education", "pe", "p.e.", "p.e", "hope", "health-optimizing physical education", "health optimizing physical education", "hope 1", "hope 2", "hope 3", "hope 4", "physical education and health", "pe and health", "pe & health", "phys ed"]
+    keywords: ["physical education", "pe", "p.e.", "p.e", "hope", "health-optimizing physical education", "health optimizing physical education", "hope 1", "hope 2", "hope 3", "hope 4", "pe 1", "pe 3", "pe and health", "pe & health", "physical education and health 1", "physical education and health 3", "phys ed"]
   },
   {
     name: "Literature",
     order: 12,
-    keywords: ["literature", "philippine literature", "world literature", "lit", "contemporary arts", "panitikan", "creative writing", "21st century literature"]
+    keywords: ["literature", "philippine literature", "world literature", "lit", "contemporary arts", "panitikan", "creative writing", "21st century literature", "21st century", "philippine politics and governance", "philippine politics", "politics and governance", "politics", "ppg"]
   },
   {
     name: "TLE",
     order: 13,
-    keywords: ["tle", "technology and livelihood education", "livelihood", "ict", "home economics", "agri-fishery", "industrial arts", "computer", "epp", "empowerment technologies"]
+    keywords: ["tle", "technology and livelihood education", "livelihood", "ict", "home economics", "agri-fishery", "industrial arts", "computer", "epp", "empowerment technologies", "empowerment technology", "empotech", "media and information literacy", "media & information literacy", "mil"]
   }
 ];
 
@@ -162,6 +162,50 @@ const STANDARD_PILLARS = [
   { core: 'English', added: 'Literature' },
   { core: 'Social Science', added: 'Values' }
 ];
+
+// Senior High School (Grades 11 & 12) Specific Added Subject Nomenclature
+const SHS_ADDED_SUBJECT_MAPPINGS = {
+  "Grade 11": {
+    "MAPEH": "PE & Health 1",
+    "TLE": "Empowerment Technologies",
+    "Literature": "Philippine Politics",
+    "Values": "DISS"
+  },
+  "Grade 12": {
+    "MAPEH": "PE & Health 3",
+    "TLE": "Media & Information Literacy",
+    "Literature": "21st Century Literature",
+    "Values": "DIASS"
+  }
+};
+
+const getEffectiveAddedSubject = (gradeLevel, pillar) => {
+  const gStr = (gradeLevel || "").toString();
+  if (gStr.includes("11") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"]?.[pillar?.added]) {
+    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"][pillar.added];
+  }
+  if (gStr.includes("12") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"]?.[pillar?.added]) {
+    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"][pillar.added];
+  }
+  return pillar?.added || "Added";
+};
+
+const getPillarHeaderAddedLabel = (pillar, reportFilterGrade) => {
+  const fGrade = (reportFilterGrade || "").toString();
+  if (fGrade.includes("11") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"]?.[pillar?.added]) {
+    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"][pillar.added];
+  }
+  if (fGrade.includes("12") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"]?.[pillar?.added]) {
+    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"][pillar.added];
+  }
+  if (fGrade === "All") {
+    if (pillar?.added === "MAPEH") return "MAPEH / PE & Health";
+    if (pillar?.added === "TLE") return "TLE / MIL / ICT";
+    if (pillar?.added === "Literature") return "Literature / 21st Century";
+    if (pillar?.added === "Values") return "Values / DIASS / DISS";
+  }
+  return pillar?.added || "Added";
+};
 
 // ESL Program 4 Core Pillars (Core & Added)
 const ESL_PILLARS = [
@@ -308,7 +352,7 @@ export default function AdminDashboard() {
             <tr class="sub-header">
               ${STANDARD_PILLARS.map(p => `
                 <th>${p.core} (Core)</th>
-                <th>${p.added} (Added)</th>
+                <th>${getPillarHeaderAddedLabel(p, reportFilterGrade)} (Added)</th>
               `).join("")}
             </tr>
           </thead>
@@ -449,7 +493,7 @@ export default function AdminDashboard() {
         "Student Code",
         "Grade Level",
         "Community",
-        ...STANDARD_PILLARS.flatMap(p => [`"${p.core} (Core)"`, `"${p.added} (Added)"`]),
+        ...STANDARD_PILLARS.flatMap(p => [`"${p.core} (Core)"`, `"${getPillarHeaderAddedLabel(p, reportFilterGrade)} (Added)"`]),
         "General Average (%)",
         "Subjects Completed"
       ];
@@ -1342,22 +1386,22 @@ export default function AdminDashboard() {
       return false;
     }
 
-    // Priority 2: Title keywords (CRITICAL for multi-subject classrooms like MAPEH inside Math, or Added inside ESL)
+    // Priority 2: Title keywords (CRITICAL for multi-subject classrooms like MAPEH inside Math, or Added inside ESL/SHS)
     const title = (exam?.title || sub?.examTitle || "").toLowerCase();
-    if (ts === "mapeh") {
-      if (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("physical education") || title.includes("pe ") || title.includes("pe-") || title.includes("pe:") || title.includes("(pe)") || title.includes("hope")) {
+    if (ts === "mapeh" || ts.includes("pe & health") || ts.includes("physical education") || ts.includes("hope")) {
+      if (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("physical education") || title.includes("pe ") || title.includes("pe-") || title.includes("pe:") || title.includes("(pe)") || title.includes("hope") || title.includes("pe 1") || title.includes("pe 3") || title.includes("pe&health")) {
         return true;
       }
-    } else if (ts === "tle") {
-      if (title.includes("tle") || title.includes("technology") || title.includes("livelihood") || title.includes("ict") || title.includes("computer") || title.includes("epp")) {
+    } else if (ts === "tle" || ts.includes("empowerment") || ts.includes("media & information") || ts.includes("mil")) {
+      if (title.includes("tle") || title.includes("technology") || title.includes("livelihood") || title.includes("ict") || title.includes("computer") || title.includes("epp") || title.includes("empowerment") || title.includes("media and information") || title.includes("media & information") || title.includes("mil")) {
         return true;
       }
-    } else if (ts === "literature") {
-      if (title.includes("literature") || title.includes("lit") || title.includes("panitikan") || title.includes("contemporary arts") || title.includes("creative writing") || title.includes("21st century")) {
+    } else if (ts === "literature" || ts.includes("politics") || ts.includes("21st century")) {
+      if (title.includes("literature") || title.includes("lit") || title.includes("panitikan") || title.includes("contemporary arts") || title.includes("creative writing") || title.includes("21st century") || title.includes("politics") || title.includes("governance") || title.includes("ppg")) {
         return true;
       }
-    } else if (ts === "values") {
-      if (title.includes("values") || title.includes("esp") || title.includes("edukasyon sa pagpapakatao") || title.includes("character") || title.includes("ethics") || title.includes("moral") || title.includes("clve")) {
+    } else if (ts === "values" || ts === "diss" || ts === "diass" || ts.includes("applied social")) {
+      if (title.includes("values") || title.includes("esp") || title.includes("edukasyon sa pagpapakatao") || title.includes("character") || title.includes("ethics") || title.includes("moral") || title.includes("clve") || title.includes("diss") || title.includes("diass")) {
         return true;
       }
     } else if (ts === "reading") {
@@ -1484,8 +1528,7 @@ export default function AdminDashboard() {
 
   // Group and resolve exams for a grade level within a Pillar using Grade-Wide Classroom Union + Flexible Ceilings
   const getPillarExamsForGrade = (gradeLevel, pillar, filteredExamsList) => {
-    const isGrade12 = (gradeLevel || "").toString().includes("12");
-    const effectiveAddedSubject = (pillar.core === "Math" && isGrade12) ? "Physical Education" : pillar.added;
+    const effectiveAddedSubject = getEffectiveAddedSubject(gradeLevel, pillar);
 
     // Find all candidate exams matching this student's grade level and belonging to this pillar
     const candidateExams = (filteredExamsList || []).filter(ex => {
@@ -1517,7 +1560,13 @@ export default function AdminDashboard() {
            !tit.includes("values") && 
            !tit.includes("tle") && 
            !tit.includes("literature") &&
-           !tit.includes("diass"));
+           !tit.includes("diass") &&
+           !tit.includes("diss") &&
+           !tit.includes("empowerment") &&
+           !tit.includes("mil") &&
+           !tit.includes("media") &&
+           !tit.includes("politics") &&
+           !tit.includes("21st century"));
       });
 
       const explicitAdded = candidateExams.find(e => {
@@ -1527,10 +1576,10 @@ export default function AdminDashboard() {
           spec === pillar.added.toLowerCase() || 
           tit.includes(effectiveAddedSubject.toLowerCase()) || 
           tit.includes(pillar.added.toLowerCase()) ||
-          (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("physical education") || tit.includes("hope") || tit.includes("music") || tit.includes("arts"))) ||
-          (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp") || tit.includes("diass"))) ||
-          (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict"))) ||
-          (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit")));
+          (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("pe-") || tit.includes("physical education") || tit.includes("hope") || tit.includes("music") || tit.includes("arts") || tit.includes("pe 1") || tit.includes("pe 3"))) ||
+          (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp") || tit.includes("diass") || tit.includes("diss"))) ||
+          (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict") || tit.includes("empowerment") || tit.includes("media") || tit.includes("mil"))) ||
+          (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit") || tit.includes("politics") || tit.includes("governance") || tit.includes("21st century")));
       });
 
       if (explicitCore && explicitAdded && (explicitCore.firestoreId !== explicitAdded.firestoreId && explicitCore.id !== explicitAdded.id)) {
@@ -1550,10 +1599,10 @@ export default function AdminDashboard() {
         spec === pillar.added.toLowerCase() || 
         tit.includes(effectiveAddedSubject.toLowerCase()) || 
         tit.includes(pillar.added.toLowerCase()) ||
-        (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("physical education") || tit.includes("hope"))) ||
-        (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp") || tit.includes("diass"))) ||
-        (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict"))) ||
-        (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit")));
+        (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("pe-") || tit.includes("physical education") || tit.includes("hope") || tit.includes("pe 1") || tit.includes("pe 3"))) ||
+        (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp") || tit.includes("diass") || tit.includes("diss"))) ||
+        (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict") || tit.includes("empowerment") || tit.includes("media") || tit.includes("mil"))) ||
+        (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit") || tit.includes("politics") || tit.includes("governance") || tit.includes("21st century")));
 
       if (isExplicitAdded) {
         addedExam = single;
@@ -1713,6 +1762,7 @@ export default function AdminDashboard() {
 
         // Added Subject
         const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        addedScore.effectiveLabel = effectiveAddedSubject;
         subjectScores[pillar.added] = addedScore;
         if (addedScore.hasScore) {
           percentages.push(addedScore.percentage);
@@ -1758,6 +1808,7 @@ export default function AdminDashboard() {
 
         // Added Subject (Values, MAPEH, Literature, TLE)
         const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        addedScore.effectiveLabel = effectiveAddedSubject;
         subjectScores[pillar.added] = addedScore;
         if (addedScore.hasScore) {
           percentages.push(addedScore.percentage);
@@ -1813,6 +1864,28 @@ export default function AdminDashboard() {
               const aGrade = a.grade || a.gradeLevel || "";
               const aSubj = a.subject || "";
               return matchExamGrade({ grade: aGrade }, gradeStr) && isExamMatchingSubject(null, { subject: aSubj }, pillarPair.core);
+            });
+          });
+        }
+      }
+
+      if (!match) {
+        let matchingCore = null;
+        for (const g of ["Grade 11", "Grade 12"]) {
+          for (const [addedKey, shsName] of Object.entries(SHS_ADDED_SUBJECT_MAPPINGS[g] || {})) {
+            if (shsName.toLowerCase() === subjectStr.toLowerCase() || subjectStr.toLowerCase().includes(shsName.toLowerCase())) {
+              const p = STANDARD_PILLARS.find(sp => sp.added === addedKey);
+              if (p) matchingCore = p.core;
+            }
+          }
+        }
+        if (matchingCore) {
+          match = teachers.find(t => {
+            const asgs = t.assignments || [];
+            return asgs.some(a => {
+              const aGrade = a.grade || a.gradeLevel || "";
+              const aSubj = a.subject || "";
+              return matchExamGrade({ grade: aGrade }, gradeStr) && isExamMatchingSubject(null, { subject: aSubj }, matchingCore);
             });
           });
         }
@@ -3515,8 +3588,8 @@ export default function AdminDashboard() {
                               <div>{pillar.core}</div>
                               <span className="text-[8px] text-brand-600 dark:text-brand-400 font-semibold lowercase print:text-slate-600">core</span>
                             </th>,
-                            <th key={`${pillar.core}-added`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 min-w-[100px] print:min-w-0 print:p-1 print:text-[7.5px]">
-                              <div>{pillar.added}</div>
+                            <th key={`${pillar.core}-added`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 min-w-[110px] print:min-w-0 print:p-1 print:text-[7.5px]">
+                              <div>{getPillarHeaderAddedLabel(pillar, reportFilterGrade)}</div>
                               <span className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold lowercase print:text-slate-600">added</span>
                             </th>
                           ])}
@@ -3588,6 +3661,11 @@ export default function AdminDashboard() {
                                             {pct}%
                                           </span>
                                         </div>
+                                        {sc.effectiveLabel && sc.effectiveLabel !== subjKey && (
+                                          <span className="text-[8.5px] font-bold text-amber-600 dark:text-amber-400 print:text-slate-600 truncate max-w-[120px]">
+                                            {sc.effectiveLabel}
+                                          </span>
+                                        )}
                                         {(sc.objScore > 0 || sc.subjScore > 0) && (
                                           <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal print:text-[6.5px] print:text-slate-600">
                                             MC: {sc.objScore} | V/E: {sc.subjScore}
