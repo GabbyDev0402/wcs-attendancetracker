@@ -170,10 +170,12 @@ export default function AdminDashboard() {
       const examsSnap = await getDocs(collection(db, "exams"));
       const allExams = examsSnap.docs.map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }));
 
+      const existingExamIds = new Set(allExams.flatMap(e => [e.firestoreId, e.id].filter(Boolean)));
+
       const subsSnap = await getDocs(collection(db, "exam_submissions"));
       const gradedSubs = subsSnap.docs
         .map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }))
-        .filter(s => s.status === "graded" || s.status === "Graded");
+        .filter(s => (s.status === "graded" || s.status === "Graded") && existingExamIds.has(s.examId));
 
       setAcademicExams(allExams);
       setAcademicExamSubs(gradedSubs);
@@ -1267,73 +1269,41 @@ export default function AdminDashboard() {
     return { coreExam, addedExam, effectiveAddedSubject };
   };
 
-  // Helper to resolve student score for an identified exam document with resilient fallback
+  // Helper to resolve student score for an identified exam document
   const resolveStudentScoreForExam = (student, targetExam, fallbackSubject, gLevel, academicExamSubsList) => {
     const sId = student.id || student.uid || "";
 
-    // 1. Direct examId lookup
-    if (targetExam) {
-      const examId = targetExam.firestoreId || targetExam.id;
-      const sub = academicExamSubsList.find(s => 
-        (s.examId === examId || (s.examId && s.examId === targetExam.id)) &&
-        (s.studentId === sId || s.studentId === student.uid || s.studentId === student.id)
-      );
-
-      const maxScore = Number(targetExam.maxScore) > 0 ? Number(targetExam.maxScore) : (Number(sub?.maxScore) || 100);
-
-      if (sub) {
-        const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
-        const subjScore = Number(sub.subjScore) || 0;
-        const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
-        const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
-
-        return {
-          hasScore: true,
-          earnedScore,
-          maxScore,
-          percentage,
-          objScore,
-          subjScore,
-          examTitle: targetExam.title
-        };
-      }
-
-      return { hasScore: false, noSubmission: true, examTitle: targetExam.title, maxScore };
+    // If no active exam exists for this column/pillar/grade, return noExam
+    if (!targetExam) {
+      return { hasScore: false, noExam: true };
     }
 
-    // 2. Fallback lookup if no targetExam object was matched directly but a valid submission exists
-    if (fallbackSubject) {
-      const candidateSub = academicExamSubsList.find(sub => {
-        const matchesStudent = sub.studentId === sId || sub.studentId === student.uid || sub.studentId === student.id;
-        if (!matchesStudent) return false;
-        
-        const subCat = sub.category || "1st Monthly Exam";
-        if (reportFilterExamCategory !== "All Categories" && subCat !== reportFilterExamCategory) return false;
-        if (reportFilterQuarter !== "All" && sub.quarter && sub.quarter !== reportFilterQuarter) return false;
+    const examId = targetExam.firestoreId || targetExam.id;
+    const sub = academicExamSubsList.find(s => 
+      (s.examId === examId || (s.examId && s.examId === targetExam.id)) &&
+      (s.studentId === sId || s.studentId === student.uid || s.studentId === student.id)
+    );
 
-        return isExamMatchingSubject(null, sub, fallbackSubject) && matchExamGrade({ classId: sub.classId, grade: sub.gradeLevel, title: sub.examTitle }, gLevel);
-      });
+    const maxScore = Number(targetExam.maxScore) > 0 ? Number(targetExam.maxScore) : (Number(sub?.maxScore) || 100);
 
-      if (candidateSub) {
-        const objScore = candidateSub.objScore !== undefined ? (Number(candidateSub.objScore) || 0) : (candidateSub.score !== undefined ? (Number(candidateSub.score) || 0) : 0);
-        const subjScore = Number(candidateSub.subjScore) || 0;
-        const earnedScore = (candidateSub.objScore !== undefined || candidateSub.subjScore !== undefined) ? (objScore + subjScore) : (Number(candidateSub.score) || 0);
-        const maxScore = Number(candidateSub.maxScore) || 100;
-        const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
+    if (sub) {
+      const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
+      const subjScore = Number(sub.subjScore) || 0;
+      const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
+      const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
 
-        return {
-          hasScore: true,
-          earnedScore,
-          maxScore,
-          percentage,
-          objScore,
-          subjScore,
-          examTitle: candidateSub.examTitle || fallbackSubject
-        };
-      }
+      return {
+        hasScore: true,
+        earnedScore,
+        maxScore,
+        percentage,
+        objScore,
+        subjScore,
+        examTitle: targetExam.title
+      };
     }
 
-    return { hasScore: false, noExam: true };
+    return { hasScore: false, noSubmission: true, examTitle: targetExam.title, maxScore };
   };
 
   // 1. Filtered exams by selected Category and Quarter

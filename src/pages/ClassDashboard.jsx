@@ -953,6 +953,13 @@ export default function ClassDashboard() {
     if (!confirmDelete) return;
 
     try {
+      // 1. Cascade delete all submissions associated with this exam scope
+      const subsQ = query(collection(db, "exam_submissions"), where("examId", "==", examDocId));
+      const subsSnap = await getDocs(subsQ);
+      const deleteSubPromises = subsSnap.docs.map(d => deleteDoc(doc(db, "exam_submissions", d.id)));
+      await Promise.all(deleteSubPromises);
+
+      // 2. Delete the exam document
       await deleteDoc(doc(db, "exams", examDocId));
       loadExams();
     } catch (e) {
