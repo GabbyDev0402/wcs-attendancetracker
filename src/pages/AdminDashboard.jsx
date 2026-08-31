@@ -1499,11 +1499,14 @@ export default function AdminDashboard() {
   const uniqueExamCategories = [
     "1st Monthly Exam",
     "2nd Monthly Exam",
+    "3rd Monthly Exam",
+    "4th Monthly Exam",
+    "5th Monthly Exam",
+    "6th Monthly Exam",
+    "7th Monthly Exam",
     "1st Quarterly Exam",
     "2nd Quarterly Exam",
-    "3rd Monthly Exam",
     "3rd Quarterly Exam",
-    "4th Monthly Exam",
     "4th Quarterly Exam",
     "All Categories",
     ...new Set(academicExams.map(e => e.category).filter(Boolean))

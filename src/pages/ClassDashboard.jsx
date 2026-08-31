@@ -217,7 +217,6 @@ export default function ClassDashboard() {
   const [scopeQuarter, setScopeQuarter] = useState("1st Quarter");
   const [scopeCategory, setScopeCategory] = useState("1st Monthly Exam");
   const [scopeMaxScore, setScopeMaxScore] = useState(100);
-  const [scopeGoogleFormUrl, setScopeGoogleFormUrl] = useState("");
   const [isSavingScope, setIsSavingScope] = useState(false);
 
   // Edit Google Form Link State
@@ -931,7 +930,6 @@ export default function ClassDashboard() {
     setScopeQuarter("1st Quarter");
     setScopeCategory("1st Monthly Exam");
     setScopeMaxScore(100);
-    setScopeGoogleFormUrl("");
     setIsAddExamScopeModalOpen(true);
   };
 
@@ -942,7 +940,6 @@ export default function ClassDashboard() {
     setScopeQuarter(exam.quarter || "1st Quarter");
     setScopeCategory(exam.category || "1st Monthly Exam");
     setScopeMaxScore(exam.maxScore || 100);
-    setScopeGoogleFormUrl(exam.googleFormUrl || "");
     setIsAddExamScopeModalOpen(true);
   };
 
@@ -991,7 +988,6 @@ export default function ClassDashboard() {
         quarter: scopeQuarter,
         category: scopeCategory,
         maxScore: Number(scopeMaxScore) || 100,
-        googleFormUrl: scopeGoogleFormUrl.trim(),
         status: "published",
         updatedAt: serverTimestamp()
       };
@@ -4838,7 +4834,7 @@ export default function ClassDashboard() {
                   {editingExamScope ? "Edit Exam Scope & Guidelines" : "+ Add Exam Scope & Guidelines"}
                 </h3>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  {editingExamScope ? "Update assessment topics, max score, or instructions for students." : "Publish assessment topics and study scope for students. You can add a Google Form link now or later."}
+                  {editingExamScope ? "Update assessment topics, max score, or instructions for students." : "Publish assessment topics, test coverage, and instructions for students."}
                 </p>
               </div>
               <button
@@ -4917,20 +4913,6 @@ export default function ClassDashboard() {
                     className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                   />
                 </div>
-              </div>
-
-              {/* Google Form URL */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                  Google Form URL (Optional — can be added later)
-                </label>
-                <input
-                  type="url"
-                  value={scopeGoogleFormUrl}
-                  onChange={(e) => setScopeGoogleFormUrl(e.target.value)}
-                  placeholder="https://docs.google.com/forms/d/e/..."
-                  className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors font-mono"
-                />
               </div>
 
               {/* Scope Rich Text Editor */}
