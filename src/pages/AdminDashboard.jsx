@@ -33,7 +33,14 @@ import {
   Download,
   Table,
   ListFilter,
-  RefreshCw
+  RefreshCw,
+  ClipboardCopy,
+  CheckCheck,
+  FileWarning,
+  Send,
+  Eye,
+  Layers,
+  AlertTriangle
 } from "lucide-react";
 
 // Categorized options for Grade levels (Standard & ESL)
@@ -157,9 +164,16 @@ export default function AdminDashboard() {
   const [reportFilterQuarter, setReportFilterQuarter] = useState("All");
   const [reportFilterExamCategory, setReportFilterExamCategory] = useState("1st Monthly Exam");
   const [reportSearchQuery, setReportSearchQuery] = useState("");
+  const [academicSubView, setAcademicSubView] = useState("pivot"); // 'pivot' | 'deficiencies'
+  const [isDeficiencyCopied, setIsDeficiencyCopied] = useState(false);
+
+  // Teacher Assessment Compliance State (Tab 3)
+  const [complianceFilterExamCategory, setComplianceFilterExamCategory] = useState("1st Monthly Exam");
+  const [complianceFilterQuarter, setComplianceFilterQuarter] = useState("All");
+  const [complianceDrilldownClass, setComplianceDrilldownClass] = useState(null);
 
   useEffect(() => {
-    if (activeTab === "academic") {
+    if (activeTab === "academic" || activeTab === "compliance") {
       loadAcademicData();
     }
   }, [activeTab]);
@@ -1674,6 +1688,119 @@ export default function AdminDashboard() {
       };
     };
 
+    const findTeacherForSubjectAndGrade = (gradeStr, subjectStr) => {
+      if (!gradeStr || !subjectStr) return "Unassigned";
+      const match = teachers.find(t => {
+        const asgs = t.assignments || [];
+        return asgs.some(a => {
+          const aGrade = a.grade || a.gradeLevel || "";
+          const aSubj = a.subject || "";
+          return matchExamGrade({ grade: aGrade }, gradeStr) && isExamMatchingSubject(null, { subject: aSubj }, subjectStr);
+        });
+      });
+      return match ? (match.fullName || match.name || match.email || "Assigned Teacher") : "Unassigned";
+    };
+
+    const buildStandardDeficiencyRow = (st) => {
+      const sId = st.id || st.uid || "";
+      const sName = st.internationalName || st.fullName || st.name || formatStudentName(st) || "Student";
+      const sCode = st.studentCode || "";
+      const gLevel = st.grade || st.gradeLevel || "Grade 1";
+      const comm = st.communityName || st.communityCenter || st.community || "Main";
+
+      const missingSubjects = [];
+      const recordedSubjects = [];
+
+      STANDARD_PILLARS.forEach(pillar => {
+        const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
+
+        // Core Subject
+        const coreScore = resolveStudentScoreForExam(st, coreExam, pillar.core, gLevel, academicExamSubs);
+        if (coreScore.hasScore) {
+          recordedSubjects.push({ subject: pillar.core, pillar: pillar.core, type: "Core", score: coreScore });
+        } else {
+          missingSubjects.push({
+            subject: pillar.core,
+            pillar: pillar.core,
+            type: "Core",
+            teacherName: findTeacherForSubjectAndGrade(gLevel, pillar.core),
+            reason: coreScore.noExam ? "No exam scope created" : "Score unrecorded / pending"
+          });
+        }
+
+        // Added Subject
+        const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        if (addedScore.hasScore) {
+          recordedSubjects.push({ subject: effectiveAddedSubject, pillar: pillar.core, type: "Added", score: addedScore });
+        } else {
+          missingSubjects.push({
+            subject: effectiveAddedSubject,
+            pillar: pillar.core,
+            type: "Added",
+            teacherName: findTeacherForSubjectAndGrade(gLevel, effectiveAddedSubject),
+            reason: addedScore.noExam ? "No exam scope created" : "Score unrecorded / pending"
+          });
+        }
+      });
+
+      return {
+        id: sId,
+        studentName: sName,
+        studentCode: sCode,
+        gradeLevel: gLevel,
+        community: comm,
+        completedCount: recordedSubjects.length,
+        missingCount: missingSubjects.length,
+        totalSubjectsCount: 8,
+        missingSubjects,
+        recordedSubjects,
+        isFullyUnrecorded: recordedSubjects.length === 0
+      };
+    };
+
+    const buildEslDeficiencyRow = (st) => {
+      const sId = st.id || st.uid || "";
+      const sName = st.internationalName || st.fullName || st.name || formatStudentName(st) || "Student";
+      const sCode = st.studentCode || "";
+      const gLevel = st.grade || st.gradeLevel || "E1";
+      const comm = st.communityName || st.communityCenter || st.community || "Main";
+
+      const missingSubjects = [];
+      const recordedSubjects = [];
+
+      eslSubjects.forEach(subjectName => {
+        const matchedExam = filteredExams.find(ex => {
+          const exSubj = extractSubjectName(ex);
+          return exSubj.toLowerCase() === subjectName.toLowerCase() && matchExamGrade(ex, gLevel);
+        });
+
+        const scoreData = resolveStudentScoreForExam(st, matchedExam, subjectName, gLevel, academicExamSubs);
+        if (scoreData.hasScore) {
+          recordedSubjects.push({ subject: subjectName, score: scoreData });
+        } else {
+          missingSubjects.push({
+            subject: subjectName,
+            teacherName: findTeacherForSubjectAndGrade(gLevel, subjectName),
+            reason: scoreData.noExam ? "No exam scope created" : "Score unrecorded / pending"
+          });
+        }
+      });
+
+      return {
+        id: sId,
+        studentName: sName,
+        studentCode: sCode,
+        gradeLevel: gLevel,
+        community: comm,
+        completedCount: recordedSubjects.length,
+        missingCount: missingSubjects.length,
+        totalSubjectsCount: eslSubjects.length,
+        missingSubjects,
+        recordedSubjects,
+        isFullyUnrecorded: recordedSubjects.length === 0
+      };
+    };
+
     const stdRows = stdRaw
       .map(st => buildStandardStudentRow(st))
       .filter(st => st.completedCount > 0)
@@ -1696,11 +1823,247 @@ export default function AdminDashboard() {
         return a.studentName.localeCompare(b.studentName);
       });
 
+    const stdDeficiencies = stdRaw
+      .map(st => buildStandardDeficiencyRow(st))
+      .filter(st => st.missingCount > 0)
+      .sort((a, b) => {
+        const gradeA = getGradeNum(a.gradeLevel);
+        const gradeB = getGradeNum(b.gradeLevel);
+        if (gradeB !== gradeA) return gradeB - gradeA;
+        if (b.missingCount !== a.missingCount) return b.missingCount - a.missingCount;
+        return a.studentName.localeCompare(b.studentName);
+      });
+
+    const eslDeficiencies = eslRaw
+      .map(st => buildEslDeficiencyRow(st))
+      .filter(st => st.missingCount > 0)
+      .sort((a, b) => {
+        const rankA = getEslGradeRank(a.gradeLevel);
+        const rankB = getEslGradeRank(b.gradeLevel);
+        if (rankB !== rankA) return rankB - rankA;
+        if (b.missingCount !== a.missingCount) return b.missingCount - a.missingCount;
+        return a.studentName.localeCompare(b.studentName);
+      });
+
     return {
       standardStudents: stdRows,
-      eslStudents: eslRows
+      eslStudents: eslRows,
+      standardDeficiencies: stdDeficiencies,
+      eslDeficiencies: eslDeficiencies
     };
-  }, [students, filteredExams, academicExamSubs, academicExams, standardSubjects, eslSubjects, reportFilterGrade, reportFilterCommunity, reportSearchQuery, reportFilterExamCategory, reportFilterQuarter]);
+  }, [students, teachers, filteredExams, academicExamSubs, academicExams, standardSubjects, eslSubjects, reportFilterGrade, reportFilterCommunity, reportSearchQuery, reportFilterExamCategory, reportFilterQuarter]);
+
+  // Copy deficiency notification message to clipboard
+  const handleCopyDeficiencyNotice = () => {
+    const allDefs = [...standardDeficiencies, ...eslDeficiencies];
+    if (allDefs.length === 0) {
+      alert("All students currently have 100% complete scores for this category!");
+      return;
+    }
+
+    let text = `📢 WASHINGTON COMPREHENSIVE SCHOOL — MISSING SCORES NOTICE\n`;
+    text += `Assessment Category: ${reportFilterExamCategory} (${reportFilterQuarter})\n`;
+    text += `Generated: ${new Date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}\n\n`;
+
+    if (standardDeficiencies.length > 0) {
+      text += `=== STANDARD CURRICULUM (${standardDeficiencies.length} Students with Incomplete Scores) ===\n\n`;
+      standardDeficiencies.forEach((st, idx) => {
+        text += `${idx + 1}. ${st.studentName} (${st.gradeLevel} • ${st.community}) — ${st.completedCount}/${st.totalSubjectsCount} Completed (${st.missingCount} Missing):\n`;
+        st.missingSubjects.forEach(m => {
+          text += `   • ${m.subject} (${m.type}) → Teacher: ${m.teacherName} [${m.reason}]\n`;
+        });
+        text += `\n`;
+      });
+    }
+
+    if (eslDeficiencies.length > 0) {
+      text += `=== ESL PROGRAM (${eslDeficiencies.length} Students with Incomplete Scores) ===\n\n`;
+      eslDeficiencies.forEach((st, idx) => {
+        text += `${idx + 1}. ${st.studentName} (${st.gradeLevel} • ${st.community}) — ${st.completedCount}/${st.totalSubjectsCount} Completed (${st.missingCount} Missing):\n`;
+        st.missingSubjects.forEach(m => {
+          text += `   • ${m.subject} → Teacher: ${m.teacherName} [${m.reason}]\n`;
+        });
+        text += `\n`;
+      });
+    }
+
+    navigator.clipboard.writeText(text).then(() => {
+      setIsDeficiencyCopied(true);
+      setTimeout(() => setIsDeficiencyCopied(false), 3500);
+    }).catch(err => {
+      console.error("Clipboard error:", err);
+      alert("Failed to copy to clipboard.");
+    });
+  };
+
+  // Export deficiencies report to Excel
+  const handleExportDeficienciesExcel = () => {
+    const allDefs = [...standardDeficiencies, ...eslDeficiencies];
+    if (allDefs.length === 0) {
+      alert("No students with missing scores to export!");
+      return;
+    }
+
+    let html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <!--[if gte mso 9]>
+        <xml>
+          <x:ExcelWorkbook>
+            <x:ExcelWorksheets>
+              <x:ExcelWorksheet>
+                <x:Name>Deficiencies Audit</x:Name>
+                <x:WorksheetOptions>
+                  <x:DisplayGridlines/>
+                </x:WorksheetOptions>
+              </x:ExcelWorksheet>
+            </x:ExcelWorksheets>
+          </x:ExcelWorkbook>
+        </xml>
+        <![endif]-->
+        <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
+        <style>
+          body { font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
+          table { border-collapse: collapse; width: 100%; margin-bottom: 25px; }
+          th, td { border: 1px solid #cbd5e1; padding: 8px 10px; font-size: 10pt; text-align: left; vertical-align: middle; }
+          .title-banner { font-size: 13pt; font-weight: bold; background-color: #991b1b; color: #ffffff; text-align: center; padding: 12px; }
+          .header-main { background-color: #f1f5f9; font-weight: bold; font-size: 9.5pt; text-transform: uppercase; color: #334155; }
+          .student-name { font-weight: bold; color: #0f172a; }
+          .badge-missing { background-color: #fee2e2; color: #b91c1c; font-weight: bold; text-align: center; }
+          .badge-unrecorded { background-color: #fef2f2; color: #991b1b; font-weight: bold; text-align: center; }
+          .missing-list { font-size: 9pt; color: #334155; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <thead>
+            <tr>
+              <th colspan="6" class="title-banner">
+                WASHINGTON COMPREHENSIVE SCHOOL • MISSING SCORES & DEFICIENCY AUDIT (${reportFilterExamCategory} • ${reportFilterQuarter})
+              </th>
+            </tr>
+            <tr class="header-main">
+              <th style="width: 220px;">STUDENT NAME</th>
+              <th style="width: 100px;">GRADE LEVEL</th>
+              <th style="width: 120px;">COMMUNITY</th>
+              <th style="width: 130px; text-align: center;">DEFICIENCY STATUS</th>
+              <th style="width: 380px;">MISSING SUBJECTS & RESPONSIBLE TEACHERS</th>
+              <th style="width: 150px; text-align: center;">PROGRESS</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    allDefs.forEach(row => {
+      const missingText = row.missingSubjects.map(m => `• <b>${m.subject}</b> (${m.type || 'Subject'}) → Teacher: ${m.teacherName} [<i>${m.reason}</i>]`).join("<br/>");
+      const statusBadge = row.isFullyUnrecorded ? "badge-unrecorded" : "badge-missing";
+      const statusLabel = row.isFullyUnrecorded ? "0 of 8 Recorded (All Missing)" : `${row.missingCount} Missing`;
+
+      html += `
+        <tr>
+          <td class="student-name">${row.studentName}${row.studentCode ? `<br/><span style="font-size: 8pt; color: #94a3b8;">${row.studentCode}</span>` : ""}</td>
+          <td>${row.gradeLevel}</td>
+          <td>${row.community}</td>
+          <td class="${statusBadge}">${statusLabel}</td>
+          <td class="missing-list">${missingText}</td>
+          <td style="text-align: center; font-weight: bold;">${row.completedCount} of ${row.totalSubjectsCount} Completed</td>
+        </tr>
+      `;
+    });
+
+    html += `</tbody></table></body></html>`;
+
+    const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Academic_Deficiencies_Report_${new Date().toISOString().split("T")[0]}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Compute Teacher Assessment Compliance Matrix Data (for Tab 3)
+  const teacherExamComplianceData = React.useMemo(() => {
+    const classRows = [];
+
+    teachers.forEach(t => {
+      const tId = t.id || t.uid;
+      const tName = t.fullName || t.name || t.email || "Teacher";
+      const assignments = t.assignments || [];
+
+      assignments.forEach(asg => {
+        const g = asg.grade || asg.gradeLevel || "Grade 1";
+        const subj = asg.subject || "";
+        const classIdSlug = `${g.replace(/\s+/g, '-').toLowerCase()}-${subj.replace(/\s+/g, '-').toLowerCase()}`;
+        const classTag = `${tId}_${classIdSlug}`;
+
+        // 1. Find matching exam
+        const matchedExam = academicExams.find(ex => {
+          const matchesCat = complianceFilterExamCategory === "All Categories" || ex.category === complianceFilterExamCategory;
+          const matchesQtr = complianceFilterQuarter === "All" || ex.quarter === complianceFilterQuarter;
+          if (!matchesCat || !matchesQtr) return false;
+
+          const matchesTag = ex.classId === classTag || ex.classId === classIdSlug;
+          const matchesSubjGrade = isExamMatchingSubject(null, ex, subj) && matchExamGrade(ex, g) && (ex.teacherId === tId || !ex.teacherId);
+          return matchesTag || matchesSubjGrade;
+        });
+
+        // 2. Find enrolled students for this class
+        const enrolledStudents = students.filter(st => {
+          if (st.role !== "student") return false;
+          const hasTag = Array.isArray(st.enrolledClasses) && st.enrolledClasses.includes(classTag);
+          const hasLegacy = (Array.isArray(st.enrolledTeachers) && st.enrolledTeachers.includes(tId) && st.classId === classIdSlug) || (st.teacherId === tId && st.classId === classIdSlug);
+          const matchesGradeDirect = (st.grade === g || st.gradeLevel === g);
+          return hasTag || hasLegacy || (matchesGradeDirect && (!st.enrolledClasses || st.enrolledClasses.length === 0));
+        });
+
+        // 3. Find graded submissions for this exam
+        let gradedSubs = [];
+        if (matchedExam) {
+          const exId = matchedExam.firestoreId || matchedExam.id;
+          gradedSubs = academicExamSubs.filter(s => 
+            (s.examId === exId || s.examId === matchedExam.id) &&
+            enrolledStudents.some(st => (st.id && st.id === s.studentId) || (st.uid && st.uid === s.studentId))
+          );
+        }
+
+        const enrolledCount = enrolledStudents.length;
+        const gradedCount = gradedSubs.length;
+        const pendingCount = Math.max(0, enrolledCount - gradedCount);
+        const completionRate = enrolledCount > 0 ? Math.round((gradedCount / enrolledCount) * 100) : 0;
+
+        const pendingStudents = enrolledStudents.filter(st => 
+          !gradedSubs.some(s => s.studentId === st.id || s.studentId === st.uid)
+        );
+
+        classRows.push({
+          teacherId: tId,
+          teacherName: tName,
+          teacherEmail: t.email,
+          grade: g,
+          subject: subj,
+          classTag,
+          exam: matchedExam,
+          isExamCreated: !!matchedExam,
+          examTitle: matchedExam?.title || "No Exam Scope Created",
+          examMaxScore: matchedExam?.maxScore || null,
+          enrolledCount,
+          gradedCount,
+          pendingCount,
+          completionRate,
+          pendingStudents
+        });
+      });
+    });
+
+    return classRows.sort((a, b) => {
+      if (a.isExamCreated !== b.isExamCreated) return a.isExamCreated ? 1 : -1;
+      if (a.completionRate !== b.completionRate) return a.completionRate - b.completionRate;
+      return a.teacherName.localeCompare(b.teacherName);
+    });
+  }, [teachers, students, academicExams, academicExamSubs, complianceFilterExamCategory, complianceFilterQuarter]);
 
   const uniqueExamCategories = [
     "1st Monthly Exam",
@@ -2342,6 +2705,172 @@ export default function AdminDashboard() {
               </div>
             )}
           </div>
+
+          {/* Assessment Grading Compliance Matrix Card */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden transition-colors space-y-4 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400">
+                    <BookOpen className="h-5 w-5" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
+                    Teacher Assessment & Exam Grading Compliance Matrix
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  Monitors whether teachers have created exam scopes and finalized grades for their assigned classes.
+                </p>
+              </div>
+
+              {/* Filter controls */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <select
+                  value={complianceFilterExamCategory}
+                  onChange={(e) => setComplianceFilterExamCategory(e.target.value)}
+                  className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                >
+                  {uniqueExamCategories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={complianceFilterQuarter}
+                  onChange={(e) => setComplianceFilterQuarter(e.target.value)}
+                  className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                >
+                  {quarterOptions.map((q) => (
+                    <option key={q} value={q}>{q === "All" ? "All Quarters" : q}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Quick Metrics Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Classes</div>
+                <div className="text-lg font-black text-slate-800 dark:text-slate-100 mt-0.5">{teacherExamComplianceData.length}</div>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/30">
+                <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">100% Fully Graded</div>
+                <div className="text-lg font-black text-emerald-700 dark:text-emerald-300 mt-0.5">
+                  {teacherExamComplianceData.filter(c => c.isExamCreated && c.enrolledCount > 0 && c.pendingCount === 0).length}
+                </div>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30">
+                <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Grading In Progress</div>
+                <div className="text-lg font-black text-amber-700 dark:text-amber-300 mt-0.5">
+                  {teacherExamComplianceData.filter(c => c.isExamCreated && c.pendingCount > 0).length}
+                </div>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30">
+                <div className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider">No Exam Scope</div>
+                <div className="text-lg font-black text-rose-700 dark:text-rose-300 mt-0.5">
+                  {teacherExamComplianceData.filter(c => !c.isExamCreated).length}
+                </div>
+              </div>
+            </div>
+
+            {/* Assessment Compliance Table */}
+            {teacherExamComplianceData.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                      <th className="px-5 py-3">Faculty Member</th>
+                      <th className="px-5 py-3">Assigned Class & Subject</th>
+                      <th className="px-5 py-3">Exam Scope Status</th>
+                      <th className="px-5 py-3 text-center">Roster vs Graded</th>
+                      <th className="px-5 py-3 text-center">Completion Rate</th>
+                      <th className="px-5 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-semibold text-slate-700 dark:text-slate-200">
+                    {teacherExamComplianceData.map((row, idx) => (
+                      <tr key={`${row.teacherId}_${row.grade}_${row.subject}_${idx}`} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="px-5 py-3.5">
+                          <div className="font-bold text-slate-800 dark:text-slate-100">{row.teacherName}</div>
+                          <div className="text-[10px] text-slate-400 font-mono font-normal">{row.teacherEmail}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="font-bold text-brand-600 dark:text-brand-400">{row.subject}</div>
+                          <div className="text-[10px] text-slate-500 font-normal">{row.grade}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {row.isExamCreated ? (
+                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                              <CheckCircle className="h-3 w-3" />
+                              <span>Published ({row.examMaxScore} pts)</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
+                              <X className="h-3 w-3" />
+                              <span>No Exam Scope</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5 text-center">
+                          <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-100">
+                            {row.gradedCount} / {row.enrolledCount} Graded
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-center">
+                          <div className="flex flex-col items-center justify-center space-y-1">
+                            <span className={`font-mono text-xs font-black ${
+                              row.completionRate === 100
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : row.completionRate > 0
+                                ? "text-amber-600 dark:text-amber-400"
+                                : "text-rose-600 dark:text-rose-400"
+                            }`}>
+                              {row.completionRate}%
+                            </span>
+                            <div className="w-20 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                              <div
+                                className={`h-full ${
+                                  row.completionRate === 100
+                                    ? "bg-emerald-500"
+                                    : row.completionRate > 0
+                                    ? "bg-amber-500"
+                                    : "bg-rose-500"
+                                }`}
+                                style={{ width: `${row.completionRate}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          {row.pendingCount > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setComplianceDrilldownClass(row)}
+                              className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-xs font-bold transition-colors cursor-pointer"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              <span>{row.pendingCount} Pending</span>
+                            </button>
+                          ) : row.enrolledCount === 0 ? (
+                            <span className="text-[10px] text-slate-400 italic">No students enrolled</span>
+                          ) : (
+                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-xs font-bold border border-emerald-100 dark:border-emerald-800/40">
+                              <CheckCircle className="h-3 w-3" />
+                              <span>Complete</span>
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-12 text-center text-slate-400 text-sm font-medium">
+                No teacher class assignments found for evaluation.
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -2486,13 +3015,73 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Summary Bar */}
+          {/* Sub-View Mode Switcher (Master Pivot vs Deficiencies Audit) */}
           <div className="flex flex-wrap items-center justify-between gap-4 print:hidden">
-            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              <span>
-                Showing <strong className="text-slate-800 dark:text-slate-200">{standardStudents.length} Standard</strong> & <strong className="text-slate-800 dark:text-slate-200">{eslStudents.length} ESL</strong> Students for <strong className="text-brand-600 dark:text-brand-400">{reportFilterExamCategory}</strong>
-              </span>
+            <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setAcademicSubView("pivot")}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  academicSubView === "pivot"
+                    ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-xs"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                <Table className="h-4 w-4" />
+                <span>Master Pivot Report</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 dark:bg-slate-800 font-extrabold text-slate-700 dark:text-slate-300">
+                  {standardStudents.length + eslStudents.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAcademicSubView("deficiencies")}
+                className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  academicSubView === "deficiencies"
+                    ? "bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-400 shadow-xs"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                }`}
+              >
+                <AlertTriangle className="h-4 w-4" />
+                <span>Missing Scores & Deficiencies Audit</span>
+                {(standardDeficiencies.length + eslDeficiencies.length) > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 font-extrabold">
+                    {standardDeficiencies.length + eslDeficiencies.length} Pending
+                  </span>
+                )}
+              </button>
             </div>
+
+            {academicSubView === "deficiencies" ? (
+              <div className="flex items-center space-x-2.5">
+                <button
+                  type="button"
+                  onClick={handleCopyDeficiencyNotice}
+                  className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  title="Copy formatted deficiency notice for faculty group chats"
+                >
+                  {isDeficiencyCopied ? <CheckCheck className="h-4 w-4 text-emerald-400" /> : <ClipboardCopy className="h-4 w-4" />}
+                  <span>{isDeficiencyCopied ? "Copied Reminder Notice!" : "Copy Reminder Notice"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportDeficienciesExcel}
+                  className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  title="Export missing scores audit to Excel"
+                >
+                  <Download className="h-4 w-4" />
+                  <span>Export Deficiencies (Excel)</span>
+                </button>
+              </div>
+            ) : (
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                <span>
+                  Showing <strong className="text-slate-800 dark:text-slate-200">{standardStudents.length} Standard</strong> & <strong className="text-slate-800 dark:text-slate-200">{eslStudents.length} ESL</strong> Students with Recorded Scores for <strong className="text-brand-600 dark:text-brand-400">{reportFilterExamCategory}</strong>
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Academic Report Data Tables */}
@@ -2500,7 +3089,221 @@ export default function AdminDashboard() {
             <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-16 text-center text-slate-400 text-sm font-medium shadow-sm">
               Loading school-wide academic data...
             </div>
+          ) : academicSubView === "deficiencies" ? (
+            /* ════════════════════════════════════════════════════════════════════════
+               SUB-VIEW: MISSING SCORES & DEFICIENCIES AUDIT
+               ════════════════════════════════════════════════════════════════════════ */
+            <div className="space-y-8">
+              {/* Deficiency Alert Banner */}
+              <div className="p-5 rounded-3xl bg-rose-50/70 dark:bg-rose-950/20 border border-rose-200/70 dark:border-rose-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start space-x-3.5">
+                  <div className="p-2.5 rounded-2xl bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 shrink-0">
+                    <FileWarning className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-rose-950 dark:text-rose-100 font-heading">
+                      Academic Score Deficiency & Incomplete Roster Audit
+                    </h4>
+                    <p className="text-xs text-rose-800/80 dark:text-rose-300/80 mt-0.5">
+                      Identifies students who are missing 1 or more exam scores for <strong>{reportFilterExamCategory}</strong> ({reportFilterQuarter}). Check responsible subject teachers below to follow up.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 shrink-0">
+                  <span className="text-xs font-black text-rose-700 dark:text-rose-300 bg-white dark:bg-slate-900 px-3.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-800 shadow-2xs">
+                    {standardDeficiencies.length + eslDeficiencies.length} Incomplete Student{standardDeficiencies.length + eslDeficiencies.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              </div>
+
+              {/* Standard Deficiencies Table */}
+              {standardDeficiencies.length > 0 && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm space-y-4">
+                  <div className="p-5 pb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="h-3 w-3 rounded-full bg-rose-500" />
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
+                        Standard Curriculum Missing Scores
+                      </h3>
+                    </div>
+                    <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-100 dark:border-rose-800">
+                      {standardDeficiencies.length} Students Pending
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          <th className="p-3.5">Student Name</th>
+                          <th className="p-3.5">Grade Level</th>
+                          <th className="p-3.5">Community</th>
+                          <th className="p-3.5">Deficiency Status</th>
+                          <th className="p-3.5">Missing Subjects & Responsible Teachers</th>
+                          <th className="p-3.5 text-center">Progress</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-semibold">
+                        {standardDeficiencies.map((st) => (
+                          <tr key={st.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                            <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100">
+                              <div>{st.studentName}</div>
+                              {st.studentCode && <div className="text-[10px] font-mono text-slate-400 font-normal">{st.studentCode}</div>}
+                            </td>
+                            <td className="p-3.5 text-slate-700 dark:text-slate-300">{st.gradeLevel}</td>
+                            <td className="p-3.5 text-slate-600 dark:text-slate-400">{st.community}</td>
+                            <td className="p-3.5">
+                              {st.isFullyUnrecorded ? (
+                                <span className="inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-50 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                  0 of 8 (Unrecorded)
+                                </span>
+                              ) : (
+                                <span className="inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-50 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                  {st.missingCount} Missing
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3.5">
+                              <div className="flex flex-wrap gap-1.5">
+                                {st.missingSubjects.map((m, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="inline-flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[11px]"
+                                    title={`Reason: ${m.reason}`}
+                                  >
+                                    <span className="font-extrabold text-slate-800 dark:text-slate-200">{m.subject}</span>
+                                    <span className="text-[9px] text-slate-400">({m.type})</span>
+                                    <span className="text-slate-300 dark:text-slate-600">•</span>
+                                    <span className="font-bold text-brand-600 dark:text-brand-400">{m.teacherName}</span>
+                                    {m.reason.includes("No exam") && (
+                                      <span className="text-[9px] px-1 py-0.2 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded font-semibold">No Exam</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <div className="flex flex-col items-center justify-center space-y-1">
+                                <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
+                                  {st.completedCount}/{st.totalSubjectsCount}
+                                </span>
+                                <div className="w-16 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                  <div
+                                    className={`h-full ${st.completedCount === 0 ? "bg-rose-500" : "bg-amber-500"}`}
+                                    style={{ width: `${Math.round((st.completedCount / st.totalSubjectsCount) * 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ESL Deficiencies Table */}
+              {eslDeficiencies.length > 0 && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm space-y-4">
+                  <div className="p-5 pb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-4">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="h-3 w-3 rounded-full bg-amber-500" />
+                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
+                        ESL Program Missing Scores
+                      </h3>
+                    </div>
+                    <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800">
+                      {eslDeficiencies.length} Students Pending
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          <th className="p-3.5">Student Name</th>
+                          <th className="p-3.5">Level / Grade</th>
+                          <th className="p-3.5">Community</th>
+                          <th className="p-3.5">Deficiency Status</th>
+                          <th className="p-3.5">Missing Subjects & Responsible Teachers</th>
+                          <th className="p-3.5 text-center">Progress</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-semibold">
+                        {eslDeficiencies.map((st) => (
+                          <tr key={st.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                            <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100">
+                              <div>{st.studentName}</div>
+                              {st.studentCode && <div className="text-[10px] font-mono text-slate-400 font-normal">{st.studentCode}</div>}
+                            </td>
+                            <td className="p-3.5 text-slate-700 dark:text-slate-300">{st.gradeLevel}</td>
+                            <td className="p-3.5 text-slate-600 dark:text-slate-400">{st.community}</td>
+                            <td className="p-3.5">
+                              {st.isFullyUnrecorded ? (
+                                <span className="inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black bg-rose-50 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                  0 Scores (Unrecorded)
+                                </span>
+                              ) : (
+                                <span className="inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black bg-amber-50 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                  {st.missingCount} Missing
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3.5">
+                              <div className="flex flex-wrap gap-1.5">
+                                {st.missingSubjects.map((m, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="inline-flex items-center space-x-1.5 px-2 py-1 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-[11px]"
+                                  >
+                                    <span className="font-extrabold text-slate-800 dark:text-slate-200">{m.subject}</span>
+                                    <span className="text-slate-300 dark:text-slate-600">•</span>
+                                    <span className="font-bold text-amber-600 dark:text-amber-400">{m.teacherName}</span>
+                                    {m.reason.includes("No exam") && (
+                                      <span className="text-[9px] px-1 py-0.2 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded font-semibold">No Exam</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="p-3.5 text-center">
+                              <div className="flex flex-col items-center justify-center space-y-1">
+                                <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
+                                  {st.completedCount}/{st.totalSubjectsCount}
+                                </span>
+                                <div className="w-16 h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                                  <div
+                                    className={`h-full ${st.completedCount === 0 ? "bg-rose-500" : "bg-amber-500"}`}
+                                    style={{ width: `${Math.round((st.completedCount / st.totalSubjectsCount) * 100)}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Zero Deficiencies State */}
+              {standardDeficiencies.length === 0 && eslDeficiencies.length === 0 && (
+                <div className="bg-white dark:bg-slate-900 border border-emerald-100 dark:border-emerald-900/30 rounded-3xl p-16 text-center space-y-3 shadow-sm">
+                  <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto animate-bounce" />
+                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">100% Complete Roster Compliance!</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                    All matching students have recorded scores for all subjects in <strong>{reportFilterExamCategory}</strong>. There are no score deficiencies.
+                  </p>
+                </div>
+              )}
+            </div>
           ) : (
+            /* ════════════════════════════════════════════════════════════════════════
+               SUB-VIEW: MASTER PIVOT REPORT (Existing Clean Tables)
+               ════════════════════════════════════════════════════════════════════════ */
             <div className="space-y-8">
               {/* Print-only School Header Banner */}
               <div className="hidden print:block mb-6 text-center border-b-2 border-slate-900 pb-3">
@@ -2803,10 +3606,104 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Modals & Overlay Components */}
 
 
 
+      {/* Teacher Assessment Compliance: Pending Students Drilldown Modal */}
+      {complianceDrilldownClass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up max-h-[85vh] overflow-y-auto transition-colors space-y-6">
+            <button
+              onClick={() => setComplianceDrilldownClass(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <div className="flex items-start space-x-3.5">
+              <div className="p-2.5 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-2xl shrink-0">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-950 dark:text-white font-heading">
+                  Pending Students • {complianceDrilldownClass.subject}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Assigned Teacher: <strong className="text-slate-800 dark:text-slate-200">{complianceDrilldownClass.teacherName}</strong> • {complianceDrilldownClass.grade}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-800/40 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div>
+                <span className="font-bold text-amber-900 dark:text-amber-200">
+                  {complianceDrilldownClass.pendingStudents.length} of {complianceDrilldownClass.enrolledCount} enrolled students
+                </span>{" "}
+                <span className="text-amber-700/80 dark:text-amber-400/80">do not have a recorded score for {complianceFilterExamCategory}.</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const names = complianceDrilldownClass.pendingStudents
+                    .map((s, idx) => `${idx + 1}. ${s.internationalName || s.fullName || s.name || "Student"} (${s.gradeLevel || s.grade || ""})`)
+                    .join("\n");
+                  navigator.clipboard.writeText(
+                    `Students pending scores for ${complianceDrilldownClass.subject} (${complianceDrilldownClass.grade} - Teacher ${complianceDrilldownClass.teacherName}):\n${names}`
+                  );
+                  alert("Pending students list copied to clipboard!");
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+              >
+                <ClipboardCopy className="h-3.5 w-3.5" />
+                <span>Copy Student List</span>
+              </button>
+            </div>
+
+            <div className="border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="p-3">#</th>
+                    <th className="p-3">Student Name</th>
+                    <th className="p-3">Grade</th>
+                    <th className="p-3">Community</th>
+                    <th className="p-3 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-semibold">
+                  {complianceDrilldownClass.pendingStudents.map((st, idx) => (
+                    <tr key={st.id || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                      <td className="p-3 text-slate-400 font-mono text-[10px]">{idx + 1}</td>
+                      <td className="p-3 font-bold text-slate-900 dark:text-slate-100">
+                        {st.internationalName || st.fullName || st.name || "Student"}
+                        {st.studentCode && <span className="block text-[10px] text-slate-400 font-mono font-normal">{st.studentCode}</span>}
+                      </td>
+                      <td className="p-3 text-slate-600 dark:text-slate-400">{st.gradeLevel || st.grade || "—"}</td>
+                      <td className="p-3 text-slate-600 dark:text-slate-400">{st.communityName || st.communityCenter || st.community || "—"}</td>
+                      <td className="p-3 text-right">
+                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                          Score Unrecorded
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setComplianceDrilldownClass(null)}
+                className="px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Provision Teacher Modal */}
       {isModalOpen && (
