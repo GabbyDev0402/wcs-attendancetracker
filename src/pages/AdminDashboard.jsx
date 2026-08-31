@@ -1573,7 +1573,12 @@ export default function AdminDashboard() {
   }, [filteredExams]);
 
   // 3. Processed and Segregated Student Pivot Data (Standard vs ESL)
-  const { standardStudents, eslStudents } = React.useMemo(() => {
+  const { 
+    standardStudents = [], 
+    eslStudents = [], 
+    standardDeficiencies = [], 
+    eslDeficiencies = [] 
+  } = React.useMemo(() => {
     const matchingStudents = students.filter(st => {
       if (st.role !== "student") return false;
       const gLevel = st.grade || st.gradeLevel || "Grade 1";
