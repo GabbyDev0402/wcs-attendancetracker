@@ -2797,12 +2797,6 @@ export default function AdminDashboard() {
                 Real-time monitoring of unreviewed student diaries and vocabulary sentence submissions.
               </p>
             </div>
-            <div className="flex items-center space-x-2">
-              <span className="text-xs font-bold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-3 py-1.5 rounded-xl border border-brand-100 dark:border-brand-800 flex items-center space-x-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Real-time Firestore Sync Active</span>
-              </span>
-            </div>
           </div>
 
           {/* Unassigned Pending Submissions Alert Banner if any exist */}

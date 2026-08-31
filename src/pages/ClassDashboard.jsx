@@ -101,14 +101,14 @@ export default function ClassDashboard() {
     fetchedTabsRef.current = {};
   }, [classId]);
 
-  // Tab State: 'roster' | 'attendance' | 'vocabularies' | 'exams'
-  const currentTabParam = searchParams.get("tab") || "roster";
+  // Tab State: 'attendance' | 'vocabularies' | 'exams' | 'tasks' | 'record' | 'roster'
+  const currentTabParam = searchParams.get("tab") || "attendance";
   const [activeTab, setActiveTab] = useState(currentTabParam);
 
   // Class Info State
   const [classInfo, setClassInfo] = useState({ name: "Loading Class...", grade: "", subject: "" });
 
-  // Roster State (Tab 1)
+  // Roster State (Tab 6)
   const [classStudents, setClassStudents] = useState([]);
   const [isRosterLoading, setIsRosterLoading] = useState(true);
   const [rosterSearchQuery, setRosterSearchQuery] = useState("");
@@ -156,7 +156,7 @@ export default function ClassDashboard() {
 
   const todayStr = new Date().toISOString().split("T")[0];
 
-  // Attendance State (Tab 2)
+  // Attendance State (Tab 1)
   const [attendanceDate, setAttendanceDate] = useState(todayStr);
   const [attendance, setAttendance] = useState({});
   const [topic, setTopic] = useState("");
@@ -170,7 +170,7 @@ export default function ClassDashboard() {
   const [existingSessionId, setExistingSessionId] = useState(null);
   const [attendanceSuccessToast, setAttendanceSuccessToast] = useState(false);
 
-  // Vocabularies State (Tab 3)
+  // Vocabularies State (Tab 2)
   const [vocabularies, setVocabularies] = useState([]);
   const [isVocabLoading, setIsVocabLoading] = useState(false);
   const [isBuildingVocab, setIsBuildingVocab] = useState(false);
@@ -189,7 +189,7 @@ export default function ClassDashboard() {
   const [isVocabModalOpen, setIsVocabModalOpen] = useState(false);
   const [isGradingVocab, setIsGradingVocab] = useState(false);
 
-  // Vocabularies & Submissions State (Tab 3)
+  // Vocabularies & Submissions State (Tab 2)
   const [rawClassSessionsHistory, setRawClassSessionsHistory] = useState([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [historyRangeFilter, setHistoryRangeFilter] = useState("7days");
@@ -199,12 +199,12 @@ export default function ClassDashboard() {
   const [selectedVocabSub, setSelectedVocabSub] = useState(null);
   const [vocabFeedbackInput, setVocabFeedbackInput] = useState("");
 
-  // Graded Vocab Submissions Archive State (Tab 3 Middle Section)
+  // Graded Vocab Submissions Archive State (Tab 2 Middle Section)
   const [rawGradedVocabSubmissions, setRawGradedVocabSubmissions] = useState([]);
   const [gradedVocabDateFilter, setGradedVocabDateFilter] = useState(todayStr);
   const [isGradedVocabLoading, setIsGradedVocabLoading] = useState(false);
 
-  // Exams State (Tab 4) - Google Forms + Exam Scope Architecture
+  // Exams State (Tab 3) - Google Forms + Exam Scope Architecture
   const [exams, setExams] = useState([]);
   const [isExamsLoading, setIsExamsLoading] = useState(false);
   const [examPublishSuccess, setExamPublishSuccess] = useState(false);
@@ -216,7 +216,7 @@ export default function ClassDashboard() {
   const [scopeText, setScopeText] = useState("");
   const [scopeQuarter, setScopeQuarter] = useState("1st Quarter");
   const [scopeCategory, setScopeCategory] = useState("1st Monthly Exam");
-  const [scopeMaxScore, setScopeMaxScore] = useState(100);
+  const [scopeMaxScore, setScopeMaxScore] = useState(0);
   const [isSavingScope, setIsSavingScope] = useState(false);
 
   // Edit Google Form Link State
@@ -929,7 +929,7 @@ export default function ClassDashboard() {
     setScopeText("");
     setScopeQuarter("1st Quarter");
     setScopeCategory("1st Monthly Exam");
-    setScopeMaxScore(100);
+    setScopeMaxScore(0);
     setIsAddExamScopeModalOpen(true);
   };
 
@@ -939,7 +939,7 @@ export default function ClassDashboard() {
     setScopeText(exam.scopeText || "");
     setScopeQuarter(exam.quarter || "1st Quarter");
     setScopeCategory(exam.category || "1st Monthly Exam");
-    setScopeMaxScore(exam.maxScore || 100);
+    setScopeMaxScore(exam.maxScore ?? 0);
     setIsAddExamScopeModalOpen(true);
   };
 
@@ -1702,7 +1702,7 @@ export default function ClassDashboard() {
       text: "",
       prompt: "",
       points: 1,
-      required: false,
+      required: true,
       rationale: "",
       options: ["", "", "", ""],
       correctOptionIndex: 0,
@@ -1719,11 +1719,11 @@ export default function ClassDashboard() {
     let newQ = { ...base };
     switch (type) {
       case "multipleChoice":
-        newQ.options = ["Option A", "Option B", "Option C", "Option D"];
+        newQ.options = ["", "", "", ""];
         newQ.correctOptionIndex = 0;
         break;
       case "checkboxes":
-        newQ.options = ["Option A", "Option B", "Option C", "Option D"];
+        newQ.options = ["", "", "", ""];
         newQ.correctOptionIndices = [0];
         break;
       case "identification":
@@ -2023,25 +2023,11 @@ export default function ClassDashboard() {
       <div className="border-b border-slate-200 dark:border-slate-800">
         <nav className="flex space-x-4 sm:space-x-8" aria-label="Classroom Tabs">
           <button
-            onClick={() => handleTabChange("roster")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "roster"
-                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
-                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
-          >
-            <Users className="h-4.5 w-4.5" />
-            <span>Class Roster</span>
-            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-              {classStudents.length}
-            </span>
-          </button>
-
-          <button
             onClick={() => handleTabChange("attendance")}
             className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "attendance"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
+            }`}
           >
             <ClipboardCheck className="h-4.5 w-4.5" />
             <span>Attendance & Log</span>
@@ -2052,7 +2038,7 @@ export default function ClassDashboard() {
             className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "vocabularies"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
+            }`}
           >
             <BookOpen className="h-4.5 w-4.5" />
             <span>Vocabularies & Submissions</span>
@@ -2068,7 +2054,7 @@ export default function ClassDashboard() {
             className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "exams"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
+            }`}
           >
             <ListChecks className="h-4.5 w-4.5" />
             <span>Exams</span>
@@ -2084,7 +2070,7 @@ export default function ClassDashboard() {
             className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "tasks"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
+            }`}
           >
             <FolderKanban className="h-4.5 w-4.5" />
             <span>Assignments & Tasks</span>
@@ -2100,10 +2086,24 @@ export default function ClassDashboard() {
             className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "record"
                 ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-              }`}
+            }`}
           >
             <Table className="h-4.5 w-4.5" />
             <span>E-Class Record</span>
+          </button>
+
+          <button
+            onClick={() => handleTabChange("roster")}
+            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "roster"
+                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+            }`}
+          >
+            <Users className="h-4.5 w-4.5" />
+            <span>Class Roster</span>
+            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+              {classStudents.length}
+            </span>
           </button>
         </nav>
       </div>
@@ -2946,7 +2946,7 @@ export default function ClassDashboard() {
               className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0"
             >
               <Plus className="h-4 w-4" />
-              <span>+ Add Exam Scope</span>
+              <span>Add Exam Scope</span>
             </button>
           </div>
 
@@ -3061,7 +3061,7 @@ export default function ClassDashboard() {
             <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
               <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
               <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Exam Scopes Added Yet</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Click "+ Add Exam Scope" to publish the first assessment topic and study guidelines.</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Click "Add Exam Scope" to publish the first assessment topic and study guidelines.</p>
             </div>
           )}
         </div>
@@ -3657,7 +3657,7 @@ export default function ClassDashboard() {
                                 </div>
 
                                 <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Content / Instructions (Rich Text Formatting)</label>
+                                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Content / Instructions</label>
                                   <ReactQuill
                                     theme="snow"
                                     value={q.content || ""}
@@ -3707,13 +3707,13 @@ export default function ClassDashboard() {
 
                               {/* Question Prompt with Rich Text ReactQuill */}
                               <div>
-                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt (Rich Text Formatting)</label>
+                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt</label>
                                 <ReactQuill
                                   theme="snow"
                                   value={q.text || ""}
                                   onChange={(val) => updateTaskQuestion(q.id, "text", val)}
                                   modules={quillModules}
-                                  placeholder="Enter question prompt, formatted exponents (e.g. x²), bold, or list items..."
+                                  placeholder="Enter question prompt..."
                                   className="bg-white dark:bg-slate-900 rounded-xl text-slate-800 dark:text-slate-100"
                                 />
                               </div>
@@ -3722,7 +3722,7 @@ export default function ClassDashboard() {
                               {q.type === "multipleChoice" && (
                                 <div className="space-y-3">
                                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select single correct answer)</label>
-                                  {(q.options || ["Option A", "Option B", "Option C", "Option D"]).map((opt, optIdx) => (
+                                  {(q.options || ["", "", "", ""]).map((opt, optIdx) => (
                                     <div key={optIdx} className="flex items-center space-x-2">
                                       <button
                                         type="button"
@@ -3753,7 +3753,7 @@ export default function ClassDashboard() {
                               {q.type === "checkboxes" && (
                                 <div className="space-y-3">
                                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (check all correct answers)</label>
-                                  {(q.options || ["Option A", "Option B", "Option C", "Option D"]).map((opt, optIdx) => {
+                                  {(q.options || ["", "", "", ""]).map((opt, optIdx) => {
                                     const isChecked = (q.correctOptionIndices || []).includes(optIdx);
                                     return (
                                       <div key={optIdx} className="flex items-center space-x-2">
@@ -3860,7 +3860,7 @@ export default function ClassDashboard() {
 
                                 <div>
                                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">
-                                    Answer Explanation / Rationale (Optional - Shown to students after grading)
+                                    Answer Explanation (Optional)
                                   </label>
                                   <input
                                     type="text"
@@ -3892,7 +3892,7 @@ export default function ClassDashboard() {
                         <Plus className="h-3.5 w-3.5" /><span>Multiple Choice</span>
                       </button>
                       <button onClick={() => addTaskQuestion("checkboxes")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800 text-xs font-bold hover:bg-purple-100 transition-colors cursor-pointer w-full">
-                        <CheckSquare className="h-3.5 w-3.5" /><span>+ Checkboxes</span>
+                        <CheckSquare className="h-3.5 w-3.5" /><span>Checkboxes</span>
                       </button>
                       <button onClick={() => addTaskQuestion("identification")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 transition-colors cursor-pointer w-full">
                         <Plus className="h-3.5 w-3.5" /><span>Identification</span>
@@ -3904,16 +3904,16 @@ export default function ClassDashboard() {
                         <Plus className="h-3.5 w-3.5" /><span>Essay</span>
                       </button>
                       <button onClick={() => addTaskQuestion("fileUpload")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800 text-xs font-bold hover:bg-emerald-100 transition-colors cursor-pointer w-full">
-                        <Paperclip className="h-3.5 w-3.5" /><span>+ File/Link Upload</span>
+                        <Paperclip className="h-3.5 w-3.5" /><span>File / Link Upload</span>
                       </button>
 
                       <div className="border-t border-slate-100 dark:border-slate-800 my-1" />
 
                       <button onClick={() => addTaskQuestion("section")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 text-xs font-bold hover:bg-indigo-100 transition-colors cursor-pointer w-full">
-                        <FolderPlus className="h-3.5 w-3.5" /><span>+ Add Section</span>
+                        <FolderPlus className="h-3.5 w-3.5" /><span>Add Section</span>
                       </button>
                       <button onClick={() => addTaskQuestion("info")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold hover:bg-slate-200 transition-colors cursor-pointer w-full">
-                        <Type className="h-3.5 w-3.5" /><span>+ Add Text Block</span>
+                        <Type className="h-3.5 w-3.5" /><span>Add Text Block</span>
                       </button>
                     </div>
                   </div>
@@ -4831,7 +4831,7 @@ export default function ClassDashboard() {
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
               <div>
                 <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
-                  {editingExamScope ? "Edit Exam Scope & Guidelines" : "+ Add Exam Scope & Guidelines"}
+                  {editingExamScope ? "Edit Exam Scope & Guidelines" : "Add Exam Scope & Guidelines"}
                 </h3>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
                   {editingExamScope ? "Update assessment topics, max score, or instructions for students." : "Publish assessment topics, test coverage, and instructions for students."}
@@ -4907,7 +4907,7 @@ export default function ClassDashboard() {
                   </label>
                   <input
                     type="number"
-                    min="1"
+                    min="0"
                     value={scopeMaxScore}
                     onChange={(e) => setScopeMaxScore(e.target.value)}
                     className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
@@ -4918,7 +4918,7 @@ export default function ClassDashboard() {
               {/* Scope Rich Text Editor */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                  Exam Scope & Coverage / Instructions (Rich Text)
+                  Exam Scope & Instructions
                 </label>
                 <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden">
                   <ReactQuill
