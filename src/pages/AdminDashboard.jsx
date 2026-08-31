@@ -106,7 +106,7 @@ const CANONICAL_SUBJECTS = [
   {
     name: "Social Science",
     order: 4,
-    keywords: ["social science", "social studies", "social", "history", "araling panlipunan", "ap", "geography", "civics", "economics", "diss", "philippine history", "world history", "asian studies", "kasaysayan", "philippine politics", "ucsp"]
+    keywords: ["social science", "social studies", "social", "history", "araling panlipunan", "ap", "geography", "civics", "economics", "diss", "diass", "philippine history", "world history", "asian studies", "kasaysayan", "philippine politics", "ucsp"]
   },
   {
     name: "Reading",
@@ -1392,7 +1392,7 @@ export default function AdminDashboard() {
         return true;
       }
     } else if (ts === "social science") {
-      if ((title.includes("social") || title.includes("history") || title.includes("araling panlipunan") || title.includes("ap") || title.includes("kasaysayan") || title.includes("civics") || title.includes("economics")) && 
+      if ((title.includes("social") || title.includes("history") || title.includes("araling panlipunan") || title.includes("ap") || title.includes("kasaysayan") || title.includes("civics") || title.includes("economics") || title.includes("diss") || title.includes("diass") || title.includes("ucsp") || title.includes("philippine politics")) && 
           !title.includes("values") && !title.includes("esp")) {
         return true;
       }
@@ -1492,7 +1492,12 @@ export default function AdminDashboard() {
       if (!matchExamGrade(ex, gradeLevel)) return false;
       const isCore = isExamMatchingSubject(ex, null, pillar.core);
       const isAdded = isExamMatchingSubject(ex, null, effectiveAddedSubject) || isExamMatchingSubject(ex, null, pillar.added);
-      return isCore || isAdded;
+      
+      const classIdSlug = (ex.classId || "").toLowerCase();
+      const inCoreClass = classIdSlug.includes(pillar.core.toLowerCase().replace(/\s+/g, '-')) || 
+                          classIdSlug.includes(pillar.core.toLowerCase().replace(/\s+/g, ''));
+
+      return isCore || isAdded || inCoreClass;
     });
 
     let coreExam = null;
@@ -1511,7 +1516,8 @@ export default function AdminDashboard() {
            !tit.includes("mapeh") && 
            !tit.includes("values") && 
            !tit.includes("tle") && 
-           !tit.includes("literature"));
+           !tit.includes("literature") &&
+           !tit.includes("diass"));
       });
 
       const explicitAdded = candidateExams.find(e => {
@@ -1522,7 +1528,7 @@ export default function AdminDashboard() {
           tit.includes(effectiveAddedSubject.toLowerCase()) || 
           tit.includes(pillar.added.toLowerCase()) ||
           (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("physical education") || tit.includes("hope") || tit.includes("music") || tit.includes("arts"))) ||
-          (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp"))) ||
+          (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp") || tit.includes("diass"))) ||
           (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict"))) ||
           (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit")));
       });
@@ -1545,7 +1551,7 @@ export default function AdminDashboard() {
         tit.includes(effectiveAddedSubject.toLowerCase()) || 
         tit.includes(pillar.added.toLowerCase()) ||
         (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("physical education") || tit.includes("hope"))) ||
-        (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp"))) ||
+        (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp") || tit.includes("diass"))) ||
         (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict"))) ||
         (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit")));
 
