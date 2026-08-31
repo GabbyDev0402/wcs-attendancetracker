@@ -32,7 +32,8 @@ import {
   Settings,
   Download,
   Table,
-  ListFilter
+  ListFilter,
+  RefreshCw
 } from "lucide-react";
 
 // Categorized options for Grade levels (Standard & ESL)
@@ -158,12 +159,9 @@ export default function AdminDashboard() {
   const [reportSearchQuery, setReportSearchQuery] = useState("");
   const [academicViewMode, setAcademicViewMode] = useState("matrix"); // "matrix" | "detailed"
 
-  const hasLoadedAcademicRef = useRef(false);
-
   useEffect(() => {
-    if (activeTab === "academic" && !hasLoadedAcademicRef.current) {
+    if (activeTab === "academic") {
       loadAcademicData();
-      hasLoadedAcademicRef.current = true;
     }
   }, [activeTab]);
 
@@ -1036,7 +1034,7 @@ export default function AdminDashboard() {
 
   // Extract readable subject name from exam metadata using Canonical Subjects Dictionary & Classroom Lookup
   const extractSubjectName = (exam, sub) => {
-    // 0. Explicit specificSubject property from Exam Builder
+    // 0. Explicit specificSubject property from Exam Builder or submission
     const explicitSpecific = exam?.specificSubject || sub?.specificSubject;
     if (explicitSpecific && typeof explicitSpecific === "string" && explicitSpecific.trim()) {
       const trimmed = explicitSpecific.trim();
@@ -1048,7 +1046,18 @@ export default function AdminDashboard() {
       return trimmed;
     }
 
-    // 1. Direct explicit subject property
+    // 1. Exam Title Inspection (Scan Canonical subjects in Title FIRST to prevent classroom subject shadowing)
+    const examTitle = (exam?.title || sub?.examTitle || "").toLowerCase();
+    for (const cs of CANONICAL_SUBJECTS) {
+      if (cs.keywords.some(kw => {
+        const regex = new RegExp(`\\b${kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b|\\(${kw}\\)`, 'i');
+        return regex.test(examTitle) || examTitle.includes(kw);
+      })) {
+        return cs.name;
+      }
+    }
+
+    // 2. Direct explicit subject property
     const rawSubj = exam?.subject || sub?.subject;
     if (rawSubj && typeof rawSubj === "string" && rawSubj.trim()) {
       const trimmed = rawSubj.trim();
@@ -1060,23 +1069,12 @@ export default function AdminDashboard() {
       return trimmed;
     }
 
-    const examTitle = (exam?.title || sub?.examTitle || "").toLowerCase();
+    // 3. Search Canonical Subjects in Classroom Slug & Teacher Assignments
     const rawClassId = sub?.classId || exam?.classId || "";
     const teacherId = exam?.teacherId || sub?.teacherId || (rawClassId.includes("_") ? rawClassId.split("_")[0] : "");
     const slug = rawClassId.includes("_") ? rawClassId.split("_").pop() : rawClassId;
     const cleanSlug = (slug || "").toLowerCase().replace(/[^a-z0-9]/g, " ");
 
-    // 2. Search Canonical Subjects in Exam Title (handles multiple subjects inside one classroom, e.g. "1st Monthly Exam - Grade 8 MAPEH" inside Math)
-    for (const cs of CANONICAL_SUBJECTS) {
-      if (cs.keywords.some(kw => {
-        const regex = new RegExp(`\\b${kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b|\\(${kw}\\)`, 'i');
-        return regex.test(examTitle) || examTitle.includes(kw);
-      })) {
-        return cs.name;
-      }
-    }
-
-    // 3. Search Canonical Subjects in Classroom Slug & Teacher Assignments
     let teacherAsgsText = "";
     if (teacherId && teachers.length > 0) {
       const teacher = teachers.find(t => t.id === teacherId || t.uid === teacherId);
@@ -1111,6 +1109,95 @@ export default function AdminDashboard() {
     }
 
     return title || "General Subject";
+  };
+
+  // Check if an exam or submission matches a specific pillar subject column
+  const isExamMatchingSubject = (exam, sub, targetSubject) => {
+    if (!targetSubject) return false;
+    const ts = targetSubject.toLowerCase().trim();
+
+    // Priority 1: Exact specificSubject property on exam doc or submission
+    const spec = (exam?.specificSubject || sub?.specificSubject || "").toLowerCase().trim();
+    if (spec) {
+      if (spec === ts) return true;
+      if (ts === "mapeh" && (spec === "physical education" || spec.includes("pe") || spec.includes("hope") || spec.includes("music") || spec.includes("arts"))) {
+        return true;
+      }
+      if (ts === "tle" && (spec === "technology" || spec === "livelihood" || spec.includes("ict") || spec.includes("epp"))) {
+        return true;
+      }
+      if (ts === "values" && (spec === "esp" || spec.includes("values") || spec.includes("character"))) {
+        return true;
+      }
+      if (ts === "literature" && (spec === "lit" || spec.includes("literature") || spec.includes("panitikan"))) {
+        return true;
+      }
+      return false;
+    }
+
+    // Priority 2: Title keywords (CRITICAL for multi-subject classrooms like MAPEH inside Math)
+    const title = (exam?.title || sub?.examTitle || "").toLowerCase();
+    if (ts === "mapeh") {
+      if (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("physical education") || title.includes("pe ") || title.includes("pe-") || title.includes("pe:") || title.includes("(pe)") || title.includes("hope")) {
+        return true;
+      }
+    } else if (ts === "tle") {
+      if (title.includes("tle") || title.includes("technology") || title.includes("livelihood") || title.includes("ict") || title.includes("computer") || title.includes("epp")) {
+        return true;
+      }
+    } else if (ts === "literature") {
+      if (title.includes("literature") || title.includes("lit") || title.includes("panitikan") || title.includes("contemporary arts") || title.includes("creative writing") || title.includes("21st century")) {
+        return true;
+      }
+    } else if (ts === "values") {
+      if (title.includes("values") || title.includes("esp") || title.includes("edukasyon sa pagpapakatao") || title.includes("character") || title.includes("ethics") || title.includes("moral") || title.includes("clve")) {
+        return true;
+      }
+    } else if (ts === "math") {
+      if ((title.includes("math") || title.includes("algebra") || title.includes("geometry") || title.includes("calculus") || title.includes("statistics") || title.includes("trigonometry")) && 
+          !title.includes("mapeh") && !title.includes("music") && !title.includes("arts") && !title.includes("pe") && !title.includes("physical education") && !title.includes("hope")) {
+        return true;
+      }
+    } else if (ts === "science") {
+      if ((title.includes("science") || title.includes("biology") || title.includes("physics") || title.includes("chemistry") || title.includes("earth science")) && 
+          !title.includes("social") && !title.includes("tle") && !title.includes("technology") && !title.includes("ict")) {
+        return true;
+      }
+    } else if (ts === "english") {
+      if ((title.includes("english") || title.includes("reading") || title.includes("grammar") || title.includes("vocabulary") || title.includes("language arts")) && 
+          !title.includes("literature") && !title.includes("contemporary arts")) {
+        return true;
+      }
+    } else if (ts === "social science") {
+      if ((title.includes("social") || title.includes("history") || title.includes("araling panlipunan") || title.includes("ap") || title.includes("kasaysayan") || title.includes("civics") || title.includes("economics")) && 
+          !title.includes("values") && !title.includes("esp")) {
+        return true;
+      }
+    }
+
+    // Priority 3: Direct subject property on exam doc (ONLY if title didn't indicate an Added subject)
+    const subj = (exam?.subject || sub?.subject || "").toLowerCase().trim();
+    if (subj) {
+      if (subj === ts) {
+        if (ts === "math" && (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("pe"))) return false;
+        if (ts === "science" && (title.includes("tle") || title.includes("ict") || title.includes("social"))) return false;
+        if (ts === "english" && (title.includes("literature") || title.includes("lit"))) return false;
+        if (ts === "social science" && (title.includes("values") || title.includes("esp"))) return false;
+        return true;
+      }
+      if (ts === "mapeh" && (subj === "physical education" || subj.includes("pe") || subj.includes("hope"))) {
+        return true;
+      }
+    }
+
+    // Priority 4: Fallback to extractSubjectName
+    const extracted = extractSubjectName(exam, sub).toLowerCase().trim();
+    if (extracted === ts) return true;
+    if (ts === "mapeh" && (extracted === "physical education" || extracted.includes("pe") || extracted.includes("hope"))) {
+      return true;
+    }
+
+    return false;
   };
 
   // Compute processed and filtered academic performance reports
@@ -1157,6 +1244,72 @@ export default function AdminDashboard() {
     }
 
     return false;
+  };
+
+  // Helper to extract student score for a specific subject column
+  const getStudentScoreForSubject = (student, targetSubject, gLevel, filteredExamsList, academicExamSubsList, allExamsList) => {
+    const sId = student.id || student.uid || "";
+
+    // 1. Check all candidate submissions for this student
+    const candidateSubs = academicExamSubsList.filter(sub => {
+      const matchesStudent = sub.studentId === sId || sub.studentId === student.uid || sub.studentId === student.id;
+      return matchesStudent;
+    });
+
+    for (const sub of candidateSubs) {
+      const exam = (allExamsList || []).find(e => e.firestoreId === sub.examId || e.id === sub.examId);
+      
+      const subCat = exam?.category || sub.category || "1st Monthly Exam";
+      const subQuarter = exam?.quarter || sub.quarter || "1st Quarter";
+
+      if (reportFilterExamCategory !== "All Categories" && subCat !== reportFilterExamCategory) {
+        continue;
+      }
+      if (reportFilterQuarter !== "All" && subQuarter !== reportFilterQuarter) {
+        continue;
+      }
+
+      // Check grade
+      const isGradeMatch = matchExamGrade(exam || { classId: sub.classId, grade: sub.gradeLevel, title: sub.examTitle }, gLevel);
+      if (!isGradeMatch) {
+        continue;
+      }
+
+      // Check subject
+      if (isExamMatchingSubject(exam, sub, targetSubject)) {
+        const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
+        const subjScore = Number(sub.subjScore) || 0;
+        const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
+        const dynamicMax = Number(exam?.maxScore) > 0 ? Number(exam?.maxScore) : (Number(sub.maxScore) || 100);
+        const percentage = dynamicMax > 0 ? Math.round((earnedScore / dynamicMax) * 100) : 0;
+
+        return {
+          hasScore: true,
+          earnedScore,
+          maxScore: dynamicMax,
+          percentage,
+          objScore,
+          subjScore,
+          examTitle: exam?.title || sub.examTitle || targetSubject
+        };
+      }
+    }
+
+    // 2. If no submission found, check if an exam exists for this subject & grade
+    const matchedExam = filteredExamsList.find(ex => {
+      return isExamMatchingSubject(ex, null, targetSubject) && matchExamGrade(ex, gLevel);
+    });
+
+    if (matchedExam) {
+      return {
+        hasScore: false,
+        noSubmission: true,
+        examTitle: matchedExam.title,
+        maxScore: Number(matchedExam.maxScore) || 100
+      };
+    }
+
+    return { hasScore: false, noExam: true };
   };
 
   // 1. Filtered exams by selected Category and Quarter
@@ -1236,39 +1389,6 @@ export default function AdminDashboard() {
       }
     });
 
-    const matchPillarSubject = (exam, targetSubject) => {
-      if (!exam || !targetSubject) return false;
-      const ts = targetSubject.toLowerCase().trim();
-
-      // Priority 1: Exact specificSubject property on exam doc
-      if (exam.specificSubject && typeof exam.specificSubject === "string" && exam.specificSubject.trim()) {
-        const spec = exam.specificSubject.toLowerCase().trim();
-        if (spec === ts) return true;
-        if (ts === "mapeh" && (spec === "physical education" || spec.includes("pe") || spec.includes("hope"))) {
-          return true;
-        }
-        return false;
-      }
-
-      // Priority 2: Direct subject property on exam doc
-      if (exam.subject && typeof exam.subject === "string" && exam.subject.trim()) {
-        const subj = exam.subject.toLowerCase().trim();
-        if (subj === ts) return true;
-        if (ts === "mapeh" && (subj === "physical education" || subj.includes("pe") || subj.includes("hope"))) {
-          return true;
-        }
-      }
-
-      // Priority 3: Fallback title / classroom subject extraction for legacy exams
-      const extracted = extractSubjectName(exam).toLowerCase().trim();
-      if (extracted === ts) return true;
-      if (ts === "mapeh" && (extracted === "physical education" || extracted.includes("pe") || extracted.includes("hope"))) {
-        return true;
-      }
-
-      return false;
-    };
-
     const buildStandardStudentRow = (st) => {
       const sId = st.id || st.uid || "";
       const sName = st.internationalName || st.fullName || st.name || formatStudentName(st) || "Student";
@@ -1281,41 +1401,10 @@ export default function AdminDashboard() {
 
       STANDARD_PILLARS.forEach(pillar => {
         [pillar.core, pillar.added].forEach(subjKey => {
-          const matchedExam = filteredExams.find(ex => {
-            return matchPillarSubject(ex, subjKey) && matchExamGrade(ex, gLevel);
-          });
-
-          if (matchedExam) {
-            const sub = academicExamSubs.find(s => 
-              (s.examId === matchedExam.firestoreId || s.examId === matchedExam.id) &&
-              (s.studentId === sId || s.studentId === st.uid || s.studentId === st.id)
-            );
-
-            // Dynamically pull maxScore directly from the matched exam doc
-            const examMaxScore = Number(matchedExam.maxScore) > 0 ? Number(matchedExam.maxScore) : (Number(sub?.maxScore) || 100);
-
-            if (sub) {
-              const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
-              const subjScore = Number(sub.subjScore) || 0;
-              const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
-              const maxScore = examMaxScore;
-              const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
-
-              subjectScores[subjKey] = {
-                hasScore: true,
-                earnedScore,
-                maxScore,
-                percentage,
-                objScore,
-                subjScore,
-                examTitle: matchedExam.title
-              };
-              percentages.push(percentage);
-            } else {
-              subjectScores[subjKey] = { hasScore: false, noSubmission: true, examTitle: matchedExam.title, maxScore: examMaxScore };
-            }
-          } else {
-            subjectScores[subjKey] = { hasScore: false, noExam: true };
+          const scoreData = getStudentScoreForSubject(st, subjKey, gLevel, filteredExams, academicExamSubs, academicExams);
+          subjectScores[subjKey] = scoreData;
+          if (scoreData.hasScore) {
+            percentages.push(scoreData.percentage);
           }
         });
       });
@@ -1348,42 +1437,10 @@ export default function AdminDashboard() {
       const percentages = [];
 
       eslSubjects.forEach(subjectName => {
-        const matchedExam = filteredExams.find(ex => {
-          const exSubj = extractSubjectName(ex);
-          return exSubj.toLowerCase() === subjectName.toLowerCase() && matchExamGrade(ex, gLevel);
-        });
-
-        if (matchedExam) {
-          const sub = academicExamSubs.find(s => 
-            (s.examId === matchedExam.firestoreId || s.examId === matchedExam.id) &&
-            (s.studentId === sId || s.studentId === st.uid || s.studentId === st.id)
-          );
-
-          // Dynamically pull maxScore directly from the matched exam doc
-          const examMaxScore = Number(matchedExam.maxScore) > 0 ? Number(matchedExam.maxScore) : (Number(sub?.maxScore) || 100);
-
-          if (sub) {
-            const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
-            const subjScore = Number(sub.subjScore) || 0;
-            const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
-            const maxScore = examMaxScore;
-            const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
-
-            subjectScores[subjectName] = {
-              hasScore: true,
-              earnedScore,
-              maxScore,
-              percentage,
-              objScore,
-              subjScore,
-              examTitle: matchedExam.title
-            };
-            percentages.push(percentage);
-          } else {
-            subjectScores[subjectName] = { hasScore: false, noSubmission: true, examTitle: matchedExam.title, maxScore: examMaxScore };
-          }
-        } else {
-          subjectScores[subjectName] = { hasScore: false, noExam: true };
+        const scoreData = getStudentScoreForSubject(st, subjectName, gLevel, filteredExams, academicExamSubs, academicExams);
+        subjectScores[subjectName] = scoreData;
+        if (scoreData.hasScore) {
+          percentages.push(scoreData.percentage);
         }
       });
 
@@ -1424,7 +1481,7 @@ export default function AdminDashboard() {
       standardStudents: stdRows,
       eslStudents: eslRows
     };
-  }, [students, filteredExams, academicExamSubs, standardSubjects, eslSubjects, reportFilterGrade, reportFilterCommunity, reportSearchQuery]);
+  }, [students, filteredExams, academicExamSubs, academicExams, standardSubjects, eslSubjects, reportFilterGrade, reportFilterCommunity, reportSearchQuery, reportFilterExamCategory, reportFilterQuarter]);
 
   // Detailed records list (for itemized list view mode)
   const processedAcademicReports = academicExamSubs.map((sub) => {
@@ -2153,6 +2210,16 @@ export default function AdminDashboard() {
             </div>
 
             <div className="flex items-center space-x-3 print:hidden">
+              <button
+                onClick={loadAcademicData}
+                disabled={isAcademicLoading}
+                className="inline-flex items-center space-x-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-4 py-2.5 text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                title="Reload latest exam submissions from Firestore"
+              >
+                <RefreshCw className={`h-4 w-4 ${isAcademicLoading ? "animate-spin text-brand-600" : ""}`} />
+                <span>{isAcademicLoading ? "Refreshing..." : "Refresh Data"}</span>
+              </button>
+
               <button
                 onClick={handleExportAcademicReportCSV}
                 className="inline-flex items-center space-x-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"

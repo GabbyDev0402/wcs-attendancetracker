@@ -1142,6 +1142,7 @@ export default function ClassDashboard() {
         const subjScore = hasSubj ? (Number(rawSubj) || 0) : 0;
         const totalScore = objScore + subjScore;
 
+        const chosenSubj = selectedExamForScores.specificSubject || selectedExamForScores.subject || classInfo.subject || "";
         const payload = {
           examId: examDocId,
           classId: tag,
@@ -1149,6 +1150,10 @@ export default function ClassDashboard() {
           studentName: studentName,
           quarter: selectedExamForScores.quarter || "1st Quarter",
           category: selectedExamForScores.category || "1st Monthly Exam",
+          specificSubject: chosenSubj,
+          subject: chosenSubj,
+          examTitle: selectedExamForScores.title || "",
+          gradeLevel: classInfo.grade || selectedExamForScores.grade || "",
           objScore: objScore,
           subjScore: subjScore,
           score: totalScore,
