@@ -157,7 +157,6 @@ export default function AdminDashboard() {
   const [reportFilterQuarter, setReportFilterQuarter] = useState("All");
   const [reportFilterExamCategory, setReportFilterExamCategory] = useState("1st Monthly Exam");
   const [reportSearchQuery, setReportSearchQuery] = useState("");
-  const [academicViewMode, setAcademicViewMode] = useState("matrix"); // "matrix" | "detailed"
 
   useEffect(() => {
     if (activeTab === "academic") {
@@ -186,154 +185,99 @@ export default function AdminDashboard() {
   };
 
   const handleExportAcademicReportCSV = () => {
-    if (academicViewMode === "matrix") {
-      if (standardStudents.length === 0 && eslStudents.length === 0) {
-        alert("No academic records available to export.");
-        return;
-      }
+    if (standardStudents.length === 0 && eslStudents.length === 0) {
+      alert("No academic records available to export.");
+      return;
+    }
 
-      const rows = [];
+    const rows = [];
 
-      // Export Standard Curriculum if populated
-      if (standardStudents.length > 0) {
-        rows.push(`"--- STANDARD CURRICULUM MASTER REPORT (${reportFilterExamCategory} - ${reportFilterQuarter}) ---"`);
-        const stdHeaders = [
-          "Student Name",
-          "Student Code",
-          "Grade Level",
-          "Community",
-          ...STANDARD_PILLARS.flatMap(p => [`"${p.core} (Core)"`, `"${p.added} (Added)"`]),
-          "General Average (%)",
-          "Subjects Completed"
+    // Export Standard Curriculum if populated
+    if (standardStudents.length > 0) {
+      rows.push(`"--- STANDARD CURRICULUM MASTER REPORT (${reportFilterExamCategory} - ${reportFilterQuarter}) ---"`);
+      const stdHeaders = [
+        "Student Name",
+        "Student Code",
+        "Grade Level",
+        "Community",
+        ...STANDARD_PILLARS.flatMap(p => [`"${p.core} (Core)"`, `"${p.added} (Added)"`]),
+        "General Average (%)",
+        "Subjects Completed"
+      ];
+      rows.push(stdHeaders.join(","));
+
+      standardStudents.forEach(row => {
+        const rowCols = [
+          `"${(row.studentName || 'Student').replace(/"/g, '""')}"`,
+          `"${(row.studentCode || '').replace(/"/g, '""')}"`,
+          `"${(row.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
+          `"${(row.community || 'Main').replace(/"/g, '""')}"`,
         ];
-        rows.push(stdHeaders.join(","));
 
-        standardStudents.forEach(row => {
-          const rowCols = [
-            `"${(row.studentName || 'Student').replace(/"/g, '""')}"`,
-            `"${(row.studentCode || '').replace(/"/g, '""')}"`,
-            `"${(row.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
-            `"${(row.community || 'Main').replace(/"/g, '""')}"`,
-          ];
-
-          STANDARD_PILLARS.forEach(p => {
-            [p.core, p.added].forEach(subjKey => {
-              const sc = row.subjectScores[subjKey];
-              if (sc && sc.hasScore) {
-                rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
-              } else {
-                rowCols.push('"—"');
-              }
-            });
-          });
-
-          rowCols.push(`"${row.generalAverage}%"`);
-          rowCols.push(`"${row.completedCount} of ${row.totalSubjectsCount}"`);
-          rows.push(rowCols.join(","));
-        });
-
-        rows.push(""); // Spacer
-      }
-
-      // Export ESL Program if populated
-      if (eslStudents.length > 0) {
-        rows.push(`"--- ESL PROGRAM MASTER REPORT (${reportFilterExamCategory} - ${reportFilterQuarter}) ---"`);
-        const eslHeaders = [
-          "Student Name",
-          "Student Code",
-          "Level / Grade",
-          "Community",
-          ...eslSubjects.map(s => `"${s.replace(/"/g, '""')}"`),
-          "General Average (%)",
-          "Subjects Completed"
-        ];
-        rows.push(eslHeaders.join(","));
-
-        eslStudents.forEach(row => {
-          const rowCols = [
-            `"${(row.studentName || 'Student').replace(/"/g, '""')}"`,
-            `"${(row.studentCode || '').replace(/"/g, '""')}"`,
-            `"${(row.gradeLevel || 'E1').replace(/"/g, '""')}"`,
-            `"${(row.community || 'Main').replace(/"/g, '""')}"`,
-          ];
-
-          eslSubjects.forEach(s => {
-            const sc = row.subjectScores[s];
+        STANDARD_PILLARS.forEach(p => {
+          [p.core, p.added].forEach(subjKey => {
+            const sc = row.subjectScores[subjKey];
             if (sc && sc.hasScore) {
               rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
             } else {
               rowCols.push('"—"');
             }
           });
-
-          rowCols.push(`"${row.generalAverage}%"`);
-          rowCols.push(`"${row.completedCount} of ${row.totalSubjectsCount}"`);
-          rows.push(rowCols.join(","));
         });
-      }
 
-      const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `Academic_Master_Pivot_${new Date().toISOString().split("T")[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } else {
-      if (filteredAcademicReports.length === 0) {
-        alert("No academic records available to export.");
-        return;
-      }
-
-      const headers = [
-        "Student Name",
-        "Student Code",
-        "Grade Level",
-        "Community",
-        "Exam Title",
-        "Category",
-        "Quarter",
-        "Subject / Class",
-        "Multiple Choice Score",
-        "Vocabs/Essay Score",
-        "Total Score",
-        "Max Score",
-        "Percentage (%)"
-      ];
-      const rows = [headers.join(",")];
-
-      filteredAcademicReports.forEach(item => {
-        const obj = Number(item.objScore) || 0;
-        const subj = Number(item.subjScore) || 0;
-        const total = obj + subj;
-
-        rows.push([
-          `"${(item.studentName || 'Student').replace(/"/g, '""')}"`,
-          `"${(item.studentCode || '').replace(/"/g, '""')}"`,
-          `"${(item.gradeLevel || 'Grade 1').replace(/"/g, '""')}"`,
-          `"${(item.community || 'Main').replace(/"/g, '""')}"`,
-          `"${(item.examTitle || 'Exam').replace(/"/g, '""')}"`,
-          `"${(item.category || '1st Monthly Exam').replace(/"/g, '""')}"`,
-          `"${(item.quarter || '1st Quarter').replace(/"/g, '""')}"`,
-          `"${(item.subjectClass || 'General').replace(/"/g, '""')}"`,
-          obj,
-          subj,
-          total,
-          item.maxScore,
-          `"${item.percentage}%"`
-        ].join(","));
+        rowCols.push(`"${row.generalAverage}%"`);
+        rowCols.push(`"${row.completedCount} of ${row.totalSubjectsCount}"`);
+        rows.push(rowCols.join(","));
       });
 
-      const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `Academic_Detailed_Report_${new Date().toISOString().split("T")[0]}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      rows.push(""); // Spacer
     }
+
+    // Export ESL Program if populated
+    if (eslStudents.length > 0) {
+      rows.push(`"--- ESL PROGRAM MASTER REPORT (${reportFilterExamCategory} - ${reportFilterQuarter}) ---"`);
+      const eslHeaders = [
+        "Student Name",
+        "Student Code",
+        "Level / Grade",
+        "Community",
+        ...eslSubjects.map(s => `"${s.replace(/"/g, '""')}"`),
+        "General Average (%)",
+        "Subjects Completed"
+      ];
+      rows.push(eslHeaders.join(","));
+
+      eslStudents.forEach(row => {
+        const rowCols = [
+          `"${(row.studentName || 'Student').replace(/"/g, '""')}"`,
+          `"${(row.studentCode || '').replace(/"/g, '""')}"`,
+          `"${(row.gradeLevel || 'E1').replace(/"/g, '""')}"`,
+          `"${(row.community || 'Main').replace(/"/g, '""')}"`,
+        ];
+
+        eslSubjects.forEach(s => {
+          const sc = row.subjectScores[s];
+          if (sc && sc.hasScore) {
+            rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
+          } else {
+            rowCols.push('"—"');
+          }
+        });
+
+        rowCols.push(`"${row.generalAverage}%"`);
+        rowCols.push(`"${row.completedCount} of ${row.totalSubjectsCount}"`);
+        rows.push(rowCols.join(","));
+      });
+    }
+
+    const csvContent = "data:text/csv;charset=utf-8," + rows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `Academic_Master_Pivot_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const hasLoadedComplianceRef = useRef(false);
@@ -1246,67 +1190,147 @@ export default function AdminDashboard() {
     return false;
   };
 
-  // Helper to extract student score for a specific subject column
-  const getStudentScoreForSubject = (student, targetSubject, gLevel, filteredExamsList, academicExamSubsList, allExamsList) => {
-    const sId = student.id || student.uid || "";
+  // Group and resolve exams for a grade level within a Pillar using Grade-Wide Classroom Union + Flexible Ceilings
+  const getPillarExamsForGrade = (gradeLevel, pillar, filteredExamsList) => {
+    const isGrade12 = (gradeLevel || "").toString().includes("12");
+    const effectiveAddedSubject = (pillar.core === "Math" && isGrade12) ? "Physical Education" : pillar.added;
 
-    // 1. Check all candidate submissions for this student
-    const candidateSubs = academicExamSubsList.filter(sub => {
-      const matchesStudent = sub.studentId === sId || sub.studentId === student.uid || sub.studentId === student.id;
-      return matchesStudent;
+    // Find all candidate exams matching this student's grade level and belonging to this pillar
+    const candidateExams = (filteredExamsList || []).filter(ex => {
+      if (!matchExamGrade(ex, gradeLevel)) return false;
+      const isCore = isExamMatchingSubject(ex, null, pillar.core);
+      const isAdded = isExamMatchingSubject(ex, null, effectiveAddedSubject) || isExamMatchingSubject(ex, null, pillar.added);
+      return isCore || isAdded;
     });
 
-    for (const sub of candidateSubs) {
-      const exam = (allExamsList || []).find(e => e.firestoreId === sub.examId || e.id === sub.examId);
-      
-      const subCat = exam?.category || sub.category || "1st Monthly Exam";
-      const subQuarter = exam?.quarter || sub.quarter || "1st Quarter";
+    let coreExam = null;
+    let addedExam = null;
 
-      if (reportFilterExamCategory !== "All Categories" && subCat !== reportFilterExamCategory) {
-        continue;
-      }
-      if (reportFilterQuarter !== "All" && subQuarter !== reportFilterQuarter) {
-        continue;
-      }
+    if (candidateExams.length >= 2) {
+      // 1. Try explicit matching first
+      const explicitCore = candidateExams.find(e => {
+        const spec = (e.specificSubject || "").toLowerCase().trim();
+        const tit = (e.title || "").toLowerCase();
+        return spec === pillar.core.toLowerCase() || 
+          (tit.includes(pillar.core.toLowerCase()) && 
+           !tit.includes(effectiveAddedSubject.toLowerCase()) && 
+           !tit.includes(pillar.added.toLowerCase()) && 
+           !tit.includes("pe") && 
+           !tit.includes("mapeh") && 
+           !tit.includes("values") && 
+           !tit.includes("tle") && 
+           !tit.includes("literature"));
+      });
 
-      // Check grade
-      const isGradeMatch = matchExamGrade(exam || { classId: sub.classId, grade: sub.gradeLevel, title: sub.examTitle }, gLevel);
-      if (!isGradeMatch) {
-        continue;
-      }
+      const explicitAdded = candidateExams.find(e => {
+        const spec = (e.specificSubject || "").toLowerCase().trim();
+        const tit = (e.title || "").toLowerCase();
+        return spec === effectiveAddedSubject.toLowerCase() || 
+          spec === pillar.added.toLowerCase() || 
+          tit.includes(effectiveAddedSubject.toLowerCase()) || 
+          tit.includes(pillar.added.toLowerCase()) ||
+          (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("physical education") || tit.includes("hope") || tit.includes("music") || tit.includes("arts"))) ||
+          (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp"))) ||
+          (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict"))) ||
+          (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit")));
+      });
 
-      // Check subject
-      if (isExamMatchingSubject(exam, sub, targetSubject)) {
+      if (explicitCore && explicitAdded && (explicitCore.firestoreId !== explicitAdded.firestoreId && explicitCore.id !== explicitAdded.id)) {
+        coreExam = explicitCore;
+        addedExam = explicitAdded;
+      } else {
+        // 2. Flexible Dynamic Ceilings: Sort by maxScore descending (Higher maxScore = Core, Lower maxScore = Added)
+        const sortedByScore = [...candidateExams].sort((a, b) => (Number(b.maxScore) || 0) - (Number(a.maxScore) || 0));
+        coreExam = sortedByScore[0];
+        addedExam = sortedByScore[1];
+      }
+    } else if (candidateExams.length === 1) {
+      const single = candidateExams[0];
+      const spec = (single.specificSubject || "").toLowerCase().trim();
+      const tit = (single.title || "").toLowerCase();
+      const isExplicitAdded = spec === effectiveAddedSubject.toLowerCase() || 
+        spec === pillar.added.toLowerCase() || 
+        tit.includes(effectiveAddedSubject.toLowerCase()) || 
+        tit.includes(pillar.added.toLowerCase()) ||
+        (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("physical education") || tit.includes("hope"))) ||
+        (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp"))) ||
+        (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict"))) ||
+        (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit")));
+
+      if (isExplicitAdded) {
+        addedExam = single;
+      } else {
+        coreExam = single;
+      }
+    }
+
+    return { coreExam, addedExam, effectiveAddedSubject };
+  };
+
+  // Helper to resolve student score for an identified exam document with resilient fallback
+  const resolveStudentScoreForExam = (student, targetExam, fallbackSubject, gLevel, academicExamSubsList) => {
+    const sId = student.id || student.uid || "";
+
+    // 1. Direct examId lookup
+    if (targetExam) {
+      const examId = targetExam.firestoreId || targetExam.id;
+      const sub = academicExamSubsList.find(s => 
+        (s.examId === examId || (s.examId && s.examId === targetExam.id)) &&
+        (s.studentId === sId || s.studentId === student.uid || s.studentId === student.id)
+      );
+
+      const maxScore = Number(targetExam.maxScore) > 0 ? Number(targetExam.maxScore) : (Number(sub?.maxScore) || 100);
+
+      if (sub) {
         const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
         const subjScore = Number(sub.subjScore) || 0;
         const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
-        const dynamicMax = Number(exam?.maxScore) > 0 ? Number(exam?.maxScore) : (Number(sub.maxScore) || 100);
-        const percentage = dynamicMax > 0 ? Math.round((earnedScore / dynamicMax) * 100) : 0;
+        const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
 
         return {
           hasScore: true,
           earnedScore,
-          maxScore: dynamicMax,
+          maxScore,
           percentage,
           objScore,
           subjScore,
-          examTitle: exam?.title || sub.examTitle || targetSubject
+          examTitle: targetExam.title
         };
       }
+
+      return { hasScore: false, noSubmission: true, examTitle: targetExam.title, maxScore };
     }
 
-    // 2. If no submission found, check if an exam exists for this subject & grade
-    const matchedExam = filteredExamsList.find(ex => {
-      return isExamMatchingSubject(ex, null, targetSubject) && matchExamGrade(ex, gLevel);
-    });
+    // 2. Fallback lookup if no targetExam object was matched directly but a valid submission exists
+    if (fallbackSubject) {
+      const candidateSub = academicExamSubsList.find(sub => {
+        const matchesStudent = sub.studentId === sId || sub.studentId === student.uid || sub.studentId === student.id;
+        if (!matchesStudent) return false;
+        
+        const subCat = sub.category || "1st Monthly Exam";
+        if (reportFilterExamCategory !== "All Categories" && subCat !== reportFilterExamCategory) return false;
+        if (reportFilterQuarter !== "All" && sub.quarter && sub.quarter !== reportFilterQuarter) return false;
 
-    if (matchedExam) {
-      return {
-        hasScore: false,
-        noSubmission: true,
-        examTitle: matchedExam.title,
-        maxScore: Number(matchedExam.maxScore) || 100
-      };
+        return isExamMatchingSubject(null, sub, fallbackSubject) && matchExamGrade({ classId: sub.classId, grade: sub.gradeLevel, title: sub.examTitle }, gLevel);
+      });
+
+      if (candidateSub) {
+        const objScore = candidateSub.objScore !== undefined ? (Number(candidateSub.objScore) || 0) : (candidateSub.score !== undefined ? (Number(candidateSub.score) || 0) : 0);
+        const subjScore = Number(candidateSub.subjScore) || 0;
+        const earnedScore = (candidateSub.objScore !== undefined || candidateSub.subjScore !== undefined) ? (objScore + subjScore) : (Number(candidateSub.score) || 0);
+        const maxScore = Number(candidateSub.maxScore) || 100;
+        const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
+
+        return {
+          hasScore: true,
+          earnedScore,
+          maxScore,
+          percentage,
+          objScore,
+          subjScore,
+          examTitle: candidateSub.examTitle || fallbackSubject
+        };
+      }
     }
 
     return { hasScore: false, noExam: true };
@@ -1400,13 +1424,21 @@ export default function AdminDashboard() {
       const percentages = [];
 
       STANDARD_PILLARS.forEach(pillar => {
-        [pillar.core, pillar.added].forEach(subjKey => {
-          const scoreData = getStudentScoreForSubject(st, subjKey, gLevel, filteredExams, academicExamSubs, academicExams);
-          subjectScores[subjKey] = scoreData;
-          if (scoreData.hasScore) {
-            percentages.push(scoreData.percentage);
-          }
-        });
+        const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
+
+        // Core Subject
+        const coreScore = resolveStudentScoreForExam(st, coreExam, pillar.core, gLevel, academicExamSubs);
+        subjectScores[pillar.core] = coreScore;
+        if (coreScore.hasScore) {
+          percentages.push(coreScore.percentage);
+        }
+
+        // Added Subject
+        const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        subjectScores[pillar.added] = addedScore;
+        if (addedScore.hasScore) {
+          percentages.push(addedScore.percentage);
+        }
       });
 
       const generalAverage = percentages.length > 0
@@ -1437,7 +1469,12 @@ export default function AdminDashboard() {
       const percentages = [];
 
       eslSubjects.forEach(subjectName => {
-        const scoreData = getStudentScoreForSubject(st, subjectName, gLevel, filteredExams, academicExamSubs, academicExams);
+        const matchedExam = filteredExams.find(ex => {
+          const exSubj = extractSubjectName(ex);
+          return exSubj.toLowerCase() === subjectName.toLowerCase() && matchExamGrade(ex, gLevel);
+        });
+
+        const scoreData = resolveStudentScoreForExam(st, matchedExam, subjectName, gLevel, academicExamSubs);
         subjectScores[subjectName] = scoreData;
         if (scoreData.hasScore) {
           percentages.push(scoreData.percentage);
@@ -1483,49 +1520,6 @@ export default function AdminDashboard() {
     };
   }, [students, filteredExams, academicExamSubs, academicExams, standardSubjects, eslSubjects, reportFilterGrade, reportFilterCommunity, reportSearchQuery, reportFilterExamCategory, reportFilterQuarter]);
 
-  // Detailed records list (for itemized list view mode)
-  const processedAcademicReports = academicExamSubs.map((sub) => {
-    const student = students.find(s => s.id === sub.studentId || s.uid === sub.studentId) || {};
-    const exam = academicExams.find(e => e.firestoreId === sub.examId || e.id === sub.examId) || {};
-
-    const studentId = sub.studentId || student.id || student.uid || "";
-    const studentName = student.internationalName || student.fullName || student.name || formatStudentName(student) || sub.studentName || "Student";
-    const studentCode = student.studentCode || "";
-    const gradeLevel = student.grade || student.gradeLevel || sub.gradeLevel || "Grade 1";
-    const community = student.communityName || student.communityCenter || student.community || "Main";
-
-    const examTitle = exam.title || sub.examTitle || "Exam";
-    const subjectName = extractSubjectName(exam, sub);
-    const category = exam.category || sub.category || "1st Monthly Exam";
-    const quarter = sub.quarter || exam.quarter || "1st Quarter";
-    const subjectClass = formatCleanClassName(sub.classId || exam.classId);
-
-    const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
-    const subjScore = Number(sub.subjScore) || 0;
-    const earnedScore = objScore + subjScore;
-    const maxScore = Number(exam.maxScore || sub.maxScore) || 100;
-    const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
-
-    return {
-      id: sub.firestoreId || sub.id,
-      studentId,
-      studentName,
-      studentCode,
-      gradeLevel,
-      community,
-      examTitle,
-      subjectName,
-      category,
-      quarter,
-      subjectClass,
-      objScore,
-      subjScore,
-      earnedScore,
-      maxScore,
-      percentage
-    };
-  });
-
   const uniqueExamCategories = [
     "1st Monthly Exam",
     "2nd Monthly Exam",
@@ -1538,32 +1532,6 @@ export default function AdminDashboard() {
     "All Categories",
     ...new Set(academicExams.map(e => e.category).filter(Boolean))
   ].filter((v, i, a) => a.indexOf(v) === i);
-
-  const filteredAcademicReports = processedAcademicReports
-    .filter((item) => {
-      if (reportFilterGrade !== "All" && item.gradeLevel !== reportFilterGrade) return false;
-      if (reportFilterCommunity !== "All" && item.community !== reportFilterCommunity) return false;
-      if (reportFilterQuarter !== "All" && item.quarter !== reportFilterQuarter) return false;
-      if (reportFilterExamCategory !== "All Categories" && item.category !== reportFilterExamCategory) return false;
-      if (reportSearchQuery.trim()) {
-        const q = reportSearchQuery.toLowerCase();
-        const matchName = item.studentName.toLowerCase().includes(q);
-        const matchExam = item.examTitle.toLowerCase().includes(q);
-        const matchSubject = item.subjectName.toLowerCase().includes(q);
-        const matchCategory = item.category ? item.category.toLowerCase().includes(q) : false;
-        if (!matchName && !matchExam && !matchSubject && !matchCategory) return false;
-      }
-      return true;
-    })
-    .sort((a, b) => {
-      const gradeA = getGradeNum(a.gradeLevel);
-      const gradeB = getGradeNum(b.gradeLevel);
-      if (gradeB !== gradeA) return gradeB - gradeA;
-      const pctA = ((Number(a.objScore) || 0) + (Number(a.subjScore) || 0)) / (Number(a.maxScore) || 1);
-      const pctB = ((Number(b.objScore) || 0) + (Number(b.subjScore) || 0)) / (Number(b.maxScore) || 1);
-      if (pctB !== pctA) return pctB - pctA;
-      return (a.studentName || "").localeCompare(b.studentName || "");
-    });
 
   // Send password reset magic link email
   const handleSendResetEmail = async (teacherEmail) => {
@@ -2324,45 +2292,12 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* View Mode Switcher and Summary Bar */}
+          {/* Summary Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 print:hidden">
-            <div className="flex items-center space-x-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs">
-              <button
-                type="button"
-                onClick={() => setAcademicViewMode("matrix")}
-                className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  academicViewMode === "matrix"
-                    ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm"
-                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                }`}
-              >
-                <Table className="h-3.5 w-3.5" />
-                <span>Student Matrix (Subject Columns)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setAcademicViewMode("detailed")}
-                className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  academicViewMode === "detailed"
-                    ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-sm"
-                    : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-                }`}
-              >
-                <ListFilter className="h-3.5 w-3.5" />
-                <span>Detailed Records List</span>
-              </button>
-            </div>
-
             <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              {academicViewMode === "matrix" ? (
-                <span>
-                  Showing <strong className="text-slate-800 dark:text-slate-200">{standardStudents.length} Standard</strong> & <strong className="text-slate-800 dark:text-slate-200">{eslStudents.length} ESL</strong> Students for <strong className="text-brand-600 dark:text-brand-400">{reportFilterExamCategory}</strong>
-                </span>
-              ) : (
-                <span>
-                  Showing <strong className="text-slate-800 dark:text-slate-200">{filteredAcademicReports.length} Submission Records</strong>
-                </span>
-              )}
+              <span>
+                Showing <strong className="text-slate-800 dark:text-slate-200">{standardStudents.length} Standard</strong> & <strong className="text-slate-800 dark:text-slate-200">{eslStudents.length} ESL</strong> Students for <strong className="text-brand-600 dark:text-brand-400">{reportFilterExamCategory}</strong>
+              </span>
             </div>
           </div>
 
@@ -2371,7 +2306,7 @@ export default function AdminDashboard() {
             <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-16 text-center text-slate-400 text-sm font-medium shadow-sm">
               Loading school-wide academic data...
             </div>
-          ) : academicViewMode === "matrix" ? (
+          ) : (
             <div className="space-y-8">
               {/* ── Table 1: Standard Curriculum Master Report ── */}
               {standardStudents.length > 0 && (
@@ -2402,43 +2337,36 @@ export default function AdminDashboard() {
                           <th rowSpan={2} className="p-3.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-700">
                             Community
                           </th>
-                          {STANDARD_PILLARS.map((pillar, pIdx) => (
-                            <th 
-                              key={pillar.core} 
-                              colSpan={2} 
-                              className={`p-2.5 text-center font-black tracking-wider uppercase border-r border-slate-200 dark:border-slate-700 ${
-                                pIdx % 2 === 0 
-                                  ? "bg-brand-50/70 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300" 
-                                  : "bg-indigo-50/70 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300"
-                              }`}
+                          {STANDARD_PILLARS.map((pillar) => (
+                            <th
+                              key={pillar.core}
+                              colSpan={2}
+                              className="p-2.5 text-center font-extrabold border-r border-slate-200 dark:border-slate-700 tracking-wider bg-slate-100/70 dark:bg-slate-800/50"
                             >
-                              {pillar.core}
+                              {pillar.core.toUpperCase()}
                             </th>
                           ))}
+
                           <th rowSpan={2} className="p-3.5 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-20 border-l border-slate-200 dark:border-slate-700">
                             General Average
                           </th>
                         </tr>
-                        {/* Row 2: Core & Added Sub-headers */}
-                        <tr className="bg-slate-50/60 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          {STANDARD_PILLARS.map((pillar, pIdx) => (
-                            <React.Fragment key={pillar.core}>
-                              <th className={`p-2 text-center min-w-[125px] border-r border-slate-200 dark:border-slate-700 ${
-                                pIdx % 2 === 0 ? "bg-brand-50/30 dark:bg-brand-900/10" : "bg-indigo-50/30 dark:bg-indigo-900/10"
-                              }`}>
-                                <span className="text-slate-700 dark:text-slate-200">{pillar.core}</span>
-                                <span className="block text-[8px] text-brand-600 dark:text-brand-400 font-bold">Core</span>
-                              </th>
-                              <th className={`p-2 text-center min-w-[125px] border-r border-slate-200 dark:border-slate-700 ${
-                                pIdx % 2 === 0 ? "bg-brand-50/30 dark:bg-brand-900/10" : "bg-indigo-50/30 dark:bg-indigo-900/10"
-                              }`}>
-                                <span className="text-slate-700 dark:text-slate-200">{pillar.added}</span>
-                                <span className="block text-[8px] text-slate-400 font-normal">Added</span>
-                              </th>
-                            </React.Fragment>
-                          ))}
+
+                        {/* Row 2: Sub-headers (Core vs Added) */}
+                        <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          {STANDARD_PILLARS.flatMap((pillar) => [
+                            <th key={`${pillar.core}-core`} className="p-2 text-center border-r border-slate-100 dark:border-slate-700 min-w-[100px]">
+                              <div>{pillar.core}</div>
+                              <span className="text-[8px] text-brand-600 dark:text-brand-400 font-semibold lowercase">core</span>
+                            </th>,
+                            <th key={`${pillar.core}-added`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 min-w-[100px]">
+                              <div>{pillar.added}</div>
+                              <span className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold lowercase">added</span>
+                            </th>
+                          ])}
                         </tr>
                       </thead>
+
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
                         {standardStudents.map((st) => {
                           const genAvg = st.generalAverage;
@@ -2453,6 +2381,7 @@ export default function AdminDashboard() {
 
                           return (
                             <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                              {/* Student Name */}
                               <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800">
                                 {st.studentName}
                                 {st.studentCode && (
@@ -2461,54 +2390,65 @@ export default function AdminDashboard() {
                                   </span>
                                 )}
                               </td>
+
+                              {/* Grade Level */}
                               <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800">
                                 {st.gradeLevel}
                               </td>
+
+                              {/* Community */}
                               <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800">
                                 {st.community}
                               </td>
-                              {STANDARD_PILLARS.map((pillar) => (
-                                <React.Fragment key={pillar.core}>
-                                  {[pillar.core, pillar.added].map((subjKey) => {
-                                    const sc = st.subjectScores[subjKey];
-                                    if (!sc || !sc.hasScore) {
-                                      return (
-                                        <td key={subjKey} className="p-3 text-center text-slate-300 dark:text-slate-600 font-mono border-r border-slate-100 dark:border-slate-800">
-                                          —
-                                        </td>
-                                      );
-                                    }
 
-                                    const pct = sc.percentage;
-                                    const badgeStyle =
-                                      pct >= 80
-                                        ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                                        : pct >= 70
-                                        ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
-                                        : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
-
+                              {/* 4 Pillars: 8 Data Cells */}
+                              {STANDARD_PILLARS.flatMap((pillar) => {
+                                const renderCell = (subjKey) => {
+                                  const sc = st.subjectScores[subjKey];
+                                  if (!sc || !sc.hasScore) {
                                     return (
-                                      <td key={subjKey} className="p-3 text-center font-mono border-r border-slate-100 dark:border-slate-800">
-                                        <div className="flex flex-col items-center justify-center space-y-0.5">
-                                          <div className="flex items-center space-x-1.5">
-                                            <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
-                                              {sc.earnedScore}/{sc.maxScore}
-                                            </span>
-                                            <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
-                                              {pct}%
-                                            </span>
-                                          </div>
-                                          {(sc.objScore > 0 || sc.subjScore > 0) && (
-                                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
-                                              MC: {sc.objScore} | V/E: {sc.subjScore}
-                                            </span>
-                                          )}
-                                        </div>
+                                      <td key={subjKey} className="p-3 text-center text-slate-300 dark:text-slate-600 font-mono border-r border-slate-100 dark:border-slate-800">
+                                        —
                                       </td>
                                     );
-                                  })}
-                                </React.Fragment>
-                              ))}
+                                  }
+
+                                  const pct = sc.percentage;
+                                  const badgeStyle =
+                                    pct >= 80
+                                      ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                                      : pct >= 70
+                                      ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+                                      : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
+
+                                  return (
+                                    <td key={subjKey} className="p-3 text-center font-mono border-r border-slate-100 dark:border-slate-800">
+                                      <div className="flex flex-col items-center justify-center space-y-0.5">
+                                        <div className="flex items-center space-x-1.5">
+                                          <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs">
+                                            {sc.earnedScore}/{sc.maxScore}
+                                          </span>
+                                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle}`}>
+                                            {pct}%
+                                          </span>
+                                        </div>
+                                        {(sc.objScore > 0 || sc.subjScore > 0) && (
+                                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal">
+                                            MC: {sc.objScore} | V/E: {sc.subjScore}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+                                  );
+                                };
+
+                                return [
+                                  renderCell(pillar.core),
+                                  renderCell(pillar.added)
+                                ];
+                              })}
+
+                              {/* General Average */}
                               <td className="p-3.5 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 border-l border-slate-100 dark:border-slate-800">
                                 <div className="flex flex-col items-center justify-center space-y-1">
                                   <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge}`}>
@@ -2653,96 +2593,6 @@ export default function AdminDashboard() {
                   <p className="text-xs text-slate-400">Try adjusting your filters or search query above.</p>
                 </div>
               )}
-            </div>
-          ) : filteredAcademicReports.length > 0 ? (
-            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      <th className="p-4">Student Name</th>
-                      <th className="p-4">Grade Level</th>
-                      <th className="p-4">Community</th>
-                      <th className="p-4">Exam Title</th>
-                      <th className="p-4">Quarter</th>
-                      <th className="p-4">Subject / Class</th>
-                      <th className="p-4 text-center">Multiple Choice Score</th>
-                      <th className="p-4 text-center">Vocabs/Essay Score</th>
-                      <th className="p-4 text-center">TOTAL & %</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-700 dark:text-slate-200">
-                    {filteredAcademicReports.map((item) => {
-                      const pct = item.percentage;
-                      const badgeStyle =
-                        pct >= 80
-                          ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                          : pct >= 70
-                          ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
-                          : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
-
-                      const obj = Number(item.objScore) || 0;
-                      const subj = Number(item.subjScore) || 0;
-                      const total = obj + subj;
-
-                      return (
-                        <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
-                          <td className="p-4 font-bold text-slate-900 dark:text-slate-100">
-                            {item.studentName}
-                            {item.studentCode && (
-                              <span className="block text-[10px] text-slate-400 font-mono font-normal">
-                                {item.studentCode}
-                              </span>
-                            )}
-                          </td>
-                          <td className="p-4 font-semibold text-slate-600 dark:text-slate-300">
-                            {item.gradeLevel}
-                          </td>
-                          <td className="p-4 font-semibold text-slate-600 dark:text-slate-300">
-                            {item.community}
-                          </td>
-                          <td className="p-4">
-                            <div className="font-bold text-slate-800 dark:text-slate-100">{item.examTitle}</div>
-                            <span className="inline-flex px-2 py-0.5 mt-1 rounded text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100/50 dark:border-brand-800/50">
-                              {item.category}
-                            </span>
-                          </td>
-                          <td className="p-4">
-                            <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                              {item.quarter}
-                            </span>
-                          </td>
-                          <td className="p-4 font-mono text-[11px] text-slate-500">
-                            {item.subjectClass}
-                          </td>
-                          <td className="p-4 text-center font-bold font-mono text-slate-800 dark:text-slate-200">
-                            {obj}
-                          </td>
-                          <td className="p-4 text-center font-bold font-mono text-slate-800 dark:text-slate-200">
-                            {subj}
-                          </td>
-                          <td className="p-4 text-center">
-                            <div className="flex items-center justify-center space-x-2">
-                              <span className="font-extrabold font-mono text-slate-900 dark:text-slate-100">
-                                {total} / {item.maxScore}
-                              </span>
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-black border font-mono ${badgeStyle}`}>
-                                {pct}%
-                              </span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-16 text-center space-y-2 shadow-sm">
-              <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Graded Exam Submissions Found</p>
-              <p className="text-xs text-slate-400">Try adjusting your filters or search query above.</p>
             </div>
           )}
         </div>
