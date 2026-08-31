@@ -89,42 +89,6 @@ const STANDARD_PILLARS = [
   { core: 'Social Science', added: 'Values' }
 ];
 
-const getPillarSubjectOptions = (classSubj, grade) => {
-  if (!classSubj) return ["Math", "MAPEH"];
-  const sClean = classSubj.toLowerCase().trim();
-  const isGrade12 = (grade || "").toString().includes("12");
-
-  // 1. Social Science & Values (Checked BEFORE Science to prevent "social science" matching "science")
-  if (sClean.includes("social") || sClean.includes("history") || sClean.includes("araling panlipunan") || sClean.includes("ap") || sClean.includes("kasaysayan") || sClean.includes("civics") || sClean.includes("values") || sClean.includes("esp")) {
-    return ["Social Science", "Values"];
-  }
-
-  // 2. Science & TLE
-  if (sClean.includes("science") || sClean.includes("biology") || sClean.includes("physics") || sClean.includes("chemistry") || sClean.includes("earth") || sClean.includes("tle") || sClean.includes("technology") || sClean.includes("livelihood") || sClean.includes("ict") || sClean.includes("computer")) {
-    return ["Science", "TLE"];
-  }
-
-  // 3. English & Literature
-  if (sClean.includes("english") || sClean.includes("reading") || sClean.includes("grammar") || sClean.includes("language arts") || sClean.includes("literature") || sClean.includes("lit") || sClean.includes("panitikan")) {
-    return ["English", "Literature"];
-  }
-
-  // 4. Math & MAPEH / Physical Education
-  if (sClean.includes("math") || sClean.includes("algebra") || sClean.includes("geometry") || sClean.includes("calculus") || sClean.includes("statistics") || sClean.includes("mapeh") || sClean.includes("music") || sClean.includes("arts") || sClean.includes("physical education") || sClean.includes("pe") || sClean.includes("hope")) {
-    return ["Math", isGrade12 ? "Physical Education" : "MAPEH"];
-  }
-
-  // 5. Check exact match in STANDARD_PILLARS
-  const foundPillar = STANDARD_PILLARS.find(p => 
-    p.core.toLowerCase() === sClean || p.added.toLowerCase() === sClean
-  );
-  if (foundPillar) {
-    return [foundPillar.core, (foundPillar.core === "Math" && isGrade12) ? "Physical Education" : foundPillar.added];
-  }
-
-  return [classSubj];
-};
-
 export default function ClassDashboard() {
   const { classId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -249,7 +213,6 @@ export default function ClassDashboard() {
   const [isAddExamScopeModalOpen, setIsAddExamScopeModalOpen] = useState(false);
   const [editingExamScope, setEditingExamScope] = useState(null);
   const [scopeTitle, setScopeTitle] = useState("");
-  const [scopeSpecificSubject, setScopeSpecificSubject] = useState("");
   const [scopeText, setScopeText] = useState("");
   const [scopeQuarter, setScopeQuarter] = useState("1st Quarter");
   const [scopeCategory, setScopeCategory] = useState("1st Monthly Exam");
@@ -964,8 +927,6 @@ export default function ClassDashboard() {
   const handleOpenAddExamScopeModal = () => {
     setEditingExamScope(null);
     setScopeTitle("");
-    const subjectOpts = getPillarSubjectOptions(classInfo.subject, classInfo.grade);
-    setScopeSpecificSubject(subjectOpts[0] || classInfo.subject || "Math");
     setScopeText("");
     setScopeQuarter("1st Quarter");
     setScopeCategory("1st Monthly Exam");
@@ -977,8 +938,6 @@ export default function ClassDashboard() {
   const handleOpenEditExamScopeModal = (exam) => {
     setEditingExamScope(exam);
     setScopeTitle(exam.title || "");
-    const subjectOpts = getPillarSubjectOptions(classInfo.subject, classInfo.grade);
-    setScopeSpecificSubject(exam.specificSubject || exam.subject || subjectOpts[0] || "Math");
     setScopeText(exam.scopeText || "");
     setScopeQuarter(exam.quarter || "1st Quarter");
     setScopeCategory(exam.category || "1st Monthly Exam");
@@ -1014,14 +973,12 @@ export default function ClassDashboard() {
     setIsSavingScope(true);
     try {
       const tag = `${user.id}_${classId}`;
-      const chosenSubject = scopeSpecificSubject.trim() || classInfo.subject || "";
       const payload = {
         classId: tag,
         teacherId: user?.id || user?.uid,
         academicYear: CURRENT_ACADEMIC_YEAR,
         title: scopeTitle.trim(),
-        specificSubject: chosenSubject,
-        subject: chosenSubject,
+        subject: classInfo.subject || "",
         grade: classInfo.grade || "",
         scopeText: scopeText || "",
         quarter: scopeQuarter,
@@ -4886,37 +4843,18 @@ export default function ClassDashboard() {
             </div>
 
             <div className="space-y-4">
-              {/* Exam Title & Subject Scope */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="sm:col-span-2">
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                    Exam Title / Topic *
-                  </label>
-                  <input
-                    type="text"
-                    value={scopeTitle}
-                    onChange={(e) => setScopeTitle(e.target.value)}
-                    placeholder="e.g., 1st Monthly Exam — Reading Comprehension"
-                    className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                    Exam Subject Scope *
-                  </label>
-                  <select
-                    value={scopeSpecificSubject}
-                    onChange={(e) => setScopeSpecificSubject(e.target.value)}
-                    className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                  >
-                    {getPillarSubjectOptions(classInfo.subject, classInfo.grade).map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* Exam Title */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                  Exam Title / Topic *
+                </label>
+                <input
+                  type="text"
+                  value={scopeTitle}
+                  onChange={(e) => setScopeTitle(e.target.value)}
+                  placeholder="e.g., 1st Monthly Exam — Reading Comprehension"
+                  className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                />
               </div>
 
               {/* Quarter, Category, Max Score */}
