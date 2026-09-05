@@ -887,6 +887,12 @@ export default function AdminDashboard() {
       const snapStudents = await getDocs(qStudents);
       const allStudents = snapStudents.docs.map(doc => doc.data());
 
+      allStudents.sort((a, b) => {
+        const nameA = (formatStudentName(a) || a.internationalName || a.name || "").trim();
+        const nameB = (formatStudentName(b) || b.internationalName || b.name || "").trim();
+        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+      });
+
       const studentCount = allStudents.filter(u => u.role === "student").length;
 
       const unassignedCount = allStudents.filter(s => {
@@ -2605,6 +2611,10 @@ export default function AdminDashboard() {
             const matchesCommunity = filterCommunity === "All" || sComm === filterCommunity;
 
             return matchesSearch && matchesGrade && matchesCommunity;
+          }).sort((a, b) => {
+            const nameA = (formatStudentName(a) || a.internationalName || a.name || "").trim();
+            const nameB = (formatStudentName(b) || b.internationalName || b.name || "").trim();
+            return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
           });
 
           return (
