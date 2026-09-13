@@ -252,6 +252,7 @@ export default function ClassDashboard() {
   const [taskExternalUrl, setTaskExternalUrl] = useState("");
   const [taskMaxScore, setTaskMaxScore] = useState(50);
   const [taskQuestions, setTaskQuestions] = useState([]);
+  const [activeTaskQuestionId, setActiveTaskQuestionId] = useState(null);
 
   // Task Submissions & Grading State
   const [taskSubmissions, setTaskSubmissions] = useState([]);
@@ -1704,7 +1705,7 @@ export default function ClassDashboard() {
       points: 1,
       required: true,
       rationale: "",
-      options: ["", "", "", ""],
+      options: [""],
       correctOptionIndex: 0,
       correctOptionIndices: [0],
       correctAnswer: "",
@@ -1719,11 +1720,11 @@ export default function ClassDashboard() {
     let newQ = { ...base };
     switch (type) {
       case "multipleChoice":
-        newQ.options = ["", "", "", ""];
+        newQ.options = [""];
         newQ.correctOptionIndex = 0;
         break;
       case "checkboxes":
-        newQ.options = ["", "", "", ""];
+        newQ.options = [""];
         newQ.correctOptionIndices = [0];
         break;
       case "identification":
@@ -1751,7 +1752,22 @@ export default function ClassDashboard() {
       default:
         break;
     }
-    setTaskQuestions((prev) => [...(prev || []), newQ]);
+
+    setTaskQuestions((prev) => {
+      const list = prev || [];
+      if (!activeTaskQuestionId) {
+        return [...list, newQ];
+      }
+      const activeIdx = list.findIndex((q) => q.id === activeTaskQuestionId);
+      if (activeIdx === -1) {
+        return [...list, newQ];
+      }
+      const updated = [...list];
+      updated.splice(activeIdx + 1, 0, newQ);
+      return updated;
+    });
+
+    setActiveTaskQuestionId(qId);
   };
 
   const updateTaskQuestion = (qId, field, value) => {
@@ -1768,17 +1784,78 @@ export default function ClassDashboard() {
 
   const deleteTaskQuestion = (qId) => {
     setTaskQuestions((prev) => (prev || []).filter((q) => q.id !== qId));
+    if (activeTaskQuestionId === qId) {
+      setActiveTaskQuestionId(null);
+    }
   };
 
   const updateTaskOption = (qId, optIdx, value) => {
     setTaskQuestions((prev) =>
       (prev || []).map((q) => {
         if (q.id !== qId) return q;
-        const newOpts = [...(q.options || [])];
+        const newOpts = [...(q.options || [""])];
         newOpts[optIdx] = value;
         return { ...q, options: newOpts };
       })
     );
+  };
+
+  const handleOptionKeyDown = (e, qId, optIdx) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      setTaskQuestions((prev) =>
+        (prev || []).map((q) => {
+          if (q.id !== qId) return q;
+          const currentOpts = [...(q.options && q.options.length > 0 ? q.options : [""])];
+          currentOpts.splice(optIdx + 1, 0, "");
+          return { ...q, options: currentOpts };
+        })
+      );
+      setTimeout(() => {
+        const nextInput = document.getElementById(`opt-input-${qId}-${optIdx + 1}`);
+        if (nextInput) nextInput.focus();
+      }, 50);
+    } else if (e.key === "Backspace" && (e.target.value === "" || e.target.value === undefined)) {
+      const q = (taskQuestions || []).find((item) => item.id === qId);
+      if (q && q.options && q.options.length > 1) {
+        e.preventDefault();
+        removeTaskOption(qId, optIdx);
+        setTimeout(() => {
+          const prevIdx = Math.max(0, optIdx - 1);
+          const prevInput = document.getElementById(`opt-input-${qId}-${prevIdx}`);
+          if (prevInput) prevInput.focus();
+        }, 50);
+      }
+    }
+  };
+
+  const handleOptionPaste = (e, qId, optIdx) => {
+    const pastedText = e.clipboardData?.getData("text");
+    if (!pastedText || !pastedText.includes("\n")) return; // Single-line paste continues with native browser paste
+
+    e.preventDefault();
+    const lines = pastedText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) return;
+
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        const currentOpts = [...(q.options && q.options.length > 0 ? q.options : [""])];
+        currentOpts[optIdx] = lines[0];
+        currentOpts.splice(optIdx + 1, 0, ...lines.slice(1));
+        return { ...q, options: currentOpts };
+      })
+    );
+
+    setTimeout(() => {
+      const lastIdx = optIdx + lines.length - 1;
+      const lastInput = document.getElementById(`opt-input-${qId}-${lastIdx}`);
+      if (lastInput) lastInput.focus();
+    }, 50);
   };
 
   const toggleTaskCheckboxOption = (qId, optIdx) => {
@@ -1802,6 +1879,12 @@ export default function ClassDashboard() {
         return { ...q, options: [...(q.options || []), ""] };
       })
     );
+    setTimeout(() => {
+      const targetQ = (taskQuestions || []).find((q) => q.id === qId);
+      const newIdx = targetQ ? (targetQ.options || []).length : 0;
+      const newEl = document.getElementById(`opt-input-${qId}-${newIdx}`);
+      if (newEl) newEl.focus();
+    }, 50);
   };
 
   const removeTaskOption = (qId, optIdx) => {
@@ -1820,9 +1903,9 @@ export default function ClassDashboard() {
 
         return {
           ...q,
-          options: newOpts,
-          correctOptionIndex: Math.max(0, Math.min(corrIdx, newOpts.length - 1)),
-          correctOptionIndices: updatedIndices
+          options: newOpts.length > 0 ? newOpts : [""],
+          correctOptionIndex: Math.max(0, Math.min(corrIdx, (newOpts.length || 1) - 1)),
+          correctOptionIndices: updatedIndices.length > 0 ? updatedIndices : [0]
         };
       })
     );
@@ -1872,6 +1955,7 @@ export default function ClassDashboard() {
     setTaskExternalUrl(task.externalUrl || "");
     setTaskMaxScore(task.maxScore || task.totalPoints || 50);
     setTaskQuestions(task.questions || []);
+    setActiveTaskQuestionId(task.questions && task.questions.length > 0 ? task.questions[0].id : null);
     setIsBuildingTask(true);
   };
 
@@ -1943,6 +2027,7 @@ export default function ClassDashboard() {
     setTaskExternalUrl("");
     setTaskMaxScore(50);
     setTaskQuestions([]);
+    setActiveTaskQuestionId(null);
   };
 
   // Filtered Roster lists
@@ -3600,8 +3685,17 @@ export default function ClassDashboard() {
                       <div className="space-y-4">
                         {taskQuestions.map((q, idx) => {
                           if (q.type === "section") {
+                            const isActive = activeTaskQuestionId === q.id;
                             return (
-                              <div key={q.id} className="bg-indigo-50/60 dark:bg-indigo-950/40 border-2 border-indigo-200 dark:border-indigo-800 rounded-2xl p-5 shadow-sm space-y-3">
+                              <div
+                                key={q.id}
+                                onClick={() => setActiveTaskQuestionId(q.id)}
+                                className={`bg-indigo-50/60 dark:bg-indigo-950/40 border-2 rounded-2xl p-5 shadow-sm space-y-3 transition-all cursor-pointer ${
+                                  isActive
+                                    ? "border-indigo-500 border-l-[6px] border-l-indigo-600 shadow-md ring-2 ring-indigo-500/20"
+                                    : "border-indigo-200 dark:border-indigo-800 border-l-[6px] border-l-transparent hover:border-indigo-300"
+                                }`}
+                              >
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center space-x-2">
                                     <FolderPlus className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
@@ -3609,7 +3703,14 @@ export default function ClassDashboard() {
                                       Section Header Block
                                     </span>
                                   </div>
-                                  <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 text-indigo-400 hover:text-red-500 transition-colors cursor-pointer">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      deleteTaskQuestion(q.id);
+                                    }}
+                                    className="p-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 text-indigo-400 hover:text-red-500 transition-colors cursor-pointer"
+                                  >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
@@ -3640,8 +3741,17 @@ export default function ClassDashboard() {
                           }
 
                           if (q.type === "info") {
+                            const isActive = activeTaskQuestionId === q.id;
                             return (
-                              <div key={q.id} className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 shadow-sm space-y-3">
+                              <div
+                                key={q.id}
+                                onClick={() => setActiveTaskQuestionId(q.id)}
+                                className={`bg-slate-50 dark:bg-slate-800/60 border rounded-2xl p-5 shadow-sm space-y-3 transition-all cursor-pointer ${
+                                  isActive
+                                    ? "border-brand-500 border-l-[6px] border-l-brand-600 dark:border-l-brand-500 shadow-md ring-2 ring-brand-500/20"
+                                    : "border-slate-200 dark:border-slate-700 border-l-[6px] border-l-transparent hover:border-slate-300"
+                                }`}
+                              >
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center space-x-2">
                                     <Type className="h-4 w-4 text-slate-500" />
@@ -3649,7 +3759,14 @@ export default function ClassDashboard() {
                                       Text Block / Reading Passage
                                     </span>
                                   </div>
-                                  <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 transition-colors cursor-pointer">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      deleteTaskQuestion(q.id);
+                                    }}
+                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                                  >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
@@ -3671,9 +3788,18 @@ export default function ClassDashboard() {
 
                           const currentNumber = taskQuestions.slice(0, idx + 1).filter(item => !['section', 'info'].includes(item.type)).length;
                           const typeInfo = questionTypeLabels[q.type] || { label: q.type, color: "slate" };
+                          const isActive = activeTaskQuestionId === q.id;
 
                           return (
-                            <div key={q.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
+                            <div
+                              key={q.id}
+                              onClick={() => setActiveTaskQuestionId(q.id)}
+                              className={`bg-white dark:bg-slate-900 border rounded-2xl p-5 space-y-4 transition-all cursor-pointer ${
+                                isActive
+                                  ? "border-brand-500 border-l-[6px] border-l-brand-600 dark:border-l-brand-500 shadow-md ring-2 ring-brand-500/20"
+                                  : "border-slate-100 dark:border-slate-800 border-l-[6px] border-l-transparent shadow-sm hover:border-slate-200 dark:hover:border-slate-700"
+                              }`}
+                            >
                               {/* Question Header */}
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center space-x-3">
@@ -3697,7 +3823,14 @@ export default function ClassDashboard() {
                                       />
                                     </div>
                                   )}
-                                  <button onClick={() => deleteTaskQuestion(q.id)} className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors cursor-pointer">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      deleteTaskQuestion(q.id);
+                                    }}
+                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors cursor-pointer"
+                                  >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 </div>
@@ -3720,11 +3853,14 @@ export default function ClassDashboard() {
                               {q.type === "multipleChoice" && (
                                 <div className="space-y-3">
                                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (select single correct answer)</label>
-                                  {(q.options || ["", "", "", ""]).map((opt, optIdx) => (
+                                  {(q.options && q.options.length > 0 ? q.options : [""]).map((opt, optIdx) => (
                                     <div key={optIdx} className="flex items-center space-x-2">
                                       <button
                                         type="button"
-                                        onClick={() => updateTaskQuestion(q.id, "correctOptionIndex", optIdx)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          updateTaskQuestion(q.id, "correctOptionIndex", optIdx);
+                                        }}
                                         className={`flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer ${q.correctOptionIndex === optIdx
                                             ? "border-emerald-500 bg-emerald-500"
                                             : "border-slate-300 dark:border-slate-600 hover:border-brand-400"
@@ -3733,48 +3869,105 @@ export default function ClassDashboard() {
                                         {q.correctOptionIndex === optIdx && <Check className="h-3 w-3 text-white" />}
                                       </button>
                                       <input
+                                        id={`opt-input-${q.id}-${optIdx}`}
                                         type="text"
                                         value={opt}
                                         onChange={(e) => updateTaskOption(q.id, optIdx, e.target.value)}
-                                        placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
+                                        onKeyDown={(e) => handleOptionKeyDown(e, q.id, optIdx)}
+                                        onPaste={(e) => handleOptionPaste(e, q.id, optIdx)}
+                                        placeholder={`Option ${optIdx + 1}`}
                                         className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                                       />
-                                      {(q.options || []).length > 2 && (
-                                        <button onClick={() => removeTaskOption(q.id, optIdx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
+                                      {(q.options || []).length > 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            removeTaskOption(q.id, optIdx);
+                                          }}
+                                          className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"
+                                          title="Remove option"
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </button>
                                       )}
                                     </div>
                                   ))}
-                                  <button onClick={() => addTaskOption(q.id)} className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer">+ Add Option</button>
+
+                                  {/* Google Forms Style Add Option Button */}
+                                  <div className="flex items-center space-x-2 pt-1">
+                                    <div className="h-5 w-5 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 shrink-0" />
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        addTaskOption(q.id);
+                                      }}
+                                      className="text-xs font-semibold text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors cursor-pointer"
+                                    >
+                                      Add option
+                                    </button>
+                                  </div>
                                 </div>
                               )}
 
                               {q.type === "checkboxes" && (
                                 <div className="space-y-3">
                                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Answer Options (check all correct answers)</label>
-                                  {(q.options || ["", "", "", ""]).map((opt, optIdx) => {
+                                  {(q.options && q.options.length > 0 ? q.options : [""]).map((opt, optIdx) => {
                                     const isChecked = (q.correctOptionIndices || []).includes(optIdx);
                                     return (
                                       <div key={optIdx} className="flex items-center space-x-2">
                                         <input
                                           type="checkbox"
                                           checked={isChecked}
-                                          onChange={() => toggleTaskCheckboxOption(q.id, optIdx)}
+                                          onChange={(e) => {
+                                            e.stopPropagation();
+                                            toggleTaskCheckboxOption(q.id, optIdx);
+                                          }}
                                           className="h-4.5 w-4.5 accent-purple-600 rounded cursor-pointer shrink-0"
                                         />
                                         <input
+                                          id={`opt-input-${q.id}-${optIdx}`}
                                           type="text"
                                           value={opt}
                                           onChange={(e) => updateTaskOption(q.id, optIdx, e.target.value)}
-                                          placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
+                                          onKeyDown={(e) => handleOptionKeyDown(e, q.id, optIdx)}
+                                          onPaste={(e) => handleOptionPaste(e, q.id, optIdx)}
+                                          placeholder={`Option ${optIdx + 1}`}
                                           className="flex-1 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                                         />
-                                        {(q.options || []).length > 2 && (
-                                          <button onClick={() => removeTaskOption(q.id, optIdx)} className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"><X className="h-3.5 w-3.5" /></button>
+                                        {(q.options || []).length > 1 && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              removeTaskOption(q.id, optIdx);
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"
+                                            title="Remove option"
+                                          >
+                                            <X className="h-3.5 w-3.5" />
+                                          </button>
                                         )}
                                       </div>
                                     );
                                   })}
-                                  <button onClick={() => addTaskOption(q.id)} className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer">+ Add Option</button>
+
+                                  {/* Google Forms Style Add Option Button */}
+                                  <div className="flex items-center space-x-2 pt-1">
+                                    <div className="h-4.5 w-4.5 rounded border-2 border-dashed border-slate-300 dark:border-slate-600 shrink-0" />
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        addTaskOption(q.id);
+                                      }}
+                                      className="text-xs font-semibold text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors cursor-pointer"
+                                    >
+                                      Add option
+                                    </button>
+                                  </div>
                                 </div>
                               )}
 
@@ -3878,12 +4071,21 @@ export default function ClassDashboard() {
 
                   {/* Right Column: Sticky Floating Builder Toolbar */}
                   <div className="md:sticky md:top-24 w-full md:w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-lg space-y-3 shrink-0 z-30">
-                    <div className="flex items-center space-x-1.5 pb-2 border-b border-slate-100 dark:border-slate-800">
-                      <Sparkles className="h-4 w-4 text-brand-600 dark:text-brand-400" />
-                      <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider font-heading">
-                        Builder Tools
-                      </span>
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center space-x-1.5">
+                        <Sparkles className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+                        <span className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider font-heading">
+                          Builder Tools
+                        </span>
+                      </div>
                     </div>
+
+                    {activeTaskQuestionId && (
+                      <div className="flex items-center space-x-1.5 text-[10px] font-bold text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/30 px-2.5 py-1.5 rounded-xl border border-brand-100 dark:border-brand-800">
+                        <span className="h-1.5 w-1.5 rounded-full bg-brand-500 shrink-0" />
+                        <span>Adding under active item</span>
+                      </div>
+                    )}
 
                     <div className="flex flex-col gap-2">
                       <button onClick={() => addTaskQuestion("multipleChoice")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 transition-colors cursor-pointer w-full">
