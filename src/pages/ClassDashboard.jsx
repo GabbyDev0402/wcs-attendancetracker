@@ -3420,7 +3420,7 @@ export default function ClassDashboard() {
             </div>
           ) : (
             /* ── Task Builder Studio View ── */
-            <div className="space-y-6">
+            <div className="max-w-3xl mx-auto w-full space-y-6">
               {/* Builder Header */}
               <div className="flex items-center justify-between">
                 <button
@@ -3438,8 +3438,8 @@ export default function ClassDashboard() {
               <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4 transition-colors">
                 <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">General Information & Grading Configuration</h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="sm:col-span-2">
+                <div className="space-y-4">
+                  <div>
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Task Title *</label>
                     <input
                       type="text"
@@ -3459,9 +3459,7 @@ export default function ClassDashboard() {
                       className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors cursor-pointer"
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Grading Quarter *</label>
                     <select
@@ -3487,17 +3485,17 @@ export default function ClassDashboard() {
                       <option value="Performance Task">Performance Task</option>
                     </select>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Instructions / Description</label>
-                  <textarea
-                    rows={3}
-                    value={taskDescription}
-                    onChange={(e) => setTaskDescription(e.target.value)}
-                    placeholder="Provide clear guidelines, submission expectations, or instructions for the students..."
-                    className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
-                  />
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Instructions / Description</label>
+                    <textarea
+                      rows={3}
+                      value={taskDescription}
+                      onChange={(e) => setTaskDescription(e.target.value)}
+                      placeholder="Provide clear guidelines, submission expectations, or instructions for the students..."
+                      className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -3505,7 +3503,7 @@ export default function ClassDashboard() {
               <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4 transition-colors">
                 <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Select Task Mode</h3>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3">
                   <div
                     onClick={() => setTaskMode("external")}
                     className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start space-x-3 ${taskMode === "external"
@@ -3560,8 +3558,8 @@ export default function ClassDashboard() {
                 {/* Conditional UI: External Link Mode */}
                 {taskMode === "external" && (
                   <div className="pt-2 space-y-4 animate-fade-in border-t border-slate-100 dark:border-slate-800">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="sm:col-span-2">
+                    <div className="space-y-4">
+                      <div>
                         <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">External Resource URL *</label>
                         <input
                           type="url"
