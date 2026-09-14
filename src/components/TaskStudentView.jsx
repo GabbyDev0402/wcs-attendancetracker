@@ -242,44 +242,47 @@ export default function TaskStudentView({
       )}
 
       {/* Task Banner Header */}
-      <div className="bg-slate-950 dark:bg-slate-900 text-white p-6 sm:p-8 rounded-3xl border border-slate-800 shadow-xl space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 text-xs font-bold uppercase tracking-wider">
-            <ListChecks className="h-3.5 w-3.5 text-brand-400" />
-            <span>{task?.mode === "external" ? "External Resource" : "In-App Quiz / Worksheet"}</span>
-          </div>
+      <div className="relative overflow-hidden bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl border border-slate-200/90 dark:border-slate-800 shadow-xs dark:shadow-xl transition-colors">
+        <div className="absolute right-0 top-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-brand-500/10 dark:bg-brand-500/10 blur-3xl pointer-events-none" />
+        <div className="relative z-10 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-500/20 text-brand-700 dark:text-brand-300 border border-brand-200/80 dark:border-brand-500/30 text-xs font-bold uppercase tracking-wider shadow-2xs">
+              <ListChecks className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
+              <span>{task?.mode === "external" ? "External Resource" : "In-App Quiz / Worksheet"}</span>
+            </div>
 
-          <div className="flex items-center space-x-2">
-            <span className="inline-flex items-center space-x-1 px-3 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold">
-              <Sparkles className="h-3 w-3 text-brand-400" />
-              <span>{task?.totalPoints || task?.maxScore || calculatedTotalPoints || 50} pts total</span>
-            </span>
-
-            {isSubmitted && (
-              <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
-                submission?.status === "graded"
-                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                  : "bg-amber-500/20 text-amber-300 border-amber-500/40"
-              }`}>
-                <CheckCircle className="h-3.5 w-3.5" />
-                <span>
-                  {submission?.status === "graded"
-                    ? `Graded: ${(submission.objScore || 0) + (submission.subjScore || 0)} / ${submission.maxScore || 50} pts`
-                    : "Submitted (Pending Review)"}
-                </span>
+            <div className="flex items-center space-x-2">
+              <span className="inline-flex items-center space-x-1 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold">
+                <Sparkles className="h-3 w-3 text-brand-600 dark:text-brand-400" />
+                <span>{task?.totalPoints || task?.maxScore || calculatedTotalPoints || 50} pts total</span>
               </span>
-            )}
-          </div>
-        </div>
 
-        <h1 className="text-2xl sm:text-3xl font-extrabold font-heading tracking-tight">
-          {task?.title || "Untitled Task / Quiz"}
-        </h1>
-        {task?.description && (
-          <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
-            {task.description}
-          </p>
-        )}
+              {isSubmitted && (
+                <span className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                  submission?.status === "graded"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                    : "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                }`}>
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  <span>
+                    {submission?.status === "graded"
+                      ? `Graded: ${(submission.objScore || 0) + (submission.subjScore || 0)} / ${submission.maxScore || 50} pts`
+                      : "Submitted (Pending Review)"}
+                  </span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          <h1 className="text-2xl sm:text-3xl font-black font-heading tracking-tight text-slate-900 dark:text-white">
+            {task?.title || "Untitled Task / Quiz"}
+          </h1>
+          {task?.description && (
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
+              {task.description}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* External Resource Mode Card */}

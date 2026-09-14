@@ -318,31 +318,32 @@ export default function StudentDashboard() {
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Student Welcome Header Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-brand-950 to-brand-900 text-white p-6 sm:p-8 shadow-xl">
-        <div className="absolute right-0 top-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl pointer-events-none" />
+      <div className="relative overflow-hidden rounded-3xl bg-white dark:bg-gradient-to-r dark:from-slate-900 dark:via-brand-950 dark:to-brand-900 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-xs dark:shadow-xl transition-colors">
+        <div className="absolute right-0 top-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-brand-500/10 dark:bg-brand-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute left-1/3 bottom-0 -mb-16 h-48 w-48 rounded-full bg-indigo-500/5 dark:bg-indigo-500/10 blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
           <div className="flex items-center space-x-4">
-            <div className="h-16 w-16 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-white text-2xl font-bold font-heading shadow-inner shrink-0">
+            <div className="h-16 w-16 rounded-2xl bg-brand-50 dark:bg-white/10 border border-brand-200/80 dark:border-white/20 flex items-center justify-center text-brand-700 dark:text-white text-2xl font-bold font-heading shadow-inner shrink-0">
               {(user?.internationalName || user?.name || "ST").substring(0, 2).toUpperCase()}
             </div>
             <div>
-              <div className="inline-flex items-center space-x-2 px-2.5 py-0.5 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 text-[10px] font-bold uppercase tracking-wider mb-1">
-                <ShieldCheck className="h-3 w-3 text-brand-400" />
+              <div className="inline-flex items-center space-x-2 px-2.5 py-0.5 rounded-full bg-brand-50 dark:bg-brand-500/20 text-brand-700 dark:text-brand-300 border border-brand-200/80 dark:border-brand-500/30 text-[10px] font-bold uppercase tracking-wider mb-1 shadow-2xs">
+                <ShieldCheck className="h-3 w-3 text-brand-600 dark:text-brand-400" />
                 <span>Verified Student Digital Notebook</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-bold font-heading tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-black font-heading tracking-tight text-slate-900 dark:text-white">
                 Welcome back, {user?.name || user?.internationalName || "Student"}!
               </h1>
-              <p className="text-xs sm:text-sm text-slate-300 mt-1 font-medium">
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-300 mt-1 font-medium">
                 Submit your daily diary entries and class vocabulary sentences below.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-3 bg-white/10 backdrop-blur-md border border-white/15 px-4 py-3 rounded-2xl shrink-0">
+          <div className="flex items-center space-x-3 bg-slate-50/90 dark:bg-white/10 dark:backdrop-blur-md border border-slate-200/80 dark:border-white/15 px-4 py-3 rounded-2xl shrink-0 shadow-2xs">
             <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-slate-300 font-bold">Student Code</div>
-              <div className="font-mono font-extrabold text-brand-300 text-lg tracking-wider">
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-400 font-extrabold">Student Code</div>
+              <div className="font-mono font-extrabold text-brand-600 dark:text-brand-300 text-lg tracking-wider">
                 {user?.studentCode || "WCS-STD"}
               </div>
             </div>

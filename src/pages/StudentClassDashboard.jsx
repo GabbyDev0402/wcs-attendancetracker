@@ -430,20 +430,21 @@ export default function StudentClassDashboard() {
       </div>
 
       {/* Hero Classroom Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-slate-950 dark:bg-slate-900 p-6 sm:p-8 text-white shadow-xl border border-slate-800">
-        <div className="absolute right-0 top-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl pointer-events-none" />
+      <div className="relative overflow-hidden rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-xs dark:shadow-xl transition-colors">
+        <div className="absolute right-0 top-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-brand-500/10 dark:bg-brand-500/10 blur-3xl pointer-events-none" />
+        <div className="absolute left-1/3 bottom-0 -mb-16 h-48 w-48 rounded-full bg-indigo-500/5 dark:bg-indigo-500/10 blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-500/20 text-brand-300 border border-brand-500/30 text-xs font-bold uppercase tracking-wider mb-2">
-              <GraduationCap className="h-4 w-4 text-brand-400" />
+            <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border border-brand-200/80 dark:border-brand-700/60 text-xs font-bold tracking-wide mb-2.5 shadow-2xs">
+              <GraduationCap className="h-4 w-4 text-brand-600 dark:text-brand-400" />
               <span>Student Classroom Portal</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold font-heading tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-black font-heading tracking-tight text-slate-900 dark:text-white">
               {displayTitle}
             </h1>
             {teacherName && (
-              <p className="text-xs sm:text-sm text-slate-300 mt-1 font-semibold">
-                Instructor: {teacherName}
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5 font-semibold">
+                Instructor: <span className="text-slate-700 dark:text-slate-200 font-bold">{teacherName}</span>
               </p>
             )}
           </div>

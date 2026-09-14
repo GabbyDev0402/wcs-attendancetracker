@@ -2254,22 +2254,25 @@ export default function ClassDashboard() {
           </Link>
         </div>
 
-        {/* Classroom Google-Classroom Style Hero Banner */}
-        <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-brand-900 via-slate-900 to-brand-950 text-white p-6 sm:p-8 shadow-xl">
-          <div className="absolute right-0 top-0 -mr-12 -mt-12 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl pointer-events-none" />
+        {/* Classroom Modern Crisp Hero Banner */}
+        <div className="relative overflow-hidden rounded-3xl bg-white dark:bg-gradient-to-r dark:from-brand-950 dark:via-slate-900 dark:to-slate-950 border border-slate-200/90 dark:border-slate-800 p-6 sm:p-8 shadow-xs dark:shadow-xl transition-colors">
+          <div className="absolute right-0 top-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-brand-500/10 dark:bg-brand-500/10 blur-3xl pointer-events-none" />
+          <div className="absolute left-1/3 bottom-0 -mb-16 h-48 w-48 rounded-full bg-indigo-500/5 dark:bg-indigo-500/10 blur-3xl pointer-events-none" />
           <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
             <div>
-              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-white/10 text-brand-200 border border-white/15 text-xs font-bold tracking-wide mb-2">
-                <BookOpen className="h-3.5 w-3.5 text-brand-300" />
+              <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border border-brand-200/80 dark:border-brand-700/60 text-xs font-bold tracking-wide mb-2.5 shadow-2xs">
+                <BookOpen className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400" />
                 <span>Classroom Portal</span>
               </div>
-              <h1 className="text-3xl sm:text-4xl font-extrabold font-heading tracking-tight">
+              <h1 className="text-3xl sm:text-4xl font-extrabold font-heading tracking-tight text-slate-900 dark:text-white">
                 {classInfo.name}
               </h1>
               {classInfo.startTime && classInfo.endTime && (
-                <div className="flex items-center space-x-2 text-xs text-slate-300 font-semibold mt-2">
-                  <Clock className="h-3.5 w-3.5 text-brand-300" />
-                  <span>{formatTime12Hour(classInfo.startTime)} - {formatTime12Hour(classInfo.endTime)}</span>
+                <div className="flex items-center space-x-2 text-xs font-medium text-slate-500 dark:text-slate-300 mt-2.5 flex-wrap gap-y-1">
+                  <Clock className="h-3.5 w-3.5 text-brand-600 dark:text-brand-400 shrink-0" />
+                  <span className="font-bold text-slate-700 dark:text-slate-200">
+                    {formatTime12Hour(classInfo.startTime)} - {formatTime12Hour(classInfo.endTime)}
+                  </span>
                   {classInfo.daysOfWeek && classInfo.daysOfWeek.length > 0 && (
                     <span>• {classInfo.daysOfWeek.join(", ")}</span>
                   )}
@@ -2277,10 +2280,12 @@ export default function ClassDashboard() {
               )}
             </div>
 
-            <div className="flex items-center space-x-4 bg-white/10 backdrop-blur-md border border-white/15 px-4 py-3 rounded-2xl shrink-0">
-              <div className="text-center">
-                <div className="text-[10px] uppercase tracking-wider text-slate-300 font-bold">Enrolled Roster</div>
-                <div className="text-2xl font-black text-brand-300 font-heading">
+            <div className="flex items-center space-x-4 bg-slate-50/90 dark:bg-white/10 dark:backdrop-blur-md border border-slate-200/80 dark:border-white/15 px-5 py-3.5 rounded-2xl shrink-0 shadow-2xs">
+              <div className="text-center sm:text-right">
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-400 font-extrabold">
+                  Enrolled Roster
+                </div>
+                <div className="text-2xl font-black text-brand-600 dark:text-brand-300 font-heading">
                   {classStudents.length} Students
                 </div>
               </div>
