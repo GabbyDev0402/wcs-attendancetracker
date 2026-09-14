@@ -66,8 +66,10 @@ import {
   Type,
   FileSpreadsheet,
   Paperclip,
-  CheckSquare
+  CheckSquare,
+  Eye
 } from "lucide-react";
+import TaskStudentView from "../components/TaskStudentView";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
 
@@ -380,6 +382,9 @@ export default function ClassDashboard() {
   const [taskMaxScore, setTaskMaxScore] = useState(50);
   const [taskQuestions, setTaskQuestions] = useState([]);
   const [activeTaskQuestionId, setActiveTaskQuestionId] = useState(null);
+  const [isPreviewTaskModalOpen, setIsPreviewTaskModalOpen] = useState(false);
+  const [previewTaskData, setPreviewTaskData] = useState(null);
+  const [previewAnswers, setPreviewAnswers] = useState({});
 
   // Task Submissions & Grading State
   const [taskSubmissions, setTaskSubmissions] = useState([]);
@@ -2190,6 +2195,26 @@ export default function ClassDashboard() {
     setActiveTaskQuestionId(null);
   };
 
+  const handleOpenTaskPreview = (taskToPreview = null) => {
+    if (taskToPreview) {
+      setPreviewTaskData(taskToPreview);
+    } else {
+      setPreviewTaskData({
+        title: taskTitle || "Untitled Task / Quiz",
+        description: taskDescription || "",
+        dueDate: taskDueDate || "",
+        quarter: taskQuarter || "1st Quarter",
+        category: taskCategory || "Written Task",
+        mode: taskMode,
+        externalUrl: taskExternalUrl,
+        maxScore: taskMaxScore,
+        questions: taskQuestions || []
+      });
+    }
+    setPreviewAnswers({});
+    setIsPreviewTaskModalOpen(true);
+  };
+
   // Filtered Roster lists
   const filteredClassStudents = classStudents.filter(s => {
     const search = rosterSearchQuery.toLowerCase();
@@ -3389,6 +3414,13 @@ export default function ClassDashboard() {
                             )}
                           </span>
                           <button
+                            onClick={() => handleOpenTaskPreview(task)}
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"
+                            title="Preview Student View"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </button>
+                          <button
                             onClick={() => handleOpenEditTask(task)}
                             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"
                             title="Edit Task"
@@ -3676,7 +3708,15 @@ export default function ClassDashboard() {
                   <span>Cancel</span>
                 </button>
                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">Task & Quiz Builder Studio</h2>
-                <div />
+                <button
+                  type="button"
+                  onClick={() => handleOpenTaskPreview()}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  title="Preview Student View"
+                >
+                  <Eye className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+                  <span>Preview</span>
+                </button>
               </div>
 
               {/* Core Information Card */}
@@ -4254,13 +4294,6 @@ export default function ClassDashboard() {
                         </span>
                       </div>
                     </div>
-
-                    {activeTaskQuestionId && (
-                      <div className="flex items-center space-x-1.5 text-[10px] font-bold text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-900/30 px-2.5 py-1.5 rounded-xl border border-brand-100 dark:border-brand-800">
-                        <span className="h-1.5 w-1.5 rounded-full bg-brand-500 shrink-0" />
-                        <span>Adding under active item</span>
-                      </div>
-                    )}
 
                     <div className="flex flex-col gap-2">
                       <button onClick={() => addTaskQuestion("multipleChoice")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 transition-colors cursor-pointer w-full">
@@ -5058,6 +5091,55 @@ export default function ClassDashboard() {
                 <CheckCircle className="h-4 w-4" />
                 <span>{isSavingQuizGrade ? "Saving Grade..." : "Finalize & Save Grade"}</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Teacher Preview Student View */}
+      {isPreviewTaskModalOpen && previewTaskData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-6 animate-fade-in overflow-y-auto">
+          <div className="relative w-full max-w-4xl max-h-[92vh] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-scale-up">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <div className="h-8 w-8 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 flex items-center justify-center shrink-0">
+                  <Eye className="h-4.5 w-4.5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-heading">
+                    Student View Preview
+                  </h3>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                    Live simulation of the student quiz experience with multi-page sections & formatting
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsPreviewTaskModalOpen(false)}
+                className="p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
+                title="Close Preview"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Content */}
+            <div className="p-4 sm:p-8 overflow-y-auto flex-1">
+              <TaskStudentView
+                task={previewTaskData}
+                isPreview={true}
+                studentAnswers={previewAnswers}
+                onAnswerChange={(qId, val) => {
+                  setPreviewAnswers((prev) => ({
+                    ...prev,
+                    [qId]: val
+                  }));
+                }}
+                onClosePreview={() => setIsPreviewTaskModalOpen(false)}
+              />
             </div>
           </div>
         </div>

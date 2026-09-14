@@ -69,3 +69,63 @@ export const formatScheduleString = (assignment) => {
   }
   return "(Unscheduled)";
 };
+
+/**
+ * Partition task questions into pages based on Google Forms style "section" breaks.
+ * Questions prior to the first section header block belong to Section 1 (page 0).
+ * Each item with type === 'section' creates a new page with its title and description.
+ */
+export const computeTaskPages = (questions = [], defaultTitle = "Assignment / Quiz", defaultDescription = "") => {
+  if (!questions || questions.length === 0) {
+    return [{
+      pageIndex: 0,
+      title: defaultTitle || "Section 1",
+      description: defaultDescription || "",
+      items: []
+    }];
+  }
+
+  const hasSections = questions.some(q => q && q.type === "section");
+  if (!hasSections) {
+    return [{
+      pageIndex: 0,
+      title: defaultTitle || "Section 1",
+      description: defaultDescription || "",
+      items: questions
+    }];
+  }
+
+  const pages = [];
+  let currentPage = null;
+
+  questions.forEach((item) => {
+    if (!item) return;
+    if (item.type === "section") {
+      currentPage = {
+        pageIndex: pages.length,
+        title: item.title?.trim() || `Section ${pages.length + 1}`,
+        description: item.description || "",
+        items: []
+      };
+      pages.push(currentPage);
+    } else {
+      if (!currentPage) {
+        currentPage = {
+          pageIndex: 0,
+          title: defaultTitle || "Section 1",
+          description: defaultDescription || "",
+          items: []
+        };
+        pages.push(currentPage);
+      }
+      currentPage.items.push(item);
+    }
+  });
+
+  return pages.length > 0 ? pages : [{
+    pageIndex: 0,
+    title: defaultTitle || "Section 1",
+    description: defaultDescription || "",
+    items: []
+  }];
+};
