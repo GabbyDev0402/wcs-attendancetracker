@@ -237,6 +237,7 @@ export default function StudentExamSession() {
         examId: exam.firestoreId || examId,
         examTitle: exam.title || "Exam",
         classId: decodeURIComponent(classId),
+        teacherId: exam.teacherId || (classId && decodeURIComponent(classId).includes("_") ? decodeURIComponent(classId).split("_")[0] : ""),
         studentId: user.id,
         studentName: formatStudentName(user),
         answers: studentAnswers,

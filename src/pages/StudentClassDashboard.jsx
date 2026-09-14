@@ -214,6 +214,7 @@ export default function StudentClassDashboard() {
       const payload = {
         examId: examDocId,
         classId: targetClassTag,
+        teacherId: extractedTeacherId || (targetClassTag.includes("_") ? targetClassTag.split("_")[0] : ""),
         studentId: studentUid,
         studentName: studentName,
         status: "turned_in",
@@ -287,6 +288,7 @@ export default function StudentClassDashboard() {
         taskId: taskId,
         taskTitle: task.title || "Task",
         classId: targetClassTag,
+        teacherId: extractedTeacherId || (targetClassTag.includes("_") ? targetClassTag.split("_")[0] : ""),
         studentId: user.id,
         studentName: formatStudentName(user),
         status: "turned_in",

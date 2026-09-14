@@ -203,6 +203,7 @@ export default function StudentTaskSession() {
         taskId: task.firestoreId || taskId,
         taskTitle: task.title || "Quiz",
         classId: task.classId || classId,
+        teacherId: task.teacherId || (task.classId && task.classId.includes("_") ? task.classId.split("_")[0] : (classId && classId.includes("_") ? classId.split("_")[0] : "")),
         studentId: user.id,
         studentName: formatStudentName(user),
         answers: studentAnswers,

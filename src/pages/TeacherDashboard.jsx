@@ -18,7 +18,9 @@ import {
   X,
   MessageSquare,
   FileText,
-  Bell
+  Bell,
+  CheckSquare,
+  ListChecks
 } from "lucide-react";
 
 export default function TeacherDashboard() {
@@ -38,8 +40,10 @@ export default function TeacherDashboard() {
   const todayStr = new Date().toLocaleDateString("en-CA");
   const todayWeekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
 
-  // Real-time Pending Vocab Submissions by Class State
+  // Real-time Pending Submissions by Class States
   const [pendingVocabsByClass, setPendingVocabsByClass] = useState({});
+  const [pendingTasksByClass, setPendingTasksByClass] = useState({});
+  const [pendingExamsByClass, setPendingExamsByClass] = useState({});
 
   // Math Teacher Detection & Diary Grading State
   const isMathTeacher = (user?.assignments || []).some(a => (a.subject || '').toLowerCase().includes('math'));
@@ -180,6 +184,136 @@ export default function TeacherDashboard() {
 
     return () => unsubPendingVocabs();
   }, [user?.id]);
+
+  // Real-time Pending Task Submissions by Class Listener
+  useEffect(() => {
+    if (!user || teacherClasses.length === 0) {
+      setPendingTasksByClass({});
+      return;
+    }
+
+    const classTags = [];
+    teacherClasses.forEach(c => {
+      classTags.push(`${user.id}_${c.id}`);
+      classTags.push(c.id);
+      classTags.push(encodeURIComponent(`${user.id}_${c.id}`));
+    });
+    const uniqueClassIds = Array.from(new Set(classTags.filter(Boolean)));
+    if (uniqueClassIds.length === 0) return;
+
+    const chunks = [];
+    for (let i = 0; i < uniqueClassIds.length; i += 30) {
+      chunks.push(uniqueClassIds.slice(i, i + 30));
+    }
+
+    const chunkCounts = {};
+    const unsubs = chunks.map((chunk, chunkIdx) => {
+      const q = query(
+        collection(db, "task_submissions"),
+        where("classId", "in", chunk)
+      );
+
+      return onSnapshot(q, (snap) => {
+        const counts = {};
+        snap.docs.forEach(docSnap => {
+          const data = docSnap.data();
+          const normStatus = (data.status || "").toLowerCase().trim();
+          const isPending = normStatus === "turned_in" || normStatus === "pending_review" || normStatus === "pending review" || normStatus === "pending";
+          if (isPending && data.classId) {
+            const cId = data.classId;
+            const rawId = data.rawClassId || (cId.includes("_") ? cId.split("_").slice(1).join("_") : cId);
+
+            counts[cId] = (counts[cId] || 0) + 1;
+            if (rawId && rawId !== cId) {
+              counts[rawId] = (counts[rawId] || 0) + 1;
+            }
+            const fullTag = `${user.id}_${rawId}`;
+            if (fullTag !== cId) {
+              counts[fullTag] = (counts[fullTag] || 0) + 1;
+            }
+          }
+        });
+        chunkCounts[chunkIdx] = counts;
+
+        const merged = {};
+        Object.values(chunkCounts).forEach(cMap => {
+          Object.entries(cMap).forEach(([k, v]) => {
+            merged[k] = (merged[k] || 0) + v;
+          });
+        });
+        setPendingTasksByClass(merged);
+      }, (e) => {
+        console.error("Error listening to pending task submissions count:", e);
+      });
+    });
+
+    return () => unsubs.forEach(unsub => unsub());
+  }, [user?.id, teacherClasses]);
+
+  // Real-time Pending Exam Submissions by Class Listener ("Mark as done" / Pending Review)
+  useEffect(() => {
+    if (!user || teacherClasses.length === 0) {
+      setPendingExamsByClass({});
+      return;
+    }
+
+    const classTags = [];
+    teacherClasses.forEach(c => {
+      classTags.push(`${user.id}_${c.id}`);
+      classTags.push(c.id);
+      classTags.push(encodeURIComponent(`${user.id}_${c.id}`));
+    });
+    const uniqueClassIds = Array.from(new Set(classTags.filter(Boolean)));
+    if (uniqueClassIds.length === 0) return;
+
+    const chunks = [];
+    for (let i = 0; i < uniqueClassIds.length; i += 30) {
+      chunks.push(uniqueClassIds.slice(i, i + 30));
+    }
+
+    const chunkCounts = {};
+    const unsubs = chunks.map((chunk, chunkIdx) => {
+      const q = query(
+        collection(db, "exam_submissions"),
+        where("classId", "in", chunk)
+      );
+
+      return onSnapshot(q, (snap) => {
+        const counts = {};
+        snap.docs.forEach(docSnap => {
+          const data = docSnap.data();
+          const normStatus = (data.status || "").toLowerCase().trim();
+          const isPending = normStatus === "turned_in" || normStatus === "pending review" || normStatus === "pending_review" || normStatus === "pending";
+          if (isPending && data.classId) {
+            const cId = data.classId;
+            const rawId = data.rawClassId || (cId.includes("_") ? cId.split("_").slice(1).join("_") : cId);
+
+            counts[cId] = (counts[cId] || 0) + 1;
+            if (rawId && rawId !== cId) {
+              counts[rawId] = (counts[rawId] || 0) + 1;
+            }
+            const fullTag = `${user.id}_${rawId}`;
+            if (fullTag !== cId) {
+              counts[fullTag] = (counts[fullTag] || 0) + 1;
+            }
+          }
+        });
+        chunkCounts[chunkIdx] = counts;
+
+        const merged = {};
+        Object.values(chunkCounts).forEach(cMap => {
+          Object.entries(cMap).forEach(([k, v]) => {
+            merged[k] = (merged[k] || 0) + v;
+          });
+        });
+        setPendingExamsByClass(merged);
+      }, (e) => {
+        console.error("Error listening to pending exam submissions count:", e);
+      });
+    });
+
+    return () => unsubs.forEach(unsub => unsub());
+  }, [user?.id, teacherClasses]);
 
   const loadPendingDiaries = () => { };
 
@@ -748,6 +882,8 @@ export default function TeacherDashboard() {
 
                     const classTag = `${user?.id}_${classItem.id}`;
                     const pendingVocabCount = pendingVocabsByClass[classTag] || pendingVocabsByClass[classItem.id] || 0;
+                    const pendingTaskCount = pendingTasksByClass[classTag] || pendingTasksByClass[classItem.id] || 0;
+                    const pendingExamCount = pendingExamsByClass[classTag] || pendingExamsByClass[classItem.id] || 0;
 
                     return (
                       <div
@@ -784,10 +920,36 @@ export default function TeacherDashboard() {
                             </div>
 
                             {pendingVocabCount > 0 && (
-                              <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 text-xs font-bold transition-all animate-pulse">
-                                <Bell className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                              <Link
+                                to={`/teacher/class/${classItem.id}?tab=vocabularies`}
+                                title="Click to review pending vocabularies"
+                                className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/60 text-xs font-bold transition-all hover:scale-105 hover:bg-amber-200 dark:hover:bg-amber-800/50 cursor-pointer shadow-2xs group/notif"
+                              >
+                                <Bell className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0 group-hover/notif:rotate-12 transition-transform" />
                                 <span>{pendingVocabCount} Pending Vocab{pendingVocabCount !== 1 ? "s" : ""}</span>
-                              </div>
+                              </Link>
+                            )}
+
+                            {pendingTaskCount > 0 && (
+                              <Link
+                                to={`/teacher/class/${classItem.id}?tab=tasks`}
+                                title="Click to review pending task submissions"
+                                className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700/60 text-xs font-bold transition-all hover:scale-105 hover:bg-blue-200 dark:hover:bg-blue-800/50 cursor-pointer shadow-2xs group/notif"
+                              >
+                                <CheckSquare className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0 group-hover/notif:scale-110 transition-transform" />
+                                <span>{pendingTaskCount} Pending Task{pendingTaskCount !== 1 ? "s" : ""}</span>
+                              </Link>
+                            )}
+
+                            {pendingExamCount > 0 && (
+                              <Link
+                                to={`/teacher/class/${classItem.id}?tab=exams`}
+                                title="Click to review exam submissions"
+                                className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-700/60 text-xs font-bold transition-all hover:scale-105 hover:bg-purple-200 dark:hover:bg-purple-800/50 cursor-pointer shadow-2xs group/notif"
+                              >
+                                <ListChecks className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400 shrink-0 group-hover/notif:scale-110 transition-transform" />
+                                <span>{pendingExamCount} Exam Submission{pendingExamCount !== 1 ? "s" : ""}</span>
+                              </Link>
                             )}
                           </div>
                         </div>
@@ -831,6 +993,8 @@ export default function TeacherDashboard() {
                     {unscheduledOrOtherClasses.map((classItem) => {
                       const classTag = `${user?.id}_${classItem.id}`;
                       const pendingVocabCount = pendingVocabsByClass[classTag] || pendingVocabsByClass[classItem.id] || 0;
+                      const pendingTaskCount = pendingTasksByClass[classTag] || pendingTasksByClass[classItem.id] || 0;
+                      const pendingExamCount = pendingExamsByClass[classTag] || pendingExamsByClass[classItem.id] || 0;
 
                       const isLogged = todaySessions.some(session => {
                         const sessionGrade = session.gradeLevel || session.grade;
@@ -848,11 +1012,39 @@ export default function TeacherDashboard() {
                             <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold block transition-colors">
                               {formatScheduleString(classItem)}
                             </span>
-                            {pendingVocabCount > 0 && (
-                              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 text-[10px] font-bold animate-pulse">
-                                <Bell className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
-                                <span>{pendingVocabCount} Pending Vocab{pendingVocabCount !== 1 ? "s" : ""}</span>
-                              </span>
+                            {(pendingVocabCount > 0 || pendingTaskCount > 0 || pendingExamCount > 0) && (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                {pendingVocabCount > 0 && (
+                                  <Link
+                                    to={`/teacher/class/${classItem.id}?tab=vocabularies`}
+                                    title="Review vocabulary submissions"
+                                    className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/60 hover:bg-amber-200 dark:hover:bg-amber-800/50 text-[10px] font-bold transition-all hover:scale-105 cursor-pointer shadow-2xs"
+                                  >
+                                    <Bell className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                                    <span>{pendingVocabCount} Pending Vocab{pendingVocabCount !== 1 ? "s" : ""}</span>
+                                  </Link>
+                                )}
+                                {pendingTaskCount > 0 && (
+                                  <Link
+                                    to={`/teacher/class/${classItem.id}?tab=tasks`}
+                                    title="Review task submissions"
+                                    className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700/60 hover:bg-blue-200 dark:hover:bg-blue-800/50 text-[10px] font-bold transition-all hover:scale-105 cursor-pointer shadow-2xs"
+                                  >
+                                    <CheckSquare className="h-3 w-3 text-blue-600 dark:text-blue-400 shrink-0" />
+                                    <span>{pendingTaskCount} Pending Task{pendingTaskCount !== 1 ? "s" : ""}</span>
+                                  </Link>
+                                )}
+                                {pendingExamCount > 0 && (
+                                  <Link
+                                    to={`/teacher/class/${classItem.id}?tab=exams`}
+                                    title="Review exam submissions"
+                                    className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-700/60 hover:bg-purple-200 dark:hover:bg-purple-800/50 text-[10px] font-bold transition-all hover:scale-105 cursor-pointer shadow-2xs"
+                                  >
+                                    <ListChecks className="h-3 w-3 text-purple-600 dark:text-purple-400 shrink-0" />
+                                    <span>{pendingExamCount} Exam Submission{pendingExamCount !== 1 ? "s" : ""}</span>
+                                  </Link>
+                                )}
+                              </div>
                             )}
                           </div>
 

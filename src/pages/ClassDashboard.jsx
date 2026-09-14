@@ -234,6 +234,14 @@ export default function ClassDashboard() {
   const currentTabParam = searchParams.get("tab") || "attendance";
   const [activeTab, setActiveTab] = useState(currentTabParam);
 
+  // Sync activeTab when URL search query param changes
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam && ["attendance", "vocabularies", "exams", "tasks", "record", "roster"].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
+
   // Class Info State
   const [classInfo, setClassInfo] = useState({ name: "Loading Class...", grade: "", subject: "" });
 
@@ -1183,8 +1191,13 @@ export default function ClassDashboard() {
     const subsForThisExam = examSubmissions.filter(sub => sub.examId === examDocId || sub.examId === exam.id);
     subsForThisExam.forEach(sub => {
       if (sub.studentId) {
-        initialObjInputs[sub.studentId] = sub.objScore !== undefined ? sub.objScore : (sub.score !== undefined ? sub.score : "");
-        initialSubjInputs[sub.studentId] = sub.subjScore !== undefined ? sub.subjScore : "";
+        const isGraded = sub.status === "graded";
+        initialObjInputs[sub.studentId] = isGraded
+          ? (sub.objScore !== undefined ? sub.objScore : (sub.score !== undefined ? sub.score : ""))
+          : "";
+        initialSubjInputs[sub.studentId] = isGraded
+          ? (sub.subjScore !== undefined ? sub.subjScore : "")
+          : "";
       }
     });
 
@@ -2338,6 +2351,11 @@ export default function ClassDashboard() {
                 {exams.length}
               </span>
             )}
+            {examSubmissions.filter(s => (s.status || "").toLowerCase() === "turned_in" || (s.status || "").toLowerCase().includes("pending")).length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-purple-600 text-white font-black animate-pulse" title="Pending exam submissions awaiting scoring">
+                {examSubmissions.filter(s => (s.status || "").toLowerCase() === "turned_in" || (s.status || "").toLowerCase().includes("pending")).length}
+              </span>
+            )}
           </button>
 
           <button
@@ -2352,6 +2370,11 @@ export default function ClassDashboard() {
             {tasks.length > 0 && (
               <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                 {tasks.length}
+              </span>
+            )}
+            {taskSubmissions.filter(s => s.status !== "graded").length > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-blue-600 text-white font-black animate-pulse" title="Pending task submissions awaiting scoring">
+                {taskSubmissions.filter(s => s.status !== "graded").length}
               </span>
             )}
           </button>
@@ -3233,6 +3256,8 @@ export default function ClassDashboard() {
               {exams.map((exam) => {
                 const examDocId = exam.firestoreId || exam.id;
                 const subsForThisExam = examSubmissions.filter(sub => sub.examId === examDocId || sub.examId === exam.id);
+                const turnedInSubs = subsForThisExam.filter(s => (s.status || "").toLowerCase() === "turned_in" || (s.status || "").toLowerCase().includes("pending"));
+                const gradedSubs = subsForThisExam.filter(s => s.status === "graded");
 
                 return (
                   <div key={examDocId} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors flex flex-col justify-between">
@@ -3312,9 +3337,17 @@ export default function ClassDashboard() {
                           </button>
                         )}
 
-                        <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-                          {subsForThisExam.length} / {classStudents.length} Graded
-                        </span>
+                        <div className="flex items-center space-x-2">
+                          {turnedInSubs.length > 0 && (
+                            <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800 animate-pulse">
+                              <ListChecks className="h-3 w-3" />
+                              <span>{turnedInSubs.length} Turned In</span>
+                            </span>
+                          )}
+                          <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                            {gradedSubs.length} / {classStudents.length} Graded
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -5539,6 +5572,9 @@ export default function ClassDashboard() {
                     })
                     .map((st, sIdx) => {
                       const stId = st.uid || st.id;
+                      const subsForThisExam = examSubmissions.filter(sub => sub.examId === (selectedExamForScores.firestoreId || selectedExamForScores.id));
+                      const studentSub = subsForThisExam.find(s => s.studentId === stId);
+                      const isTurnedIn = studentSub && ((studentSub.status || "").toLowerCase() === "turned_in" || (studentSub.status || "").toLowerCase().includes("pending"));
                       const rawObj = objScoreInputs[stId] ?? "";
                       const rawSubj = subjScoreInputs[stId] ?? "";
                       const hasObj = rawObj !== "" && rawObj !== null && rawObj !== undefined;
@@ -5651,6 +5687,11 @@ export default function ClassDashboard() {
                                   Unsubmit
                                 </button>
                               </div>
+                            ) : isTurnedIn ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/60 animate-pulse">
+                                <CheckCircle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                                <span>Turned In</span>
+                              </span>
                             ) : (
                               <span className="text-[10px] font-semibold text-slate-400">
                                 Pending
