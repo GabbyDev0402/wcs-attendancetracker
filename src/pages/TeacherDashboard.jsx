@@ -44,6 +44,7 @@ export default function TeacherDashboard() {
   const [pendingVocabsByClass, setPendingVocabsByClass] = useState({});
   const [pendingTasksByClass, setPendingTasksByClass] = useState({});
   const [pendingExamsByClass, setPendingExamsByClass] = useState({});
+  const [indexErrorUrls, setIndexErrorUrls] = useState([]);
 
   // Math Teacher Detection & Diary Grading State
   const isMathTeacher = (user?.assignments || []).some(a => (a.subject || '').toLowerCase().includes('math'));
@@ -185,135 +186,93 @@ export default function TeacherDashboard() {
     return () => unsubPendingVocabs();
   }, [user?.id]);
 
-  // Real-time Pending Task Submissions by Class Listener
+  // Real-time Pending Task Submissions by Class Listener (Zero-cost: teacherId + status filter)
   useEffect(() => {
-    if (!user || teacherClasses.length === 0) {
-      setPendingTasksByClass({});
-      return;
-    }
+    if (!user?.id) return;
 
-    const classTags = [];
-    teacherClasses.forEach(c => {
-      classTags.push(`${user.id}_${c.id}`);
-      classTags.push(c.id);
-      classTags.push(encodeURIComponent(`${user.id}_${c.id}`));
-    });
-    const uniqueClassIds = Array.from(new Set(classTags.filter(Boolean)));
-    if (uniqueClassIds.length === 0) return;
+    const qPendingTasks = query(
+      collection(db, "task_submissions"),
+      where("teacherId", "==", user.id),
+      where("status", "in", ["turned_in", "pending_review", "pending"])
+    );
 
-    const chunks = [];
-    for (let i = 0; i < uniqueClassIds.length; i += 30) {
-      chunks.push(uniqueClassIds.slice(i, i + 30));
-    }
+    const unsubPendingTasks = onSnapshot(qPendingTasks, (snap) => {
+      const counts = {};
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.classId) {
+          const cId = data.classId;
+          const rawId = data.rawClassId || (cId.includes("_") ? cId.split("_").slice(1).join("_") : cId);
 
-    const chunkCounts = {};
-    const unsubs = chunks.map((chunk, chunkIdx) => {
-      const q = query(
-        collection(db, "task_submissions"),
-        where("classId", "in", chunk)
-      );
-
-      return onSnapshot(q, (snap) => {
-        const counts = {};
-        snap.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          const normStatus = (data.status || "").toLowerCase().trim();
-          const isPending = normStatus === "turned_in" || normStatus === "pending_review" || normStatus === "pending review" || normStatus === "pending";
-          if (isPending && data.classId) {
-            const cId = data.classId;
-            const rawId = data.rawClassId || (cId.includes("_") ? cId.split("_").slice(1).join("_") : cId);
-
-            counts[cId] = (counts[cId] || 0) + 1;
-            if (rawId && rawId !== cId) {
-              counts[rawId] = (counts[rawId] || 0) + 1;
-            }
-            const fullTag = `${user.id}_${rawId}`;
-            if (fullTag !== cId) {
-              counts[fullTag] = (counts[fullTag] || 0) + 1;
-            }
+          counts[cId] = (counts[cId] || 0) + 1;
+          if (rawId && rawId !== cId) {
+            counts[rawId] = (counts[rawId] || 0) + 1;
           }
-        });
-        chunkCounts[chunkIdx] = counts;
-
-        const merged = {};
-        Object.values(chunkCounts).forEach(cMap => {
-          Object.entries(cMap).forEach(([k, v]) => {
-            merged[k] = (merged[k] || 0) + v;
-          });
-        });
-        setPendingTasksByClass(merged);
-      }, (e) => {
-        console.error("Error listening to pending task submissions count:", e);
+          const fullTag = `${user.id}_${rawId}`;
+          if (fullTag !== cId) {
+            counts[fullTag] = (counts[fullTag] || 0) + 1;
+          }
+        }
       });
+      setPendingTasksByClass(counts);
+      setIndexErrorUrls(prev => prev.filter(item => item.collection !== "task_submissions"));
+    }, (err) => {
+      console.warn("Index required for task_submissions:", err.message);
+      const match = err.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+      if (match) {
+        setIndexErrorUrls(prev => [
+          ...prev.filter(item => item.collection !== "task_submissions"),
+          { collection: "task_submissions", name: "Tasks Submissions", url: match[0] }
+        ]);
+      }
     });
 
-    return () => unsubs.forEach(unsub => unsub());
-  }, [user?.id, teacherClasses]);
+    return () => unsubPendingTasks();
+  }, [user?.id]);
 
-  // Real-time Pending Exam Submissions by Class Listener ("Mark as done" / Pending Review)
+  // Real-time Pending Exam Submissions by Class Listener (Zero-cost: teacherId + status filter)
   useEffect(() => {
-    if (!user || teacherClasses.length === 0) {
-      setPendingExamsByClass({});
-      return;
-    }
+    if (!user?.id) return;
 
-    const classTags = [];
-    teacherClasses.forEach(c => {
-      classTags.push(`${user.id}_${c.id}`);
-      classTags.push(c.id);
-      classTags.push(encodeURIComponent(`${user.id}_${c.id}`));
-    });
-    const uniqueClassIds = Array.from(new Set(classTags.filter(Boolean)));
-    if (uniqueClassIds.length === 0) return;
+    const qPendingExams = query(
+      collection(db, "exam_submissions"),
+      where("teacherId", "==", user.id),
+      where("status", "in", ["turned_in", "Pending Review", "pending_review", "pending"])
+    );
 
-    const chunks = [];
-    for (let i = 0; i < uniqueClassIds.length; i += 30) {
-      chunks.push(uniqueClassIds.slice(i, i + 30));
-    }
+    const unsubPendingExams = onSnapshot(qPendingExams, (snap) => {
+      const counts = {};
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.classId) {
+          const cId = data.classId;
+          const rawId = data.rawClassId || (cId.includes("_") ? cId.split("_").slice(1).join("_") : cId);
 
-    const chunkCounts = {};
-    const unsubs = chunks.map((chunk, chunkIdx) => {
-      const q = query(
-        collection(db, "exam_submissions"),
-        where("classId", "in", chunk)
-      );
-
-      return onSnapshot(q, (snap) => {
-        const counts = {};
-        snap.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          const normStatus = (data.status || "").toLowerCase().trim();
-          const isPending = normStatus === "turned_in" || normStatus === "pending review" || normStatus === "pending_review" || normStatus === "pending";
-          if (isPending && data.classId) {
-            const cId = data.classId;
-            const rawId = data.rawClassId || (cId.includes("_") ? cId.split("_").slice(1).join("_") : cId);
-
-            counts[cId] = (counts[cId] || 0) + 1;
-            if (rawId && rawId !== cId) {
-              counts[rawId] = (counts[rawId] || 0) + 1;
-            }
-            const fullTag = `${user.id}_${rawId}`;
-            if (fullTag !== cId) {
-              counts[fullTag] = (counts[fullTag] || 0) + 1;
-            }
+          counts[cId] = (counts[cId] || 0) + 1;
+          if (rawId && rawId !== cId) {
+            counts[rawId] = (counts[rawId] || 0) + 1;
           }
-        });
-        chunkCounts[chunkIdx] = counts;
-
-        const merged = {};
-        Object.values(chunkCounts).forEach(cMap => {
-          Object.entries(cMap).forEach(([k, v]) => {
-            merged[k] = (merged[k] || 0) + v;
-          });
-        });
-        setPendingExamsByClass(merged);
-      }, (e) => {
-        console.error("Error listening to pending exam submissions count:", e);
+          const fullTag = `${user.id}_${rawId}`;
+          if (fullTag !== cId) {
+            counts[fullTag] = (counts[fullTag] || 0) + 1;
+          }
+        }
       });
+      setPendingExamsByClass(counts);
+      setIndexErrorUrls(prev => prev.filter(item => item.collection !== "exam_submissions"));
+    }, (err) => {
+      console.warn("Index required for exam_submissions:", err.message);
+      const match = err.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+      if (match) {
+        setIndexErrorUrls(prev => [
+          ...prev.filter(item => item.collection !== "exam_submissions"),
+          { collection: "exam_submissions", name: "Exams Submissions", url: match[0] }
+        ]);
+      }
     });
 
-    return () => unsubs.forEach(unsub => unsub());
-  }, [user?.id, teacherClasses]);
+    return () => unsubPendingExams();
+  }, [user?.id]);
 
   const loadPendingDiaries = () => { };
 
@@ -834,6 +793,34 @@ export default function TeacherDashboard() {
               </div>
             </div>
           </div>
+
+          {/* Index Error Guide Banner */}
+          {indexErrorUrls.length > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs animate-fade-in">
+              <div className="flex items-start sm:items-center space-x-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <h4 className="text-xs font-bold text-amber-800 dark:text-amber-300">Firebase Index Setup Required (One-Click)</h4>
+                  <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80">
+                    To activate zero-cost real-time notification alerts, click below to generate the Firebase index:
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {indexErrorUrls.map((item) => (
+                  <a
+                    key={item.collection}
+                    href={item.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+                  >
+                    <span>Create {item.name} Index</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Main Roster Split Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">

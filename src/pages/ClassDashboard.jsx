@@ -1055,6 +1055,14 @@ export default function ClassDashboard() {
       const subSnap = await getDocs(subQ);
       const classSubs = subSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
       setExamSubmissions(classSubs);
+
+      // Backfill teacherId on any legacy submissions missing it
+      subSnap.docs.forEach(d => {
+        const data = d.data();
+        if (!data.teacherId && user?.id) {
+          updateDoc(doc(db, "exam_submissions", d.id), { teacherId: user.id }).catch(() => {});
+        }
+      });
     } catch (e) {
       console.error("Error loading exams & submissions:", e);
     } finally {
@@ -1353,6 +1361,14 @@ export default function ClassDashboard() {
       const items = snap.docs.map(d => ({ id: d.id, firestoreId: d.id, ...d.data() }));
       items.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
       setTaskSubmissions(items);
+
+      // Backfill teacherId on any legacy submissions missing it
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (!data.teacherId && user?.id) {
+          updateDoc(doc(db, "task_submissions", d.id), { teacherId: user.id }).catch(() => {});
+        }
+      });
     } catch (e) {
       console.error("Error loading task submissions:", e);
     } finally {
