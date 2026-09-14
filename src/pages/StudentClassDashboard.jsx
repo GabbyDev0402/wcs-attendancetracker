@@ -1181,120 +1181,31 @@ export default function StudentClassDashboard() {
             })()}
           </div>
 
-          {/* ── Visual Separation Line ── */}
-          <hr className="border-slate-200 dark:border-slate-800 my-6" />
-
-          {/* ── Graded Tasks Archive Section (Bottom) ── */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading flex items-center gap-2">
-                  <span>📁 Graded Tasks Archive</span>
-                </h2>
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  Review graded assignments, teacher evaluation scores, and historical tasks.
-                </p>
-              </div>
-
-              <div className="flex items-center space-x-2 shrink-0">
-                <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Select Quarter:</label>
-                <select
-                  value={taskArchiveQuarter}
-                  onChange={(e) => setTaskArchiveQuarter(e.target.value)}
-                  className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
-                >
-                  <option value="1st Quarter">1st Quarter</option>
-                  <option value="2nd Quarter">2nd Quarter</option>
-                  <option value="3rd Quarter">3rd Quarter</option>
-                  <option value="4th Quarter">4th Quarter</option>
-                </select>
-              </div>
-            </div>
-
-            {(() => {
-              const gradedTasks = (tasksList || []).filter((task) => {
-                const taskId = task.firestoreId || task.id;
-                const sub = taskSubmissionsMap[taskId];
-                return sub && sub.status === "graded";
-              });
-
-              const filteredGraded = gradedTasks.filter((task) => {
-                return (task.quarter || "1st Quarter") === taskArchiveQuarter;
-              });
-
-              if (isTasksLoading) {
-                return <div className="py-12 text-center text-slate-400 text-sm">Loading graded archive...</div>;
-              }
-
-              if (filteredGraded.length === 0) {
-                return (
-                  <div className="py-12 text-center text-slate-400 text-xs italic bg-slate-50/50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 rounded-2xl">
-                    No graded tasks for this quarter.
-                  </div>
-                );
-              }
-
-              return (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredGraded.map((task) => {
-                    const taskId = task.firestoreId || task.id;
-                    const sub = taskSubmissionsMap[taskId];
-
-                    return (
-                      <div
-                        key={taskId}
-                        className="bg-emerald-50/30 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/50 rounded-2xl p-5 shadow-xs flex flex-col justify-between space-y-4"
-                      >
-                        <div className="space-y-2">
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{task.title}</h3>
-                              <div className="flex items-center space-x-2 mt-1 flex-wrap gap-y-1">
-                                <span className={`inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold border ${
-                                  task.category === "Performance Task"
-                                    ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
-                                    : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
-                                }`}>
-                                  {task.category || "Written Task"}
-                                </span>
-                                <span className="inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                  {task.quarter || "1st Quarter"}
-                                </span>
-                              </div>
-                            </div>
-
-                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                              <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                              <span>Graded</span>
-                            </span>
-                          </div>
-
-                          {task.description && (
-                            <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
-                              {task.description}
-                            </p>
-                          )}
-
-                          <div className="flex items-center space-x-4 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
-                            <span>Due: {task.dueDate || "No Due Date"}</span>
-                            <span>• Max: {task.totalPoints || task.maxScore || 50} pts</span>
-                          </div>
-                        </div>
-
-                        <div className="pt-3 border-t border-emerald-100 dark:border-emerald-800/40 flex items-center justify-between">
-                          <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                            Final Score: <span className="font-black text-emerald-700 dark:text-emerald-400 text-sm ml-1">{sub.score} / {sub.maxScore || task.totalPoints || 50} pts</span>
-                          </div>
-                          <span className="px-3 py-1 rounded-xl bg-emerald-100/60 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
-                            Completed ✅
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
+          {/* SECTION 2: GRADED TASKS ARCHIVE CARD */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm transition-all hover:shadow-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center space-x-4">
+                <div className="p-3.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl shrink-0">
+                  <FolderKanban className="h-7 w-7" />
                 </div>
-              );
-            })()}
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 font-heading">
+                    📁 Graded Tasks Archive
+                  </h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                    Review graded assignments, teacher evaluation scores, and historical tasks.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => navigate(`/student/class/${encodeURIComponent(targetClassTag)}/tasks-history`)}
+                className="inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm hover:shadow-md transition-all cursor-pointer shrink-0"
+              >
+                <span>Open Archive</span>
+                <span className="text-sm">➔</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

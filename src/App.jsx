@@ -14,6 +14,7 @@ import StudentClassDashboard from './pages/StudentClassDashboard';
 import StudentVocabHistory from './pages/StudentVocabHistory';
 import StudentExamSession from './pages/StudentExamSession';
 import StudentTaskSession from './pages/StudentTaskSession';
+import StudentTaskHistory from './pages/StudentTaskHistory';
 import ClassDashboard from './pages/ClassDashboard';
 
 const getRoleDefaultRoute = (role) => {
@@ -121,6 +122,8 @@ export default function App() {
             <Route index element={<StudentDashboard />} />
             <Route path="class/:classId" element={<StudentClassDashboard />} />
             <Route path="class/:classId/history" element={<StudentVocabHistory />} />
+            <Route path="class/:classId/tasks-history" element={<StudentTaskHistory />} />
+            <Route path="class/:classId/task-history" element={<StudentTaskHistory />} />
             <Route path="class/:classId/exam/:examId" element={<StudentExamSession />} />
             <Route path="class/:classId/task/:taskId" element={<StudentTaskSession />} />
           </Route>
