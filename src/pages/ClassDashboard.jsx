@@ -89,6 +89,133 @@ const STANDARD_PILLARS = [
   { core: 'Social Science', added: 'Values' }
 ];
 
+// Map numbers and common characters to unicode superscripts and subscripts
+const SUPERSCRIPT_MAP = {
+  '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+  '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+  '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
+  'n': 'ⁿ', 'i': 'ⁱ', 'x': 'ˣ', 'y': 'ʸ', 'a': 'ᵃ', 'b': 'ᵇ', 'c': 'ᶜ'
+};
+
+const SUBSCRIPT_MAP = {
+  '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+  '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+  '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎',
+  'a': 'ₐ', 'e': 'ₑ', 'o': 'ₒ', 'x': 'ₓ', 'h': 'ₕ', 'k': 'ₖ', 'l': 'ₗ', 'm': 'ₘ', 'n': 'ₙ', 'p': 'ₚ', 's': 'ₛ', 't': 'ₜ'
+};
+
+function toUnicodeSuperscript(str) {
+  return String(str).split('').map(c => SUPERSCRIPT_MAP[c] || c).join('');
+}
+
+function toUnicodeSubscript(str) {
+  return String(str).split('').map(c => SUBSCRIPT_MAP[c] || c).join('');
+}
+
+function convertHtmlToFormattedText(html) {
+  if (!html) return '';
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+
+    // Convert all <sup> and elements with vertical-align:super to unicode superscripts
+    const sups = doc.querySelectorAll('sup, [style*="vertical-align: super"], [style*="vertical-align:super"], [style*="mso-text-raise"]');
+    sups.forEach(el => {
+      el.textContent = toUnicodeSuperscript(el.textContent);
+    });
+
+    // Convert all <sub> and elements with vertical-align:sub to unicode subscripts
+    const subs = doc.querySelectorAll('sub, [style*="vertical-align: sub"], [style*="vertical-align:sub"]');
+    subs.forEach(el => {
+      el.textContent = toUnicodeSubscript(el.textContent);
+    });
+
+    // Convert caret exponents like x^2 to x² if any remain in text
+    let text = doc.body.textContent || '';
+    text = text.replace(/\^([0-9a-zA-Z+-]+)/g, (_, exp) => toUnicodeSuperscript(exp));
+
+    return text;
+  } catch (err) {
+    return html;
+  }
+}
+
+// Function to register custom matchers on Quill clipboard to preserve superscripts, exponents, math, and styles
+function addQuillCustomMatchers(quill) {
+  if (!quill || !quill.clipboard || quill._hasCustomMatchers) return;
+  quill._hasCustomMatchers = true;
+
+  // Match SPAN elements with styles (like from Microsoft Word and Google Docs)
+  quill.clipboard.addMatcher('span', (node, delta) => {
+    const style = node.getAttribute('style') || '';
+    const vAlign = node.style?.verticalAlign || '';
+
+    if (vAlign === 'super' || /vertical-align:\s*super/i.test(style) || /mso-text-raise/i.test(style)) {
+      delta.ops.forEach(op => {
+        op.attributes = { ...(op.attributes || {}), script: 'super' };
+      });
+    } else if (vAlign === 'sub' || /vertical-align:\s*sub/i.test(style)) {
+      delta.ops.forEach(op => {
+        op.attributes = { ...(op.attributes || {}), script: 'sub' };
+      });
+    }
+
+    if (node.style?.fontWeight === 'bold' || /font-weight:\s*(bold|700|800|900)/i.test(style)) {
+      delta.ops.forEach(op => {
+        op.attributes = { ...(op.attributes || {}), bold: true };
+      });
+    }
+    if (node.style?.fontStyle === 'italic' || /font-style:\s*italic/i.test(style)) {
+      delta.ops.forEach(op => {
+        op.attributes = { ...(op.attributes || {}), italic: true };
+      });
+    }
+    if (/text-decoration:\s*underline/i.test(style)) {
+      delta.ops.forEach(op => {
+        op.attributes = { ...(op.attributes || {}), underline: true };
+      });
+    }
+    return delta;
+  });
+
+  // Explicit matchers for native <sup> and <sub>
+  quill.clipboard.addMatcher('sup', (node, delta) => {
+    delta.ops.forEach(op => {
+      op.attributes = { ...(op.attributes || {}), script: 'super' };
+    });
+    return delta;
+  });
+
+  quill.clipboard.addMatcher('sub', (node, delta) => {
+    delta.ops.forEach(op => {
+      op.attributes = { ...(op.attributes || {}), script: 'sub' };
+    });
+    return delta;
+  });
+
+  // Convert caret exponents like x^2 or 2^5 in plain text into real superscripts
+  quill.clipboard.addMatcher(Node.TEXT_NODE, (node, delta) => {
+    const text = node.data || '';
+    if (!/\^([0-9a-zA-Z+-]+)/.test(text)) return delta;
+
+    const newOps = [];
+    const regex = /(\^([0-9a-zA-Z+-]+))/g;
+    let lastIdx = 0;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIdx) {
+        newOps.push({ insert: text.slice(lastIdx, match.index) });
+      }
+      newOps.push({ insert: match[2], attributes: { script: 'super' } });
+      lastIdx = regex.lastIndex;
+    }
+    if (lastIdx < text.length) {
+      newOps.push({ insert: text.slice(lastIdx) });
+    }
+    return { ops: newOps };
+  });
+}
+
 export default function ClassDashboard() {
   const { classId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1155,9 +1282,11 @@ export default function ClassDashboard() {
     toolbar: [
       ['bold', 'italic', 'underline'],
       [{ 'script': 'sub' }, { 'script': 'super' }],
-      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
       ['clean']
-    ]
+    ],
+    clipboard: {
+      matchVisual: false
+    }
   };
 
   // -------------------------------------------------------------
@@ -1830,17 +1959,48 @@ export default function ClassDashboard() {
   };
 
   const handleOptionPaste = (e, qId, optIdx) => {
-    const pastedText = e.clipboardData?.getData("text");
-    if (!pastedText || !pastedText.includes("\n")) return; // Single-line paste continues with native browser paste
-
     e.preventDefault();
-    const lines = pastedText
+    const html = e.clipboardData?.getData("text/html");
+    const rawText = e.clipboardData?.getData("text/plain") || "";
+
+    // Convert HTML with superscripts/exponents/subscripts to formatted unicode text
+    let formattedText = "";
+    if (html && (html.includes("sup") || html.includes("sub") || html.includes("vertical-align") || html.includes("mso-"))) {
+      formattedText = convertHtmlToFormattedText(html);
+    } else {
+      // If plain text, convert caret exponents like ^2 to ²
+      formattedText = rawText.replace(/\^([0-9a-zA-Z+-]+)/g, (_, exp) => toUnicodeSuperscript(exp));
+    }
+
+    if (!formattedText) formattedText = rawText;
+
+    const lines = formattedText
       .split(/\r?\n/)
       .map((line) => line.trim())
+      // Clean leading option letters like "A. ", "A) ", "1. ", "• "
+      .map((line) => line.replace(/^([A-Za-z0-9][\.\)]|[\u2022\u25E6\u25AA\-])\s+/, "").trim())
       .filter((line) => line.length > 0);
 
     if (lines.length === 0) return;
 
+    if (lines.length === 1) {
+      // Single option paste
+      const targetInput = e.target;
+      const start = targetInput.selectionStart || 0;
+      const end = targetInput.selectionEnd || 0;
+      const currentVal = targetInput.value || "";
+      const newVal = currentVal.slice(0, start) + lines[0] + currentVal.slice(end);
+      updateTaskOption(qId, optIdx, newVal);
+      setTimeout(() => {
+        const nextPos = start + lines[0].length;
+        if (targetInput.setSelectionRange) {
+          targetInput.setSelectionRange(nextPos, nextPos);
+        }
+      }, 20);
+      return;
+    }
+
+    // Multi-line options paste
     setTaskQuestions((prev) =>
       (prev || []).map((q) => {
         if (q.id !== qId) return q;
@@ -3774,6 +3934,9 @@ export default function ClassDashboard() {
                                 <div>
                                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Content / Instructions</label>
                                   <ReactQuill
+                                    ref={(el) => {
+                                      if (el) addQuillCustomMatchers(el.getEditor());
+                                    }}
                                     theme="snow"
                                     value={q.content || ""}
                                     onChange={(val) => updateTaskQuestion(q.id, "content", val)}
@@ -3836,16 +3999,17 @@ export default function ClassDashboard() {
                                 </div>
                               </div>
 
-                              {/* Question Prompt with Rich Text ReactQuill */}
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Question Prompt</label>
+                              {/* Question Prompt (Google Forms Style) */}
+                              <div className="gforms-quill-wrapper">
                                 <ReactQuill
+                                  ref={(el) => {
+                                    if (el) addQuillCustomMatchers(el.getEditor());
+                                  }}
                                   theme="snow"
                                   value={q.text || ""}
                                   onChange={(val) => updateTaskQuestion(q.id, "text", val)}
                                   modules={quillModules}
-                                  placeholder="Enter question prompt..."
-                                  className="bg-white dark:bg-slate-900 rounded-xl text-slate-800 dark:text-slate-100"
+                                  placeholder="Question"
                                 />
                               </div>
 
@@ -3978,6 +4142,17 @@ export default function ClassDashboard() {
                                     type="text"
                                     value={q.correctAnswer || ""}
                                     onChange={(e) => updateTaskQuestion(q.id, "correctAnswer", e.target.value)}
+                                    onPaste={(e) => {
+                                      const html = e.clipboardData?.getData("text/html");
+                                      const text = e.clipboardData?.getData("text/plain") || "";
+                                      if (html && (html.includes("sup") || html.includes("sub") || html.includes("vertical-align") || html.includes("mso-"))) {
+                                        e.preventDefault();
+                                        updateTaskQuestion(q.id, "correctAnswer", convertHtmlToFormattedText(html).trim());
+                                      } else if (text.includes("^")) {
+                                        e.preventDefault();
+                                        updateTaskQuestion(q.id, "correctAnswer", text.replace(/\^([0-9a-zA-Z+-]+)/g, (_, exp) => toUnicodeSuperscript(exp)).trim());
+                                      }
+                                    }}
                                     placeholder="The answer that will be auto-graded (case-insensitive)"
                                     className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                                   />

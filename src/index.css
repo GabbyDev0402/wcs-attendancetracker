@@ -97,3 +97,161 @@ h1, h2, h3, h4, h5, h6 {
     word-break: break-word !important;
   }
 }
+
+/* ==========================================================================
+   Google Forms Style Quiz Editor & Math Superscript/Subscript Styles
+   ========================================================================== */
+.gforms-quill-wrapper {
+  display: flex !important;
+  flex-direction: column-reverse !important;
+  background-color: #f8fafc;
+  border-radius: 0.875rem;
+  border: 1px solid #e2e8f0;
+  border-bottom: 2px solid #cbd5e1;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.dark .gforms-quill-wrapper {
+  background-color: rgba(30, 41, 59, 0.4);
+  border-color: #334155;
+  border-bottom-color: #475569;
+}
+
+.gforms-quill-wrapper:focus-within {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+  border-bottom: 2px solid #4964c2 !important;
+  box-shadow: 0 4px 14px -2px rgba(73, 100, 194, 0.1);
+}
+
+.dark .gforms-quill-wrapper:focus-within {
+  background-color: #0f172a;
+  border-color: #334155;
+  border-bottom-color: #6c88d4 !important;
+}
+
+/* Minimal Bottom Toolbar */
+.gforms-quill-wrapper .ql-toolbar.ql-snow {
+  border: none !important;
+  border-top: 1px solid #f1f5f9 !important;
+  padding: 4px 10px 6px 10px !important;
+  background: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+}
+
+.dark .gforms-quill-wrapper .ql-toolbar.ql-snow {
+  border-top-color: rgba(51, 65, 85, 0.6) !important;
+}
+
+.gforms-quill-wrapper .ql-container.ql-snow {
+  border: none !important;
+  font-family: inherit !important;
+}
+
+.gforms-quill-wrapper .ql-editor {
+  padding: 12px 16px 8px 16px !important;
+  min-height: 52px !important;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  line-height: 1.5 !important;
+  color: #1e293b !important;
+}
+
+.dark .gforms-quill-wrapper .ql-editor {
+  color: #f8fafc !important;
+}
+
+.gforms-quill-wrapper .ql-editor.ql-blank::before {
+  color: #94a3b8 !important;
+  font-style: normal !important;
+  font-weight: 500 !important;
+  font-size: 1rem !important;
+  left: 16px !important;
+  right: 16px !important;
+}
+
+.gforms-quill-wrapper .ql-snow .ql-stroke {
+  stroke: #64748b !important;
+  stroke-width: 1.8 !important;
+}
+
+.dark .gforms-quill-wrapper .ql-snow .ql-stroke {
+  stroke: #94a3b8 !important;
+}
+
+.gforms-quill-wrapper .ql-snow .ql-fill {
+  fill: #64748b !important;
+}
+
+.dark .gforms-quill-wrapper .ql-snow .ql-fill {
+  fill: #94a3b8 !important;
+}
+
+.gforms-quill-wrapper .ql-snow button:hover .ql-stroke,
+.gforms-quill-wrapper .ql-snow button.ql-active .ql-stroke {
+  stroke: #4964c2 !important;
+}
+
+.dark .gforms-quill-wrapper .ql-snow button:hover .ql-stroke,
+.dark .gforms-quill-wrapper .ql-snow button.ql-active .ql-stroke {
+  stroke: #6c88d4 !important;
+}
+
+.gforms-quill-wrapper .ql-snow button:hover .ql-fill,
+.gforms-quill-wrapper .ql-snow button.ql-active .ql-fill {
+  fill: #4964c2 !important;
+}
+
+.dark .gforms-quill-wrapper .ql-snow button:hover .ql-fill,
+.dark .gforms-quill-wrapper .ql-snow button.ql-active .ql-fill {
+  fill: #6c88d4 !important;
+}
+
+.gforms-quill-wrapper .ql-snow button {
+  width: 28px !important;
+  height: 28px !important;
+  padding: 4px !important;
+  border-radius: 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background-color 0.15s ease;
+}
+
+.gforms-quill-wrapper .ql-snow button:hover {
+  background-color: rgba(100, 116, 139, 0.12) !important;
+}
+
+.dark .gforms-quill-wrapper .ql-snow button:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.gforms-quill-wrapper .ql-snow button.ql-active {
+  background-color: rgba(73, 100, 194, 0.12) !important;
+}
+
+.dark .gforms-quill-wrapper .ql-snow button.ql-active {
+  background-color: rgba(108, 136, 212, 0.2) !important;
+}
+
+/* Math Superscripts and Subscripts Typography */
+.ql-editor sup,
+.prose sup,
+sup {
+  vertical-align: super !important;
+  font-size: 0.72em !important;
+  line-height: 0 !important;
+  font-weight: 700 !important;
+}
+
+.ql-editor sub,
+.prose sub,
+sub {
+  vertical-align: sub !important;
+  font-size: 0.72em !important;
+  line-height: 0 !important;
+  font-weight: 700 !important;
+}
