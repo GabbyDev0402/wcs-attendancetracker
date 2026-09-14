@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
@@ -40,7 +40,36 @@ export default function StudentClassDashboard() {
 
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
 
-  const [activeTab, setActiveTab] = useState("vocab");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const getInitialTab = () => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "tasks" || tabParam === "assignments") return "tasks";
+    if (tabParam === "exams" || tabParam === "assessments") return "exams";
+    if (tabParam === "vocab" || tabParam === "vocabularies" || tabParam === "homework") return "vocab";
+    return "vocab";
+  };
+
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+
+  // Synchronize activeTab when URL search query param changes
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam) {
+      if (tabParam === "tasks" || tabParam === "assignments") {
+        setActiveTab("tasks");
+      } else if (tabParam === "exams" || tabParam === "assessments") {
+        setActiveTab("exams");
+      } else if (tabParam === "vocab" || tabParam === "vocabularies" || tabParam === "homework") {
+        setActiveTab("vocab");
+      }
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setSearchParams({ tab }, { replace: true });
+  };
+
   const [teacherName, setTeacherName] = useState("");
   const [vocabSessions, setVocabSessions] = useState([]);
   const [vocabSubmissionsMap, setVocabSubmissionsMap] = useState({});
@@ -418,6 +447,22 @@ export default function StudentClassDashboard() {
     }
   };
 
+  // Active / pending tasks count (strictly open, non-missed & unsubmitted)
+  const pendingActiveTasksCount = (tasksList || []).filter(task => {
+    const taskId = task.firestoreId || task.id;
+    const sub = taskSubmissionsMap[taskId];
+    const isSubmitted = !!sub;
+    const isPastDue = !!task.dueDate && task.dueDate < todayStr;
+    return !isSubmitted && !isPastDue;
+  }).length;
+
+  // Active / pending exams count (unsubmitted)
+  const pendingActiveExamsCount = (examsList || []).filter(exam => {
+    const examDocId = exam.firestoreId || exam.id;
+    const sub = examSubmissionsMap[examDocId] || examSubmissionsMap[exam.id];
+    return !sub;
+  }).length;
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top Navigation Back Button */}
@@ -456,7 +501,7 @@ export default function StudentClassDashboard() {
       {/* Tabs Menu */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6">
         <button
-          onClick={() => setActiveTab("vocab")}
+          onClick={() => handleTabChange("vocab")}
           className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
             activeTab === "vocab"
               ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
@@ -468,7 +513,7 @@ export default function StudentClassDashboard() {
         </button>
 
         <button
-          onClick={() => setActiveTab("exams")}
+          onClick={() => handleTabChange("exams")}
           className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
             activeTab === "exams"
               ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
@@ -477,15 +522,15 @@ export default function StudentClassDashboard() {
         >
           <BookOpen className="h-4 w-4" />
           <span>Exams & Assessments</span>
-          {examsList.length > 0 && (
-            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-bold border border-brand-100 dark:border-brand-800">
-              {examsList.length}
+          {pendingActiveExamsCount > 0 && (
+            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-purple-50 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-bold border border-purple-100 dark:border-purple-800">
+              {pendingActiveExamsCount}
             </span>
           )}
         </button>
 
         <button
-          onClick={() => setActiveTab("tasks")}
+          onClick={() => handleTabChange("tasks")}
           className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
             activeTab === "tasks"
               ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
@@ -494,9 +539,9 @@ export default function StudentClassDashboard() {
         >
           <FolderKanban className="h-4 w-4" />
           <span>Assignments & Tasks</span>
-          {tasksList.length > 0 && (
-            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-bold border border-brand-100 dark:border-brand-800">
-              {tasksList.length}
+          {pendingActiveTasksCount > 0 && (
+            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold border border-blue-100 dark:border-blue-800">
+              {pendingActiveTasksCount}
             </span>
           )}
         </button>

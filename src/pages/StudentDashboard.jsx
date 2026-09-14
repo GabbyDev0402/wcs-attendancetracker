@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
@@ -662,7 +662,9 @@ export default function StudentDashboard() {
 
                 const pendingClassTasks = classTasks.filter(task => {
                   const taskId = task.firestoreId || task.id;
-                  return !(myTaskSubmissions || []).some(sub => sub.taskId === taskId || sub.taskId === task.id);
+                  const isSubmitted = (myTaskSubmissions || []).some(sub => sub.taskId === taskId || sub.taskId === task.id);
+                  const isPastDue = !!task.dueDate && task.dueDate < todayStr;
+                  return !isSubmitted && !isPastDue;
                 });
 
                 const pendingTasksCount = pendingClassTasks.length;
@@ -692,17 +694,27 @@ export default function StudentDashboard() {
 
                         <div className="flex flex-col items-end gap-1.5">
                           {showNotification && (
-                            <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 ring-1 ring-amber-300 dark:ring-amber-800 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-amber-200 dark:border-amber-800">
-                              <Bell className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 animate-bounce" />
+                            <Link
+                              to={`/student/class/${encodeURIComponent(classTag)}?tab=vocab`}
+                              onClick={(e) => e.stopPropagation()}
+                              title="Click to view and complete today's vocabulary assignment"
+                              className="bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/40 dark:hover:bg-amber-800/50 text-amber-800 dark:text-amber-300 ring-1 ring-amber-300 dark:ring-amber-700 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-amber-300 dark:border-amber-700/60 shadow-xs cursor-pointer hover:scale-105 transition-all group/vocabNotif"
+                            >
+                              <Bell className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 animate-bounce group-hover/vocabNotif:rotate-12 transition-transform" />
                               <span>New Vocab Due</span>
-                            </span>
+                            </Link>
                           )}
 
                           {pendingTasksCount > 0 && (
-                            <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 ring-1 ring-blue-300 dark:ring-blue-800 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-blue-200 dark:border-blue-800 shadow-xs">
-                              <FolderKanban className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                            <Link
+                              to={`/student/class/${encodeURIComponent(classTag)}?tab=tasks`}
+                              onClick={(e) => e.stopPropagation()}
+                              title="Click to view active assignments & tasks"
+                              className="bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/50 text-blue-800 dark:text-blue-200 ring-1 ring-blue-300 dark:ring-blue-700 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-blue-300 dark:border-blue-700/60 shadow-xs cursor-pointer hover:scale-105 transition-all group/taskNotif"
+                            >
+                              <FolderKanban className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 group-hover/taskNotif:scale-110 transition-transform" />
                               <span>{pendingTasksCount} Pending Task{pendingTasksCount > 1 ? "s" : ""}</span>
-                            </span>
+                            </Link>
                           )}
 
                           {!showNotification && pendingTasksCount === 0 && (

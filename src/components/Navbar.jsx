@@ -48,10 +48,6 @@ export default function Navbar() {
         { name: "Lesson Reports", path: "/teacher/lesson-reports", icon: BookOpen },
         { name: "Monthly Reports", path: "/teacher/reports", icon: BarChart3 }
       ]
-    : user?.role === "student"
-    ? [
-        { name: "Student Portal", path: "/student", icon: CalendarCheck }
-      ]
     : [];
 
   return (
