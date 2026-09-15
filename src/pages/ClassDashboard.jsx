@@ -69,6 +69,7 @@ import {
   CheckSquare,
   Eye,
   Copy,
+  GripHorizontal,
   ChevronDown,
   ChevronUp
 } from "lucide-react";
@@ -150,34 +151,53 @@ function addQuillCustomMatchers(quill) {
   if (!quill || !quill.clipboard || quill._hasCustomMatchers) return;
   quill._hasCustomMatchers = true;
 
-  // Match SPAN elements with styles (like from Microsoft Word and Google Docs)
-  quill.clipboard.addMatcher('span', (node, delta) => {
-    const style = node.getAttribute('style') || '';
-    const vAlign = node.style?.verticalAlign || '';
+  // Match elements with inline styles (from Microsoft Word, Google Docs, web pages)
+  const styledTags = ['span', 'p', 'div', 'font', 'section', 'li', 'b', 'strong', 'i', 'em', 'u'];
+  styledTags.forEach(tag => {
+    quill.clipboard.addMatcher(tag, (node, delta) => {
+      const style = node.getAttribute('style') || '';
+      const vAlign = node.style?.verticalAlign || '';
 
-    if (vAlign === 'super' || /vertical-align:\s*super/i.test(style) || /mso-text-raise/i.test(style)) {
-      delta.ops.forEach(op => {
-        op.attributes = { ...(op.attributes || {}), script: 'super' };
-      });
-    } else if (vAlign === 'sub' || /vertical-align:\s*sub/i.test(style)) {
-      delta.ops.forEach(op => {
-        op.attributes = { ...(op.attributes || {}), script: 'sub' };
-      });
-    }
+      if (vAlign === 'super' || /vertical-align:\s*super/i.test(style) || /mso-text-raise/i.test(style)) {
+        delta.ops.forEach(op => {
+          op.attributes = { ...(op.attributes || {}), script: 'super' };
+        });
+      } else if (vAlign === 'sub' || /vertical-align:\s*sub/i.test(style)) {
+        delta.ops.forEach(op => {
+          op.attributes = { ...(op.attributes || {}), script: 'sub' };
+        });
+      }
 
-    if (node.style?.fontWeight === 'bold' || /font-weight:\s*(bold|700|800|900)/i.test(style)) {
+      if (node.style?.fontWeight === 'bold' || /font-weight:\s*(bold|[6-9]00)/i.test(style)) {
+        delta.ops.forEach(op => {
+          op.attributes = { ...(op.attributes || {}), bold: true };
+        });
+      }
+      if (node.style?.fontStyle === 'italic' || /font-style:\s*italic/i.test(style)) {
+        delta.ops.forEach(op => {
+          op.attributes = { ...(op.attributes || {}), italic: true };
+        });
+      }
+      if (/text-decoration(-line)?:\s*underline/i.test(style) || (node.style?.textDecoration && node.style.textDecoration.includes('underline'))) {
+        delta.ops.forEach(op => {
+          op.attributes = { ...(op.attributes || {}), underline: true };
+        });
+      }
+      if (/text-decoration(-line)?:\s*line-through/i.test(style) || (node.style?.textDecoration && node.style.textDecoration.includes('line-through'))) {
+        delta.ops.forEach(op => {
+          op.attributes = { ...(op.attributes || {}), strike: true };
+        });
+      }
+      return delta;
+    });
+  });
+
+  // Preserve links
+  quill.clipboard.addMatcher('a', (node, delta) => {
+    const href = node.getAttribute('href');
+    if (href) {
       delta.ops.forEach(op => {
-        op.attributes = { ...(op.attributes || {}), bold: true };
-      });
-    }
-    if (node.style?.fontStyle === 'italic' || /font-style:\s*italic/i.test(style)) {
-      delta.ops.forEach(op => {
-        op.attributes = { ...(op.attributes || {}), italic: true };
-      });
-    }
-    if (/text-decoration:\s*underline/i.test(style)) {
-      delta.ops.forEach(op => {
-        op.attributes = { ...(op.attributes || {}), underline: true };
+        op.attributes = { ...(op.attributes || {}), link: href };
       });
     }
     return delta;
@@ -1322,6 +1342,17 @@ export default function ClassDashboard() {
     }
   };
 
+  const infoQuillModules = {
+    toolbar: [
+      ['bold', 'italic', 'underline', 'link'],
+      [{ 'script': 'sub' }, { 'script': 'super' }],
+      ['clean']
+    ],
+    clipboard: {
+      matchVisual: false
+    }
+  };
+
   // -------------------------------------------------------------
   // TAB 5: TASKS & ASSIGNMENTS LOGIC (E-CLASS RECORD PHASE 1 & PHASE 2)
   // -------------------------------------------------------------
@@ -1994,6 +2025,23 @@ export default function ClassDashboard() {
     if (activeTaskQuestionId === qId) {
       setActiveTaskQuestionId(null);
     }
+  };
+
+  const duplicateTaskQuestion = (qId) => {
+    setTaskQuestions((prev) => {
+      const list = prev || [];
+      const idx = list.findIndex((q) => q.id === qId);
+      if (idx === -1) return list;
+      const target = list[idx];
+      const duplicated = {
+        ...JSON.parse(JSON.stringify(target)),
+        id: Date.now() + Math.floor(Math.random() * 1000)
+      };
+      const updated = [...list];
+      updated.splice(idx + 1, 0, duplicated);
+      setActiveTaskQuestionId(duplicated.id);
+      return updated;
+    });
   };
 
   const updateTaskOption = (qId, optIdx, value) => {
@@ -4243,33 +4291,64 @@ export default function ClassDashboard() {
                               <div
                                 key={q.id}
                                 onClick={() => setActiveTaskQuestionId(q.id)}
-                                className={`bg-slate-50 dark:bg-slate-800/60 border rounded-2xl p-5 shadow-sm space-y-3 transition-all cursor-pointer ${
+                                className={`bg-white dark:bg-slate-900 border rounded-2xl p-5 md:p-6 transition-all cursor-pointer relative gforms-title-desc-card ${
                                   isActive
-                                    ? "border-brand-500 border-l-[6px] border-l-brand-600 dark:border-l-brand-500 shadow-md ring-2 ring-brand-500/20"
-                                    : "border-slate-200 dark:border-slate-700 border-l-[6px] border-l-transparent hover:border-slate-300"
+                                    ? "border-slate-200 dark:border-slate-700 border-l-[6px] border-l-[#4285f4] dark:border-l-blue-500 shadow-md ring-1 ring-blue-500/10"
+                                    : "border-slate-200 dark:border-slate-800 border-l-[6px] border-l-transparent shadow-sm hover:border-slate-300 dark:hover:border-slate-700"
                                 }`}
                               >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center space-x-2">
-                                    <Type className="h-4 w-4 text-slate-500" />
-                                    <span className="text-xs font-extrabold uppercase text-slate-600 dark:text-slate-300 tracking-wider">
-                                      Text Block / Reading Passage
-                                    </span>
+                                {/* Google Forms Centered Drag Handle Dots */}
+                                <div className="flex justify-center -mt-2 mb-2">
+                                  <div className="text-slate-300 dark:text-slate-600 hover:text-slate-400 transition-colors cursor-grab">
+                                    <GripHorizontal className="h-5 w-5" />
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      deleteTaskQuestion(q.id);
-                                    }}
-                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
                                 </div>
 
-                                <div>
-                                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Content / Instructions</label>
+                                {/* Top Row: Title Field + Right Action Icons */}
+                                <div className="flex items-start justify-between gap-3 mb-1">
+                                  {/* Google Forms Filled Title Input */}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="bg-[#f0f4f9] dark:bg-slate-800/80 hover:bg-[#e9eef6] dark:hover:bg-slate-800 focus-within:bg-[#edf2f8] dark:focus-within:bg-slate-800 rounded-t-md border-b-2 border-slate-700 dark:border-slate-300 focus-within:border-[#1a73e8] dark:focus-within:border-blue-400 px-4 py-2.5 transition-all">
+                                      <input
+                                        type="text"
+                                        value={q.title || ""}
+                                        onChange={(e) => updateTaskQuestion(q.id, "title", e.target.value)}
+                                        onFocus={() => setActiveTaskQuestionId(q.id)}
+                                        placeholder="Untitled Title"
+                                        className="w-full bg-transparent text-slate-900 dark:text-slate-100 font-normal text-base outline-none placeholder:text-slate-500 dark:placeholder:text-slate-400"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Google Forms Action Buttons: Duplicate & Delete */}
+                                  <div className="flex items-center space-x-1 shrink-0 mt-1">
+                                    <button
+                                      type="button"
+                                      title="Duplicate"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        duplicateTaskQuestion(q.id);
+                                      }}
+                                      className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Copy className="h-5 w-5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Delete"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteTaskQuestion(q.id);
+                                      }}
+                                      className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="h-5 w-5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Rich-Text Quill Description Area */}
+                                <div className="gforms-title-desc-quill">
                                   <ReactQuill
                                     ref={(el) => {
                                       if (el) addQuillCustomMatchers(el.getEditor());
@@ -4277,9 +4356,9 @@ export default function ClassDashboard() {
                                     theme="snow"
                                     value={q.content || ""}
                                     onChange={(val) => updateTaskQuestion(q.id, "content", val)}
-                                    modules={quillModules}
-                                    placeholder="Enter reading passage, story, or general instructions..."
-                                    className="bg-white dark:bg-slate-900 rounded-xl text-slate-800 dark:text-slate-100"
+                                    modules={infoQuillModules}
+                                    placeholder="Description (optional)"
+                                    className="text-slate-800 dark:text-slate-100"
                                   />
                                 </div>
                               </div>
@@ -5023,10 +5102,14 @@ export default function ClassDashboard() {
                   if (q.type === "info") {
                     return (
                       <div key={q.id || idx} className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 space-y-2">
-                        <div className="flex items-center space-x-2 text-slate-400 text-xs font-bold uppercase tracking-wider">
-                          <Type className="h-4 w-4 text-slate-500 shrink-0" />
-                          <span>Reading Passage / Instructions</span>
-                        </div>
+                        {q.title ? (
+                          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">{q.title}</h3>
+                        ) : (
+                          <div className="flex items-center space-x-2 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                            <Type className="h-4 w-4 text-slate-500 shrink-0" />
+                            <span>Reading Passage / Instructions</span>
+                          </div>
+                        )}
                         {q.content && q.content.includes("<") ? (
                           <div 
                             className="prose prose-sm prose-slate dark:prose-invert max-w-none text-slate-800 dark:text-slate-100 font-medium"

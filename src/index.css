@@ -255,3 +255,136 @@ sub {
   line-height: 0 !important;
   font-weight: 700 !important;
 }
+
+/* ==========================================================================
+   Google Forms Style Title & Description Card & Quill
+   ========================================================================== */
+.gforms-title-desc-card {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.gforms-title-desc-quill {
+  display: flex !important;
+  flex-direction: column !important;
+  background: transparent !important;
+}
+
+.gforms-title-desc-quill .ql-toolbar.ql-snow {
+  border: none !important;
+  padding: 6px 2px 4px 2px !important;
+  background: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 2px !important;
+}
+
+.dark .gforms-title-desc-quill .ql-toolbar.ql-snow {
+  border: none !important;
+}
+
+.gforms-title-desc-quill .ql-container.ql-snow {
+  border: none !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+  font-family: inherit !important;
+  transition: border-color 0.2s ease;
+}
+
+.dark .gforms-title-desc-quill .ql-container.ql-snow {
+  border-bottom: 1px solid rgba(100, 116, 139, 0.4) !important;
+}
+
+.gforms-title-desc-quill:focus-within .ql-container.ql-snow {
+  border-bottom: 1px solid #1a73e8 !important;
+}
+
+.dark .gforms-title-desc-quill:focus-within .ql-container.ql-snow {
+  border-bottom: 1px solid #60a5fa !important;
+}
+
+.gforms-title-desc-quill .ql-editor {
+  padding: 6px 4px 12px 4px !important;
+  min-height: 48px !important;
+  font-size: 0.95rem !important;
+  font-weight: 400 !important;
+  line-height: 1.6 !important;
+  color: #334155 !important;
+}
+
+.dark .gforms-title-desc-quill .ql-editor {
+  color: #f1f5f9 !important;
+}
+
+.gforms-title-desc-quill .ql-editor.ql-blank::before {
+  color: #94a3b8 !important;
+  font-style: normal !important;
+  font-weight: 400 !important;
+  font-size: 0.95rem !important;
+  left: 4px !important;
+  right: 4px !important;
+}
+
+.gforms-title-desc-quill .ql-snow .ql-stroke {
+  stroke: #5f6368 !important;
+  stroke-width: 2 !important;
+}
+
+.dark .gforms-title-desc-quill .ql-snow .ql-stroke {
+  stroke: #94a3b8 !important;
+}
+
+.gforms-title-desc-quill .ql-snow .ql-fill {
+  fill: #5f6368 !important;
+}
+
+.dark .gforms-title-desc-quill .ql-snow .ql-fill {
+  fill: #94a3b8 !important;
+}
+
+.gforms-title-desc-quill .ql-snow button {
+  width: 32px !important;
+  height: 32px !important;
+  padding: 5px !important;
+  border-radius: 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background-color 0.15s ease;
+}
+
+.gforms-title-desc-quill .ql-snow button:hover {
+  background-color: rgba(100, 116, 139, 0.12) !important;
+}
+
+.dark .gforms-title-desc-quill .ql-snow button:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.gforms-title-desc-quill .ql-snow button:hover .ql-stroke,
+.gforms-title-desc-quill .ql-snow button.ql-active .ql-stroke {
+  stroke: #1a73e8 !important;
+}
+
+.dark .gforms-title-desc-quill .ql-snow button:hover .ql-stroke,
+.dark .gforms-title-desc-quill .ql-snow button.ql-active .ql-stroke {
+  stroke: #60a5fa !important;
+}
+
+.gforms-title-desc-quill .ql-snow button:hover .ql-fill,
+.gforms-title-desc-quill .ql-snow button.ql-active .ql-fill {
+  fill: #1a73e8 !important;
+}
+
+.dark .gforms-title-desc-quill .ql-snow button:hover .ql-fill,
+.dark .gforms-title-desc-quill .ql-snow button.ql-active .ql-fill {
+  fill: #60a5fa !important;
+}
+
+.gforms-title-desc-quill .ql-snow button.ql-active {
+  background-color: rgba(26, 115, 232, 0.12) !important;
+}
+
+.dark .gforms-title-desc-quill .ql-snow button.ql-active {
+  background-color: rgba(96, 165, 250, 0.2) !important;
+}
+

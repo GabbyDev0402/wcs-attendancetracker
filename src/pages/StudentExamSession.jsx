@@ -396,10 +396,14 @@ export default function StudentExamSession() {
           if (q.type === "info") {
             return (
               <div key={q.id || idx} className="w-full min-w-0 overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-3">
-                <div className="flex items-center space-x-2 text-slate-400 text-xs font-bold uppercase tracking-wider">
-                  <Type className="h-4 w-4 text-slate-500 shrink-0" />
-                  <span>Reading Passage / Instructions</span>
-                </div>
+                {q.title ? (
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 font-heading">{q.title}</h3>
+                ) : (
+                  <div className="flex items-center space-x-2 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                    <Type className="h-4 w-4 text-slate-500 shrink-0" />
+                    <span>Reading Passage / Instructions</span>
+                  </div>
+                )}
                 {q.content && q.content.includes("<") ? (
                   <div 
                     className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 whitespace-normal break-normal text-slate-800 dark:text-slate-100 font-medium"
