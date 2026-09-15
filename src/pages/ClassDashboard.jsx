@@ -420,6 +420,31 @@ export default function ClassDashboard() {
   const [previewTaskData, setPreviewTaskData] = useState(null);
   const [previewAnswers, setPreviewAnswers] = useState({});
 
+  // Google Forms Link Modal State
+  const [linkModal, setLinkModal] = useState({
+    isOpen: false,
+    quill: null,
+    questionId: null,
+    range: null,
+    text: "",
+    url: "",
+    isEditing: false
+  });
+  const linkUrlInputRef = useRef(null);
+
+  useEffect(() => {
+    if (linkModal.isOpen) {
+      setTimeout(() => {
+        if (linkUrlInputRef.current) {
+          linkUrlInputRef.current.focus();
+          if (linkModal.url) {
+            linkUrlInputRef.current.select();
+          }
+        }
+      }, 60);
+    }
+  }, [linkModal.isOpen]);
+
   // Task Submissions & Grading State
   const [taskSubmissions, setTaskSubmissions] = useState([]);
   const [isTaskSubmissionsLoading, setIsTaskSubmissionsLoading] = useState(false);
@@ -1342,16 +1367,133 @@ export default function ClassDashboard() {
     }
   };
 
-  const infoQuillModules = {
-    toolbar: [
-      ['bold', 'italic', 'underline', 'link'],
-      [{ 'script': 'sub' }, { 'script': 'super' }],
-      ['clean']
-    ],
+  const handleSaveLink = (e) => {
+    if (e) e.preventDefault();
+    const { quill, questionId, range, text, url, isEditing } = linkModal;
+    if (!quill) return;
+
+    let targetUrl = (url || "").trim();
+    if (!targetUrl) {
+      if (isEditing && range) {
+        quill.focus();
+        quill.formatText(range.index, Math.max(range.length, 1), 'link', false);
+        const updatedHtml = quill.root.innerHTML;
+        if (questionId) updateTaskQuestion(questionId, 'content', updatedHtml);
+      }
+      setLinkModal(prev => ({ ...prev, isOpen: false }));
+      return;
+    }
+
+    if (!/^[a-zA-Z]+:\/\//.test(targetUrl) && !targetUrl.startsWith('mailto:') && !targetUrl.startsWith('#')) {
+      targetUrl = 'https://' + targetUrl;
+    }
+
+    const displayText = (text || "").trim() || targetUrl;
+
+    quill.focus();
+    if (range && range.length > 0) {
+      if (text.trim() && text !== quill.getText(range.index, range.length)) {
+        quill.deleteText(range.index, range.length);
+        quill.insertText(range.index, displayText, { link: targetUrl });
+        quill.setSelection(range.index + displayText.length, 0);
+      } else {
+        quill.formatText(range.index, range.length, 'link', targetUrl);
+        quill.setSelection(range.index + range.length, 0);
+      }
+    } else {
+      const insertIndex = range ? range.index : Math.max(0, quill.getLength() - 1);
+      quill.insertText(insertIndex, displayText, { link: targetUrl });
+      quill.setSelection(insertIndex + displayText.length, 0);
+    }
+
+    const updatedHtml = quill.root.innerHTML;
+    if (questionId) {
+      updateTaskQuestion(questionId, 'content', updatedHtml);
+    }
+
+    setLinkModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const handleRemoveLink = () => {
+    const { quill, questionId, range } = linkModal;
+    if (quill && range) {
+      quill.focus();
+      quill.formatText(range.index, Math.max(range.length, 1), 'link', false);
+      const updatedHtml = quill.root.innerHTML;
+      if (questionId) {
+        updateTaskQuestion(questionId, 'content', updatedHtml);
+      }
+    }
+    setLinkModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  const infoQuillModules = useMemo(() => ({
+    toolbar: {
+      container: [
+        ['bold', 'italic', 'underline', 'link'],
+        [{ 'script': 'sub' }, { 'script': 'super' }],
+        ['clean']
+      ],
+      handlers: {
+        link: function() {
+          const quill = this.quill;
+          if (!quill) return;
+          let range = quill.getSelection() || quill.selection?.savedRange;
+          if (!range) {
+            quill.focus();
+            range = quill.getSelection() || { index: Math.max(0, quill.getLength() - 1), length: 0 };
+          }
+
+          const selectedText = range && range.length > 0 ? quill.getText(range.index, range.length) : "";
+          const format = quill.getFormat(range);
+          const existingUrl = typeof format.link === "string" ? format.link : "";
+          const cardEl = quill.root.closest('[data-question-id]');
+          const qId = cardEl ? Number(cardEl.getAttribute('data-question-id')) : null;
+
+          setLinkModal({
+            isOpen: true,
+            quill,
+            questionId: qId,
+            range,
+            text: selectedText,
+            url: existingUrl,
+            isEditing: Boolean(existingUrl)
+          });
+        }
+      }
+    },
+    keyboard: {
+      bindings: {
+        linkShortcut: {
+          key: 'K',
+          shortKey: true,
+          handler: function(range) {
+            const quill = this.quill;
+            if (!quill) return false;
+            const selectedText = range && range.length > 0 ? quill.getText(range.index, range.length) : "";
+            const format = quill.getFormat(range);
+            const existingUrl = typeof format.link === "string" ? format.link : "";
+            const cardEl = quill.root.closest('[data-question-id]');
+            const qId = cardEl ? Number(cardEl.getAttribute('data-question-id')) : null;
+
+            setLinkModal({
+              isOpen: true,
+              quill,
+              questionId: qId,
+              range,
+              text: selectedText,
+              url: existingUrl,
+              isEditing: Boolean(existingUrl)
+            });
+            return false;
+          }
+        }
+      }
+    },
     clipboard: {
       matchVisual: false
     }
-  };
+  }), []);
 
   // -------------------------------------------------------------
   // TAB 5: TASKS & ASSIGNMENTS LOGIC (E-CLASS RECORD PHASE 1 & PHASE 2)
@@ -4290,6 +4432,7 @@ export default function ClassDashboard() {
                             return (
                               <div
                                 key={q.id}
+                                data-question-id={q.id}
                                 onClick={() => setActiveTaskQuestionId(q.id)}
                                 className={`bg-white dark:bg-slate-900 border rounded-2xl p-5 md:p-6 transition-all cursor-pointer relative gforms-title-desc-card ${
                                   isActive
@@ -5112,8 +5255,8 @@ export default function ClassDashboard() {
                         )}
                         {q.content && q.content.includes("<") ? (
                           <div 
-                            className="prose prose-sm prose-slate dark:prose-invert max-w-none text-slate-800 dark:text-slate-100 font-medium"
-                            dangerouslySetInnerHTML={{ __html: q.content.replace(/&nbsp;/g, ' ') }}
+                            className="prose prose-sm prose-slate dark:prose-invert max-w-none text-slate-800 dark:text-slate-100 font-medium prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline hover:prose-a:text-blue-700"
+                            dangerouslySetInnerHTML={{ __html: q.content.replace(/&nbsp;/g, ' ').replace(/<a\s+(?:[^>]*?\s+)?href=/gi, '<a target="_blank" rel="noopener noreferrer" href=') }}
                           />
                         ) : (
                           <div className="prose prose-sm prose-slate dark:prose-invert max-w-none text-slate-800 dark:text-slate-100 font-medium">
@@ -6080,6 +6223,95 @@ export default function ClassDashboard() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Google Forms Style Rich-Text Link Modal */}
+      {linkModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-2xl max-w-md w-full p-6 space-y-4 transition-all">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                  <ExternalLink className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 font-heading">
+                    {linkModal.isEditing ? "Edit Link" : "Insert Link"}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                    Add a web link to this reading passage or instructions
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLinkModal(prev => ({ ...prev, isOpen: false }))}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveLink} className="space-y-3.5">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">
+                  Text to display
+                </label>
+                <input
+                  type="text"
+                  value={linkModal.text}
+                  onChange={(e) => setLinkModal(prev => ({ ...prev, text: e.target.value }))}
+                  placeholder="e.g., Click here to read full article"
+                  className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">
+                  Link URL *
+                </label>
+                <input
+                  ref={linkUrlInputRef}
+                  type="text"
+                  value={linkModal.url}
+                  onChange={(e) => setLinkModal(prev => ({ ...prev, url: e.target.value }))}
+                  placeholder="https://example.com"
+                  required
+                  className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+                {linkModal.isEditing ? (
+                  <button
+                    type="button"
+                    onClick={handleRemoveLink}
+                    className="text-xs font-bold text-red-500 hover:text-red-700 hover:underline cursor-pointer"
+                  >
+                    Remove Link
+                  </button>
+                ) : <div />}
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setLinkModal(prev => ({ ...prev, isOpen: false }))}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="inline-flex items-center space-x-1.5 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    <span>Apply</span>
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}

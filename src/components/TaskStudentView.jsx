@@ -383,8 +383,8 @@ export default function TaskStudentView({
                     )}
                     {q.content && q.content.includes("<") ? (
                       <div 
-                        className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 whitespace-normal break-normal text-slate-800 dark:text-slate-100 font-medium leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: q.content.replace(/&nbsp;/g, " ") }}
+                        className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 whitespace-normal break-normal text-slate-800 dark:text-slate-100 font-medium leading-relaxed prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-a:underline hover:prose-a:text-blue-700"
+                        dangerouslySetInnerHTML={{ __html: q.content.replace(/&nbsp;/g, " ").replace(/<a\s+(?:[^>]*?\s+)?href=/gi, '<a target="_blank" rel="noopener noreferrer" href=') }}
                       />
                     ) : (
                       <div className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 whitespace-normal break-normal text-slate-800 dark:text-slate-100 font-medium leading-relaxed">
