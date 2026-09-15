@@ -68,7 +68,9 @@ import {
   Paperclip,
   CheckSquare,
   Eye,
-  Copy
+  Copy,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 import TaskStudentView from "../components/TaskStudentView";
 
@@ -402,6 +404,7 @@ export default function ClassDashboard() {
   const [taskSubmissions, setTaskSubmissions] = useState([]);
   const [isTaskSubmissionsLoading, setIsTaskSubmissionsLoading] = useState(false);
   const [tasksArchiveQuarter, setTasksArchiveQuarter] = useState("1st Quarter");
+  const [expandedTaskArchiveIds, setExpandedTaskArchiveIds] = useState({});
   const [isGradingExternalTaskModalOpen, setIsGradingExternalTaskModalOpen] = useState(false);
   const [selectedExternalTaskSub, setSelectedExternalTaskSub] = useState(null);
   const [externalTaskScoreInput, setExternalTaskScoreInput] = useState("");
@@ -3693,31 +3696,6 @@ export default function ClassDashboard() {
 
               {/* ── Quarterly Graded Archive Section ── */}
               <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">
-                      Graded Archive
-                    </h3>
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
-                      Archived and graded task submissions organized by quarter.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quarter</label>
-                    <select
-                      value={tasksArchiveQuarter}
-                      onChange={(e) => setTasksArchiveQuarter(e.target.value)}
-                      className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
-                    >
-                      <option value="1st Quarter">1st Quarter</option>
-                      <option value="2nd Quarter">2nd Quarter</option>
-                      <option value="3rd Quarter">3rd Quarter</option>
-                      <option value="4th Quarter">4th Quarter</option>
-                    </select>
-                  </div>
-                </div>
-
                 {(() => {
                   const gradedSubs = (taskSubmissions || []).filter(s => s.status === "graded");
                   const quarterlyGradedSubs = gradedSubs.filter(sub => {
@@ -3728,87 +3706,230 @@ export default function ClassDashboard() {
                     return true;
                   });
 
-                  if (isTaskSubmissionsLoading) {
-                    return <div className="py-8 text-center text-slate-400 text-xs">Loading graded archive...</div>;
-                  }
+                  // Group graded submissions by task
+                  const tasksMap = {};
+                  quarterlyGradedSubs.forEach(sub => {
+                    const key = sub.taskId || sub.taskTitle || "unknown";
+                    if (!tasksMap[key]) {
+                      const parentTask = (tasks || []).find(t => t.firestoreId === sub.taskId || t.id === sub.taskId);
+                      tasksMap[key] = {
+                        taskId: key,
+                        taskTitle: parentTask?.title || sub.taskTitle || "Untitled Task",
+                        category: parentTask?.category || sub.category || "Written Task",
+                        mode: parentTask?.mode || sub.mode || "inApp",
+                        quarter: parentTask?.quarter || tasksArchiveQuarter,
+                        dueDate: parentTask?.dueDate || "",
+                        maxScore: sub.maxScore || parentTask?.totalPoints || parentTask?.maxScore || 50,
+                        submissions: []
+                      };
+                    }
+                    tasksMap[key].submissions.push(sub);
+                  });
 
-                  if (quarterlyGradedSubs.length === 0) {
-                    return (
-                      <div className="py-8 text-center text-slate-400 text-xs italic bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl">
-                        No graded task submissions found for {tasksArchiveQuarter}.
-                      </div>
-                    );
-                  }
+                  const groupedTasks = Object.values(tasksMap).sort((a, b) => {
+                    if (a.dueDate && b.dueDate) return b.dueDate.localeCompare(a.dueDate);
+                    return a.taskTitle.localeCompare(b.taskTitle);
+                  });
+
+                  // Sort submissions within each group alphabetically by studentName
+                  groupedTasks.forEach(group => {
+                    group.submissions.sort((a, b) => (a.studentName || "").localeCompare(b.studentName || ""));
+                  });
+
+                  const allExpanded = groupedTasks.length > 0 && groupedTasks.every(t => expandedTaskArchiveIds[t.taskId]);
+                  const toggleAllTaskArchive = () => {
+                    if (allExpanded) {
+                      setExpandedTaskArchiveIds({});
+                    } else {
+                      const newExpanded = {};
+                      groupedTasks.forEach(t => { newExpanded[t.taskId] = true; });
+                      setExpandedTaskArchiveIds(newExpanded);
+                    }
+                  };
 
                   return (
-                    <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold border-b border-slate-100 dark:border-slate-800">
-                            <tr>
-                              <th className="p-3.5">Student Name</th>
-                              <th className="p-3.5">Task Title</th>
-                              <th className="p-3.5">Mode</th>
-                              <th className="p-3.5">Submitted Date</th>
-                              <th className="p-3.5">Status</th>
-                              <th className="p-3.5">Score / Grade</th>
-                              <th className="p-3.5 text-right">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-200">
-                            {quarterlyGradedSubs.map((sub) => {
-                              const subId = sub.firestoreId || sub.id;
+                    <div className="space-y-4">
+                      {/* Section Header with Quarter Filter and Expand/Collapse All */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">
+                              Graded Archive
+                            </h3>
+                            {groupedTasks.length > 0 && (
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60">
+                                {groupedTasks.length} {groupedTasks.length === 1 ? "Task" : "Tasks"}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                            Archived and graded task submissions organized by task and quarter.
+                          </p>
+                        </div>
 
-                              return (
-                                <tr key={subId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
-                                  <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100">
-                                    {sub.studentName || "Student"}
-                                  </td>
-                                  <td className="p-3.5 font-semibold">
-                                    {sub.taskTitle || "Task"}
-                                  </td>
-                                  <td className="p-3.5">
-                                    <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold ${sub.mode === "external"
-                                        ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
-                                        : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                                      }`}>
-                                      {sub.mode === "external" ? "External Link" : "In-App Quiz"}
-                                    </span>
-                                  </td>
-                                  <td className="p-3.5 font-mono text-[11px] text-slate-500">
-                                    {sub.submittedAt ? sub.submittedAt.split("T")[0] : "—"}
-                                  </td>
-                                  <td className="p-3.5">
-                                    <span className="inline-flex px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
-                                      Graded
-                                    </span>
-                                  </td>
-                                  <td className="p-3.5 font-extrabold text-slate-900 dark:text-slate-100">
-                                    {sub.score} / {sub.maxScore || 50} pts
-                                  </td>
-                                  <td className="p-3.5 text-right">
-                                    {sub.mode === "external" || sub.status === "turned_in" ? (
-                                      <button
-                                        onClick={() => handleOpenExternalTaskGradingModal(sub)}
-                                        className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
-                                      >
-                                        <span>Edit Grade</span>
-                                      </button>
-                                    ) : (
-                                      <button
-                                        onClick={() => handleOpenQuizGradingModal(sub)}
-                                        className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
-                                      >
-                                        <span>Review Grade</span>
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
+                        <div className="flex items-center space-x-3 shrink-0">
+                          {groupedTasks.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={toggleAllTaskArchive}
+                              className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer"
+                            >
+                              {allExpanded ? "Collapse All" : "Expand All"}
+                            </button>
+                          )}
+
+                          <div className="flex items-center space-x-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quarter</label>
+                            <select
+                              value={tasksArchiveQuarter}
+                              onChange={(e) => setTasksArchiveQuarter(e.target.value)}
+                              className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
+                            >
+                              <option value="1st Quarter">1st Quarter</option>
+                              <option value="2nd Quarter">2nd Quarter</option>
+                              <option value="3rd Quarter">3rd Quarter</option>
+                              <option value="4th Quarter">4th Quarter</option>
+                            </select>
+                          </div>
+                        </div>
                       </div>
+
+                      {isTaskSubmissionsLoading ? (
+                        <div className="py-8 text-center text-slate-400 text-xs">Loading graded archive...</div>
+                      ) : groupedTasks.length === 0 ? (
+                        <div className="py-8 text-center text-slate-400 text-xs italic bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl">
+                          No graded task submissions found for {tasksArchiveQuarter}.
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {groupedTasks.map((group) => {
+                            const isExpanded = !!expandedTaskArchiveIds[group.taskId];
+
+                            return (
+                              <div
+                                key={group.taskId}
+                                className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xs transition-colors"
+                              >
+                                {/* Collapsible Task Header */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setExpandedTaskArchiveIds(prev => ({
+                                      ...prev,
+                                      [group.taskId]: !prev[group.taskId]
+                                    }));
+                                  }}
+                                  className="w-full flex items-center justify-between p-4 sm:p-5 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 text-left transition-colors cursor-pointer"
+                                >
+                                  <div className="flex items-center space-x-3 min-w-0">
+                                    <div className={`p-2 rounded-xl shrink-0 transition-transform duration-200 ${
+                                      isExpanded
+                                        ? "rotate-180 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400"
+                                        : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                                    }`}>
+                                      <ChevronDown className="h-4 w-4" />
+                                    </div>
+
+                                    <div className="min-w-0 space-y-1">
+                                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                        <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                                          {group.taskTitle}
+                                        </h4>
+                                        <span className={`inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold border shrink-0 ${
+                                          group.category === "Performance Task"
+                                            ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
+                                            : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
+                                        }`}>
+                                          {group.category || "Written Task"}
+                                        </span>
+                                        <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border shrink-0 ${
+                                          group.mode === "external"
+                                            ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+                                            : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+                                        }`}>
+                                          {group.mode === "external" ? "External Link" : "In-App Quiz"}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex items-center space-x-3 text-xs text-slate-400 dark:text-slate-500 font-semibold">
+                                        {group.dueDate && <span>Due: {group.dueDate}</span>}
+                                        {group.dueDate && <span>•</span>}
+                                        <span>Max Score: {group.maxScore} pts</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center space-x-2 shrink-0 ml-3">
+                                    <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/60">
+                                      {group.submissions.length} {group.submissions.length === 1 ? "student" : "students"}
+                                    </span>
+                                  </div>
+                                </button>
+
+                                {/* Expanded Student Submissions Table */}
+                                {isExpanded && (
+                                  <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-900/40">
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-left text-xs">
+                                        <thead className="bg-slate-50/80 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-bold border-b border-slate-100 dark:border-slate-800">
+                                          <tr>
+                                            <th className="p-3.5 pl-6">Student Name</th>
+                                            <th className="p-3.5">Submitted Date</th>
+                                            <th className="p-3.5">Status</th>
+                                            <th className="p-3.5">Score / Grade</th>
+                                            <th className="p-3.5 text-right pr-6">Action</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-200">
+                                          {group.submissions.map((sub) => {
+                                            const subId = sub.firestoreId || sub.id;
+
+                                            return (
+                                              <tr key={subId} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/60 transition-colors">
+                                                <td className="p-3.5 pl-6 font-bold text-slate-900 dark:text-slate-100">
+                                                  {sub.studentName || "Student"}
+                                                </td>
+                                                <td className="p-3.5 font-mono text-[11px] text-slate-500">
+                                                  {sub.submittedAt ? sub.submittedAt.split("T")[0] : "—"}
+                                                </td>
+                                                <td className="p-3.5">
+                                                  <span className="inline-flex px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
+                                                    Graded
+                                                  </span>
+                                                </td>
+                                                <td className="p-3.5 font-extrabold text-slate-900 dark:text-slate-100">
+                                                  {sub.score} / {sub.maxScore || group.maxScore || 50} pts
+                                                </td>
+                                                <td className="p-3.5 text-right pr-6">
+                                                  {sub.mode === "external" || sub.status === "turned_in" ? (
+                                                    <button
+                                                      onClick={() => handleOpenExternalTaskGradingModal(sub)}
+                                                      className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
+                                                    >
+                                                      <span>Edit Grade</span>
+                                                    </button>
+                                                  ) : (
+                                                    <button
+                                                      onClick={() => handleOpenQuizGradingModal(sub)}
+                                                      className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
+                                                    >
+                                                      <span>Review Grade</span>
+                                                    </button>
+                                                  )}
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
