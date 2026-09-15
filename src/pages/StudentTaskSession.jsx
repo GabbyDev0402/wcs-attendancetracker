@@ -211,7 +211,7 @@ export default function StudentTaskSession() {
         subjScore: 0,
         score: objScore,
         maxScore: totalTaskPoints || task.totalPoints || 50,
-        status: hasSubjective ? "pending_review" : "graded",
+        status: "pending_review",
         mode: "inApp",
         submittedAt: new Date().toISOString()
       };

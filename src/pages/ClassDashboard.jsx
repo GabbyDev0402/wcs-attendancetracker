@@ -1532,6 +1532,43 @@ export default function ClassDashboard() {
     }
   };
 
+  const handleMoveSubToPending = async (sub) => {
+    try {
+      const subDocId = sub.firestoreId || sub.id;
+      await updateDoc(doc(db, "task_submissions", subDocId), {
+        status: "pending_review"
+      });
+      loadTaskSubmissions();
+    } catch (err) {
+      alert("Failed to move submission to pending: " + err.message);
+    }
+  };
+
+  const handleMoveAllGradedToPending = async (subsToMove) => {
+    if (!subsToMove || subsToMove.length === 0) return;
+    const confirmed = window.confirm(
+      `Are you sure you want to move all ${subsToMove.length} submission(s) in this quarter back to Pending Submissions for review?`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsTaskSubmissionsLoading(true);
+      await Promise.all(
+        subsToMove.map((s) => {
+          const subDocId = s.firestoreId || s.id;
+          return updateDoc(doc(db, "task_submissions", subDocId), {
+            status: "pending_review"
+          });
+        })
+      );
+      loadTaskSubmissions();
+    } catch (err) {
+      alert("Failed to move submissions to pending: " + err.message);
+    } finally {
+      setIsTaskSubmissionsLoading(false);
+    }
+  };
+
   // -------------------------------------------------------------
   // TAB 6: E-CLASS RECORD LOGIC (PHASE 3)
   // -------------------------------------------------------------
@@ -3768,6 +3805,18 @@ export default function ClassDashboard() {
                         </div>
 
                         <div className="flex items-center space-x-3 shrink-0">
+                          {quarterlyGradedSubs.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleMoveAllGradedToPending(quarterlyGradedSubs)}
+                              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                              title="Move all submissions in this quarter back to Pending Submissions"
+                            >
+                              <Clock className="h-3.5 w-3.5" />
+                              <span>Move All to Pending</span>
+                            </button>
+                          )}
+
                           {groupedTasks.length > 0 && (
                             <button
                               type="button"
@@ -3900,7 +3949,15 @@ export default function ClassDashboard() {
                                                 <td className="p-3.5 font-extrabold text-slate-900 dark:text-slate-100">
                                                   {sub.score} / {sub.maxScore || group.maxScore || 50} pts
                                                 </td>
-                                                <td className="p-3.5 text-right pr-6">
+                                                <td className="p-3.5 text-right pr-6 space-x-2">
+                                                  <button
+                                                    onClick={() => handleMoveSubToPending(sub)}
+                                                    className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-700 dark:text-amber-300 font-bold text-xs transition-all cursor-pointer"
+                                                    title="Move back to Pending Submissions"
+                                                  >
+                                                    <Clock className="h-3 w-3" />
+                                                    <span>To Pending</span>
+                                                  </button>
                                                   {sub.mode === "external" || sub.status === "turned_in" ? (
                                                     <button
                                                       onClick={() => handleOpenExternalTaskGradingModal(sub)}
