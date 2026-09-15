@@ -4,7 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { doc, getDoc, collection, addDoc, query, where, getDocs } from "firebase/firestore";
 import { formatStudentName } from "../utils/helpers";
-import { ArrowLeft, Lock } from "lucide-react";
+import { ArrowLeft, Lock, ExternalLink, CheckCircle, Calendar } from "lucide-react";
 import TaskStudentView from "../components/TaskStudentView";
 
 export default function StudentTaskSession() {
@@ -226,6 +226,37 @@ export default function StudentTaskSession() {
     }
   };
 
+  const handleMarkExternalTaskDone = async () => {
+    if (alreadySubmitted) return;
+    const confirm = window.confirm("Mark this assignment as turned in / done?");
+    if (!confirm) return;
+
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        taskId: task.firestoreId || taskId,
+        taskTitle: task.title || "External Task",
+        classId: task.classId || classId,
+        teacherId: task.teacherId || (task.classId && task.classId.includes("_") ? task.classId.split("_")[0] : (classId && classId.includes("_") ? classId.split("_")[0] : "")),
+        studentId: user.id,
+        studentName: formatStudentName(user),
+        status: "turned_in",
+        score: 0,
+        maxScore: Number(task.maxScore || task.totalPoints || 50),
+        mode: "external",
+        submittedAt: new Date().toISOString()
+      };
+
+      const docRef = await addDoc(collection(db, "task_submissions"), payload);
+      setSubmission({ id: docRef.id, ...payload });
+      setAlreadySubmitted(true);
+    } catch (e) {
+      alert("Failed to mark task as done: " + e.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
@@ -261,6 +292,99 @@ export default function StudentTaskSession() {
 
   const isTeacherPreview = user?.role === "teacher" || user?.role === "admin";
 
+  if (task?.mode === "external") {
+    return (
+      <div className="max-w-2xl mx-auto my-8 p-6 sm:p-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl space-y-6 shadow-sm transition-colors animate-fade-in">
+        {/* Header navigation */}
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+          <button
+            onClick={() => navigate(isTeacherPreview ? `/class/${encodeURIComponent(classId)}?tab=tasks` : `/student/class/${encodeURIComponent(classId)}?tab=tasks`)}
+            className="inline-flex items-center space-x-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            <span>Back to Classroom</span>
+          </button>
+          <span className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+            External Assignment
+          </span>
+        </div>
+
+        {/* Task Details */}
+        <div className="space-y-3">
+          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+            <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${
+              task.category === "Performance Task"
+                ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
+                : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
+            }`}>
+              {task.category || "Written Task"}
+            </span>
+            <span className="inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+              {task.quarter || "1st Quarter"}
+            </span>
+            <span className="inline-flex items-center space-x-1 text-xs text-slate-500 dark:text-slate-400 font-semibold">
+              <Calendar className="h-3.5 w-3.5 text-slate-400" />
+              <span>Due: {task.dueDate || "No Due Date"}</span>
+            </span>
+          </div>
+
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+            {task.title}
+          </h1>
+
+          {task.description && (
+            <div className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-line leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+              {task.description}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-2 font-semibold">
+            <span>Maximum Score: <strong className="text-slate-800 dark:text-slate-200 font-extrabold">{task.totalPoints || task.maxScore || 50} pts</strong></span>
+            {alreadySubmitted && (
+              <span className="inline-flex items-center space-x-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                <CheckCircle className="h-4 w-4" />
+                <span>Turned In</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          {task.externalUrl ? (
+            <a
+              href={task.externalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center space-x-2 px-5 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold transition-all"
+            >
+              <span>Open External Resource</span>
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          ) : <div />}
+
+          {!isTeacherPreview && (
+            alreadySubmitted ? (
+              <div className="inline-flex items-center justify-center space-x-2 px-6 py-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold">
+                <CheckCircle className="h-4 w-4" />
+                <span>Submitted / Turned In</span>
+              </div>
+            ) : (
+              <button
+                onClick={handleMarkExternalTaskDone}
+                disabled={isSubmitting}
+                className="inline-flex items-center justify-center space-x-2 px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+              >
+                <CheckCircle className="h-4 w-4" />
+                <span>{isSubmitting ? "Submitting..." : "Mark as Done"}</span>
+              </button>
+            )
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <TaskStudentView
       task={task}
@@ -276,7 +400,7 @@ export default function StudentTaskSession() {
       onSubmit={handleSubmitTask}
       isSubmitting={isSubmitting}
       isPreview={isTeacherPreview}
-      onReturn={() => navigate(isTeacherPreview ? `/class/${encodeURIComponent(classId)}?tab=tasks` : `/student/class/${encodeURIComponent(classId)}`)}
+      onReturn={() => navigate(isTeacherPreview ? `/class/${encodeURIComponent(classId)}?tab=tasks` : `/student/class/${encodeURIComponent(classId)}?tab=tasks`)}
     />
   );
 }

@@ -67,7 +67,8 @@ import {
   FileSpreadsheet,
   Paperclip,
   CheckSquare,
-  Eye
+  Eye,
+  Copy
 } from "lucide-react";
 import TaskStudentView from "../components/TaskStudentView";
 
@@ -378,6 +379,9 @@ export default function ClassDashboard() {
   const [isBuildingTask, setIsBuildingTask] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [taskPublishSuccess, setTaskPublishSuccess] = useState(false);
+  const [copiedTaskId, setCopiedTaskId] = useState(null);
+  const [lastPublishedTaskId, setLastPublishedTaskId] = useState(null);
+  const [copiedPublishLink, setCopiedPublishLink] = useState(false);
 
   // Task Form States
   const [taskTitle, setTaskTitle] = useState("");
@@ -2191,22 +2195,37 @@ export default function ClassDashboard() {
         payload.questions = taskQuestions;
       }
 
+      let savedTaskId = editingTaskId;
       if (editingTaskId) {
         await updateDoc(doc(db, "tasks", editingTaskId), payload);
       } else {
-        await addDoc(collection(db, "tasks"), {
+        const docRef = await addDoc(collection(db, "tasks"), {
           ...payload,
           createdAt: new Date().toISOString()
         });
+        savedTaskId = docRef.id;
       }
 
+      setLastPublishedTaskId(savedTaskId);
       resetTaskBuilder();
       setTaskPublishSuccess(true);
-      setTimeout(() => setTaskPublishSuccess(false), 3000);
+      setTimeout(() => {
+        setTaskPublishSuccess(false);
+        setCopiedPublishLink(false);
+      }, 5000);
       loadTasks();
     } catch (e) {
       alert("Failed to save task: " + e.message);
     }
+  };
+
+  const copyStudentTaskLink = (taskId) => {
+    if (!taskId) return;
+    const tag = `${user?.id}_${classId}`;
+    const studentUrl = `${window.location.origin}/student/class/${encodeURIComponent(tag)}/task/${taskId}`;
+    navigator.clipboard.writeText(studentUrl);
+    setCopiedTaskId(taskId);
+    setTimeout(() => setCopiedTaskId(null), 2500);
   };
 
   const resetTaskBuilder = () => {
@@ -3395,9 +3414,34 @@ export default function ClassDashboard() {
       {activeTab === "tasks" && (
         <div className="space-y-6">
           {taskPublishSuccess && (
-            <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800">
-              <Sparkles className="h-4 w-4" />
-              <span>{editingTaskId ? "Task / Quiz updated successfully!" : "Task / Quiz published successfully!"}</span>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3.5 rounded-xl border border-emerald-100 dark:border-emerald-800 animate-fade-in">
+              <div className="flex items-center space-x-2">
+                <Sparkles className="h-4 w-4 shrink-0" />
+                <span>{editingTaskId ? "Task / Quiz updated successfully!" : "Task / Quiz published successfully!"}</span>
+              </div>
+              {lastPublishedTaskId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    copyStudentTaskLink(lastPublishedTaskId);
+                    setCopiedPublishLink(true);
+                    setTimeout(() => setCopiedPublishLink(false), 2500);
+                  }}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer shrink-0"
+                >
+                  {copiedPublishLink ? (
+                    <>
+                      <Check className="h-3.5 w-3.5" />
+                      <span>Copied Student Link!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>Copy Student Link 📋</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
 
@@ -3467,6 +3511,27 @@ export default function ClassDashboard() {
                               </>
                             )}
                           </span>
+                          <button
+                            onClick={() => copyStudentTaskLink(task.firestoreId || task.id)}
+                            className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center space-x-1 ${
+                              copiedTaskId === (task.firestoreId || task.id)
+                                ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700"
+                                : "border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400"
+                            }`}
+                            title={copiedTaskId === (task.firestoreId || task.id) ? "Link Copied!" : "Copy Direct Student Link"}
+                          >
+                            {copiedTaskId === (task.firestoreId || task.id) ? (
+                              <>
+                                <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-3.5 w-3.5" />
+                                <span className="text-[10px] font-bold">Copy Link</span>
+                              </>
+                            )}
+                          </button>
                           <button
                             onClick={() => handleOpenTaskPreview(task)}
                             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { auth, db } from "../firebase/config";
 import { createUserWithEmailAndPassword } from "firebase/auth";
@@ -9,6 +9,7 @@ import { KeyRound, Mail, AlertCircle, ArrowRight, Sparkles, User, GraduationCap,
 export default function Login() {
   const { login, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loginType, setLoginType] = useState("faculty"); // "faculty" | "student"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -102,10 +103,17 @@ export default function Login() {
   }, []);
 
   const handleLoginSuccess = (userData) => {
-    if (userData.role === 'admin') navigate('/admin');
-    else if (userData.role === 'teacher') navigate('/teacher');
-    else if (userData.role === 'student') navigate('/student');
-    else throw new Error('Invalid user role');
+    const from = location.state?.from ? (location.state.from.pathname + (location.state.from.search || "")) : null;
+
+    if (userData.role === 'admin') {
+      navigate(from && from.startsWith('/admin') ? from : '/admin');
+    } else if (userData.role === 'teacher') {
+      navigate(from && from.startsWith('/teacher') ? from : '/teacher');
+    } else if (userData.role === 'student') {
+      navigate(from && from.startsWith('/student') ? from : '/student');
+    } else {
+      throw new Error('Invalid user role');
+    }
   };
 
   const handleSubmit = async (e) => {

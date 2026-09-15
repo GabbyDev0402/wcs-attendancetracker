@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -27,6 +27,7 @@ const getRoleDefaultRoute = (role) => {
 // Route guard with optional role authorization
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
   
   if (loading) {
     return (
@@ -37,7 +38,7 @@ function ProtectedRoute({ children, allowedRoles }) {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
   
   if (allowedRoles && !allowedRoles.includes(user.role)) {
@@ -51,6 +52,7 @@ function ProtectedRoute({ children, allowedRoles }) {
 // Redirect logged-in users away from the login page
 function PublicRoute({ children }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
   
   if (loading) {
     return (
@@ -61,6 +63,8 @@ function PublicRoute({ children }) {
   }
 
   if (user) {
+    const from = location.state?.from ? (location.state.from.pathname + (location.state.from.search || "")) : null;
+    if (from) return <Navigate to={from} replace />;
     return <Navigate to={getRoleDefaultRoute(user.role)} replace />;
   }
   
