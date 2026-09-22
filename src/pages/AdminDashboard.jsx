@@ -157,54 +157,134 @@ const CANONICAL_SUBJECTS = [
 
 // Standard Curriculum 4 Core Pillars (Core & Added)
 const STANDARD_PILLARS = [
-  { core: 'Math', added: 'MAPEH' },
-  { core: 'Science', added: 'TLE' },
   { core: 'English', added: 'Literature' },
-  { core: 'Social Science', added: 'Values' }
+  { core: 'Social Science', added: 'Values' },
+  { core: 'Science', added: 'TLE' },
+  { core: 'Math', added: 'MAPEH' }
 ];
 
 // Senior High School (Grades 11 & 12) Specific Added Subject Nomenclature
 const SHS_ADDED_SUBJECT_MAPPINGS = {
   "Grade 11": {
-    "MAPEH": "PE & Health 1",
+    "MAPEH": "Physical Education and Health",
+    "Values": "Discipline Ideas in Social Sciences",
     "TLE": "Empowerment Technologies",
-    "Literature": "Philippine Politics",
-    "Values": "DISS"
+    "Literature": "Philippine Politics and Governance"
   },
   "Grade 12": {
-    "MAPEH": "PE & Health 3",
-    "TLE": "Media & Information Literacy",
-    "Literature": "21st Century Literature",
-    "Values": "DIASS"
+    "MAPEH": "Physical Education & Health",
+    "Values": "Disciplines & Ideas in the Applied Social Science",
+    "TLE": "Media and Information Literacy",
+    "Literature": "21st Century Literacy from the Philippines & the World"
   }
 };
 
-const getEffectiveAddedSubject = (gradeLevel, pillar) => {
+const STANDARD_CORE_SUBJECTS = [
+  {
+    key: "English",
+    label: "ENGLISH",
+    headerBg: "bg-[#dbeafe] text-[#1e3a8a] border-[#bfdbfe] dark:bg-blue-950/60 dark:text-blue-200 dark:border-blue-800",
+    subHeaderBg: "bg-[#eff6ff] text-[#1e40af] dark:bg-blue-950/40 dark:text-blue-300",
+    cellBg: "bg-[#eff6ff]/40 dark:bg-blue-950/20",
+    printColor: "#dbeafe",
+    printText: "#1e3a8a"
+  },
+  {
+    key: "Social Science",
+    label: "SOCIAL SCIENCE",
+    headerBg: "bg-[#fef9c3] text-[#713f12] border-[#fde047] dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800",
+    subHeaderBg: "bg-[#fefce8] text-[#854d0e] dark:bg-amber-950/40 dark:text-amber-300",
+    cellBg: "bg-[#fefce8]/40 dark:bg-amber-950/20",
+    printColor: "#fef9c3",
+    printText: "#713f12"
+  },
+  {
+    key: "Science",
+    label: "SCIENCE",
+    headerBg: "bg-[#f3e8ff] text-[#581c87] border-[#e9d5ff] dark:bg-purple-950/60 dark:text-purple-200 dark:border-purple-800",
+    subHeaderBg: "bg-[#faf5ff] text-[#6b21a8] dark:bg-purple-950/40 dark:text-purple-300",
+    cellBg: "bg-[#faf5ff]/40 dark:bg-purple-950/20",
+    printColor: "#f3e8ff",
+    printText: "#581c87"
+  },
+  {
+    key: "Math",
+    label: "MATH",
+    headerBg: "bg-[#dcfce7] text-[#14532d] border-[#bbf7d0] dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-800",
+    subHeaderBg: "bg-[#f0fdf4] text-[#15803d] dark:bg-emerald-950/40 dark:text-emerald-300",
+    cellBg: "bg-[#f0fdf4]/40 dark:bg-emerald-950/20",
+    printColor: "#dcfce7",
+    printText: "#14532d"
+  }
+];
+
+const STANDARD_ADDED_SUBJECTS = [
+  {
+    key: "MAPEH",
+    label: "MAPEH",
+    headerBg: "bg-[#dbeafe] text-[#1e3a8a] border-[#bfdbfe] dark:bg-blue-950/60 dark:text-blue-200 dark:border-blue-800",
+    subHeaderBg: "bg-[#eff6ff] text-[#1e40af] dark:bg-blue-950/40 dark:text-blue-300",
+    cellBg: "bg-[#eff6ff]/40 dark:bg-blue-950/20",
+    printColor: "#dbeafe",
+    printText: "#1e3a8a"
+  },
+  {
+    key: "Values",
+    label: "VALUES",
+    headerBg: "bg-[#fef9c3] text-[#713f12] border-[#fde047] dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800",
+    subHeaderBg: "bg-[#fefce8] text-[#854d0e] dark:bg-amber-950/40 dark:text-amber-300",
+    cellBg: "bg-[#fefce8]/40 dark:bg-amber-950/20",
+    printColor: "#fef9c3",
+    printText: "#713f12"
+  },
+  {
+    key: "TLE",
+    label: "TLE",
+    headerBg: "bg-[#f3e8ff] text-[#581c87] border-[#e9d5ff] dark:bg-purple-950/60 dark:text-purple-200 dark:border-purple-800",
+    subHeaderBg: "bg-[#faf5ff] text-[#6b21a8] dark:bg-purple-950/40 dark:text-purple-300",
+    cellBg: "bg-[#faf5ff]/40 dark:bg-purple-950/20",
+    printColor: "#f3e8ff",
+    printText: "#581c87"
+  },
+  {
+    key: "Literature",
+    label: "LITERATURE",
+    headerBg: "bg-[#dcfce7] text-[#14532d] border-[#bbf7d0] dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-800",
+    subHeaderBg: "bg-[#f0fdf4] text-[#15803d] dark:bg-emerald-950/40 dark:text-emerald-300",
+    cellBg: "bg-[#f0fdf4]/40 dark:bg-emerald-950/20",
+    printColor: "#dcfce7",
+    printText: "#14532d"
+  }
+];
+
+const getEffectiveAddedSubject = (gradeLevel, pillarOrKey) => {
+  const addedKey = typeof pillarOrKey === "string" ? pillarOrKey : pillarOrKey?.added;
   const gStr = (gradeLevel || "").toString();
-  if (gStr.includes("11") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"]?.[pillar?.added]) {
-    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"][pillar.added];
+  if (gStr.includes("11") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"]?.[addedKey]) {
+    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"][addedKey];
   }
-  if (gStr.includes("12") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"]?.[pillar?.added]) {
-    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"][pillar.added];
+  if (gStr.includes("12") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"]?.[addedKey]) {
+    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"][addedKey];
   }
-  return pillar?.added || "Added";
+  return addedKey || "Added";
 };
 
-const getPillarHeaderAddedLabel = (pillar, reportFilterGrade) => {
+const getPillarHeaderAddedLabel = (pillarOrKey, reportFilterGrade) => {
+  const addedKey = typeof pillarOrKey === "string" ? pillarOrKey : pillarOrKey?.added;
   const fGrade = (reportFilterGrade || "").toString();
-  if (fGrade.includes("11") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"]?.[pillar?.added]) {
-    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"][pillar.added];
+  if (fGrade.includes("11") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"]?.[addedKey]) {
+    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 11"][addedKey];
   }
-  if (fGrade.includes("12") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"]?.[pillar?.added]) {
-    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"][pillar.added];
+  if (fGrade.includes("12") && SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"]?.[addedKey]) {
+    return SHS_ADDED_SUBJECT_MAPPINGS["Grade 12"][addedKey];
   }
   if (fGrade === "All") {
-    if (pillar?.added === "MAPEH") return "MAPEH / PE & Health";
-    if (pillar?.added === "TLE") return "TLE / MIL / ICT";
-    if (pillar?.added === "Literature") return "Literature / 21st Century";
-    if (pillar?.added === "Values") return "Values / DIASS / DISS";
+    if (addedKey === "MAPEH") return "MAPEH / PE & Health";
+    if (addedKey === "TLE") return "TLE / EmpTech / MIL";
+    if (addedKey === "Literature") return "Literature / PPG / 21st Cent";
+    if (addedKey === "Values") return "Values / DISS / DIASS";
   }
-  return pillar?.added || "Added";
+  return addedKey || "Added";
 };
 
 // ESL Program 4 Core Pillars (Core & Added)
@@ -213,6 +293,84 @@ const ESL_PILLARS = [
   { core: 'Grammar', added: 'MAPEH' },
   { core: 'Speaking', added: 'Literature' },
   { core: 'Vocabulary', added: 'TLE' }
+];
+
+const ESL_CORE_SUBJECTS = [
+  {
+    key: "Reading",
+    label: "READING",
+    headerBg: "bg-[#dbeafe] text-[#1e3a8a] border-[#bfdbfe] dark:bg-blue-950/60 dark:text-blue-200 dark:border-blue-800",
+    subHeaderBg: "bg-[#eff6ff] text-[#1e40af] dark:bg-blue-950/40 dark:text-blue-300",
+    cellBg: "bg-[#eff6ff]/40 dark:bg-blue-950/20",
+    printColor: "#dbeafe",
+    printText: "#1e3a8a"
+  },
+  {
+    key: "Grammar",
+    label: "GRAMMAR",
+    headerBg: "bg-[#fef9c3] text-[#713f12] border-[#fde047] dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800",
+    subHeaderBg: "bg-[#fefce8] text-[#854d0e] dark:bg-amber-950/40 dark:text-amber-300",
+    cellBg: "bg-[#fefce8]/40 dark:bg-amber-950/20",
+    printColor: "#fef9c3",
+    printText: "#713f12"
+  },
+  {
+    key: "Speaking",
+    label: "SPEAKING",
+    headerBg: "bg-[#f3e8ff] text-[#581c87] border-[#e9d5ff] dark:bg-purple-950/60 dark:text-purple-200 dark:border-purple-800",
+    subHeaderBg: "bg-[#faf5ff] text-[#6b21a8] dark:bg-purple-950/40 dark:text-purple-300",
+    cellBg: "bg-[#faf5ff]/40 dark:bg-purple-950/20",
+    printColor: "#f3e8ff",
+    printText: "#581c87"
+  },
+  {
+    key: "Vocabulary",
+    label: "VOCABULARY",
+    headerBg: "bg-[#dcfce7] text-[#14532d] border-[#bbf7d0] dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-800",
+    subHeaderBg: "bg-[#f0fdf4] text-[#15803d] dark:bg-emerald-950/40 dark:text-emerald-300",
+    cellBg: "bg-[#f0fdf4]/40 dark:bg-emerald-950/20",
+    printColor: "#dcfce7",
+    printText: "#14532d"
+  }
+];
+
+const ESL_ADDED_SUBJECTS = [
+  {
+    key: "Values",
+    label: "VALUES",
+    headerBg: "bg-[#dbeafe] text-[#1e3a8a] border-[#bfdbfe] dark:bg-blue-950/60 dark:text-blue-200 dark:border-blue-800",
+    subHeaderBg: "bg-[#eff6ff] text-[#1e40af] dark:bg-blue-950/40 dark:text-blue-300",
+    cellBg: "bg-[#eff6ff]/40 dark:bg-blue-950/20",
+    printColor: "#dbeafe",
+    printText: "#1e3a8a"
+  },
+  {
+    key: "MAPEH",
+    label: "MAPEH",
+    headerBg: "bg-[#fef9c3] text-[#713f12] border-[#fde047] dark:bg-amber-950/60 dark:text-amber-200 dark:border-amber-800",
+    subHeaderBg: "bg-[#fefce8] text-[#854d0e] dark:bg-amber-950/40 dark:text-amber-300",
+    cellBg: "bg-[#fefce8]/40 dark:bg-amber-950/20",
+    printColor: "#fef9c3",
+    printText: "#713f12"
+  },
+  {
+    key: "TLE",
+    label: "TLE",
+    headerBg: "bg-[#f3e8ff] text-[#581c87] border-[#e9d5ff] dark:bg-purple-950/60 dark:text-purple-200 dark:border-purple-800",
+    subHeaderBg: "bg-[#faf5ff] text-[#6b21a8] dark:bg-purple-950/40 dark:text-purple-300",
+    cellBg: "bg-[#faf5ff]/40 dark:bg-purple-950/20",
+    printColor: "#f3e8ff",
+    printText: "#581c87"
+  },
+  {
+    key: "Literature",
+    label: "LITERATURE",
+    headerBg: "bg-[#dcfce7] text-[#14532d] border-[#bbf7d0] dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-800",
+    subHeaderBg: "bg-[#f0fdf4] text-[#15803d] dark:bg-emerald-950/40 dark:text-emerald-300",
+    cellBg: "bg-[#f0fdf4]/40 dark:bg-emerald-950/20",
+    printColor: "#dcfce7",
+    printText: "#14532d"
+  }
 ];
 
 export default function AdminDashboard() {
@@ -299,24 +457,15 @@ export default function AdminDashboard() {
         <style>
           body { font-family: Calibri, 'Segoe UI', Arial, sans-serif; }
           table { border-collapse: collapse; width: 100%; margin-bottom: 30px; }
-          th, td { border: 1px solid #cbd5e1; padding: 7px 10px; font-size: 10pt; text-align: left; vertical-align: middle; }
-          .title-banner { font-size: 13pt; font-weight: bold; background-color: #1e293b; color: #ffffff; text-align: center; padding: 12px; }
-          .header-main { background-color: #f1f5f9; font-weight: bold; font-size: 9.5pt; text-transform: uppercase; color: #334155; }
-          .pillar-header { font-weight: bold; text-align: center; font-size: 10pt; text-transform: uppercase; letter-spacing: 0.5px; }
-          .pillar-math { background-color: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
-          .pillar-science { background-color: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
-          .pillar-english { background-color: #ccfbf1; color: #115e59; border: 1px solid #99f6e4; }
-          .pillar-social { background-color: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
-          .sub-header { background-color: #f8fafc; font-size: 8.5pt; text-align: center; font-weight: bold; color: #64748b; }
+          th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 9pt; text-align: left; vertical-align: middle; }
+          .title-banner { font-size: 12pt; font-weight: bold; background-color: #1e293b; color: #ffffff; text-align: center; padding: 10px; }
+          .header-main { background-color: #f1f5f9; font-weight: bold; font-size: 9pt; text-transform: uppercase; color: #334155; }
+          .pillar-header { font-weight: bold; text-align: center; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.5px; }
+          .sub-header { font-size: 7.5pt; text-align: center; font-weight: bold; font-style: italic; }
           .data-center { text-align: center; }
+          .data-total { text-align: center; font-weight: bold; }
           .student-name { font-weight: bold; color: #0f172a; }
-          .student-code { font-size: 8pt; color: #94a3b8; font-family: monospace; }
-          .score-val { font-weight: bold; font-size: 10pt; color: #0f172a; font-family: monospace; }
-          .score-pct { font-size: 8.5pt; font-weight: bold; padding: 2px 4px; border-radius: 4px; }
-          .pct-high { color: #15803d; }
-          .pct-med { color: #b45309; }
-          .pct-low { color: #b91c1c; }
-          .score-breakdown { font-size: 7.5pt; color: #94a3b8; font-family: monospace; }
+          .student-code { font-size: 7.5pt; color: #94a3b8; font-family: monospace; }
           .avg-excellent { background-color: #dcfce7; color: #15803d; font-weight: bold; text-align: center; }
           .avg-good { background-color: #dbeafe; color: #1d4ed8; font-weight: bold; text-align: center; }
           .avg-passing { background-color: #fef3c7; color: #b45309; font-weight: bold; text-align: center; }
@@ -332,28 +481,35 @@ export default function AdminDashboard() {
         <table>
           <thead>
             <tr>
-              <th colspan="${3 + STANDARD_PILLARS.length * 2 + 1}" class="title-banner">
+              <th colspan="28" class="title-banner">
                 WASHINGTON COMPREHENSIVE SCHOOL • STANDARD CURRICULUM MASTER REPORT (${reportFilterExamCategory} • ${reportFilterQuarter})
               </th>
             </tr>
             <tr class="header-main">
-              <th rowspan="2" style="width: 220px;">STUDENT NAME</th>
-              <th rowspan="2" style="width: 100px;">GRADE LEVEL</th>
-              <th rowspan="2" style="width: 120px;">COMMUNITY</th>
-              ${STANDARD_PILLARS.map(p => {
-                let cls = "pillar-math";
-                if (p.core.toLowerCase().includes("science") && !p.core.toLowerCase().includes("social")) cls = "pillar-science";
-                if (p.core.toLowerCase().includes("english")) cls = "pillar-english";
-                if (p.core.toLowerCase().includes("social")) cls = "pillar-social";
-                return `<th colspan="2" class="pillar-header ${cls}">${p.core.toUpperCase()}</th>`;
-              }).join("")}
-              <th rowspan="2" style="width: 140px; text-align: center;">GENERAL AVERAGE</th>
-            </tr>
-            <tr class="sub-header">
-              ${STANDARD_PILLARS.map(p => `
-                <th>${p.core} (Core)</th>
-                <th>${getPillarHeaderAddedLabel(p, reportFilterGrade)} (Added)</th>
+              <th rowspan="2" style="width: 200px;">STUDENT NAME</th>
+              <th rowspan="2" style="width: 90px;">GRADE LEVEL</th>
+              <th rowspan="2" style="width: 100px;">COMMUNITY</th>
+              ${STANDARD_CORE_SUBJECTS.map(subj => `
+                <th colspan="3" class="pillar-header" style="background-color: ${subj.printColor}; color: ${subj.printText}; border: 1px solid #cbd5e1;">
+                  ${subj.label}
+                </th>
               `).join("")}
+              ${STANDARD_ADDED_SUBJECTS.map(subj => {
+                const label = getPillarHeaderAddedLabel(subj.key, reportFilterGrade);
+                return `
+                  <th colspan="3" class="pillar-header" style="background-color: ${subj.printColor}; color: ${subj.printText}; border: 1px solid #cbd5e1;">
+                    ${label.toUpperCase()}
+                  </th>
+                `;
+              }).join("")}
+              <th rowspan="2" style="width: 120px; text-align: center;">GENERAL AVERAGE</th>
+            </tr>
+            <tr class="header-main">
+              ${[...STANDARD_CORE_SUBJECTS, ...STANDARD_ADDED_SUBJECTS].flatMap(subj => [
+                `<th class="sub-header" style="background-color: ${subj.printColor}; color: ${subj.printText};">MULTIPLE CHOICE</th>`,
+                `<th class="sub-header" style="background-color: ${subj.printColor}; color: ${subj.printText};">ESSAY VOCABS</th>`,
+                `<th class="sub-header" style="background-color: ${subj.printColor}; color: ${subj.printText}; font-weight: bold;">TOTAL</th>`
+              ]).join("")}
             </tr>
           </thead>
           <tbody>
@@ -373,23 +529,23 @@ export default function AdminDashboard() {
             <td>${row.community}</td>
         `;
 
-        STANDARD_PILLARS.forEach(p => {
-          [p.core, p.added].forEach(subjKey => {
-            const sc = row.subjectScores[subjKey];
-            if (sc && sc.hasScore) {
-              const pctCls = sc.percentage >= 80 ? "pct-high" : sc.percentage >= 70 ? "pct-med" : "pct-low";
-              const breakdown = (sc.objScore > 0 || sc.subjScore > 0) ? `<br/><span class="score-breakdown">MC: ${sc.objScore} | V/E: ${sc.subjScore}</span>` : "";
-              html += `<td class="data-center"><span class="score-val">${sc.earnedScore}/${sc.maxScore}</span> <span class="score-pct ${pctCls}">(${sc.percentage}%)</span>${breakdown}</td>`;
-            } else {
-              html += `<td class="data-center" style="color: #cbd5e1;">—</td>`;
-            }
-          });
+        [...STANDARD_CORE_SUBJECTS, ...STANDARD_ADDED_SUBJECTS].forEach(subj => {
+          const sc = row.subjectScores[subj.key];
+          const hasScore = sc && sc.hasScore;
+          const mc = hasScore && sc.objScore !== undefined && sc.objScore !== null ? sc.objScore : "";
+          const ev = hasScore && sc.subjScore !== undefined && sc.subjScore !== null ? sc.subjScore : "";
+          const tot = hasScore ? sc.earnedScore : 0;
+          html += `
+            <td class="data-center" style="font-family: monospace;">${mc}</td>
+            <td class="data-center" style="font-family: monospace;">${ev}</td>
+            <td class="data-total" style="font-family: monospace; ${hasScore ? 'color: #0f172a;' : 'color: #94a3b8;'}">${tot}</td>
+          `;
         });
 
         html += `
             <td class="${avgCls}">
               ${avg}%
-              <br/><span style="font-size: 8pt; font-weight: normal; color: #64748b;">${row.completedCount} of ${row.totalSubjectsCount} subjects</span>
+              <br/><span style="font-size: 7.5pt; font-weight: normal; color: #64748b;">${row.completedCount} of ${row.totalSubjectsCount} subjects</span>
             </td>
           </tr>
         `;
@@ -404,22 +560,32 @@ export default function AdminDashboard() {
         <table>
           <thead>
             <tr>
-              <th colspan="${3 + ESL_PILLARS.length * 2 + 1}" class="title-banner" style="background-color: #0f766e;">
+              <th colspan="28" class="title-banner" style="background-color: #0f766e;">
                 WASHINGTON COMPREHENSIVE SCHOOL • ESL PROGRAM MASTER REPORT (${reportFilterExamCategory} • ${reportFilterQuarter})
               </th>
             </tr>
             <tr class="header-main">
-              <th rowspan="2" style="width: 220px;">STUDENT NAME</th>
-              <th rowspan="2" style="width: 100px;">LEVEL / GRADE</th>
-              <th rowspan="2" style="width: 120px;">COMMUNITY</th>
-              ${ESL_PILLARS.map(p => `<th colspan="2" class="pillar-header" style="background-color: #f0fdfa; color: #0f766e;">${p.core.toUpperCase()}</th>`).join("")}
-              <th rowspan="2" style="width: 140px; text-align: center;">GENERAL AVERAGE</th>
-            </tr>
-            <tr class="sub-header">
-              ${ESL_PILLARS.map(p => `
-                <th>${p.core} (Core)</th>
-                <th>${p.added} (Added)</th>
+              <th rowspan="2" style="width: 200px;">STUDENT NAME</th>
+              <th rowspan="2" style="width: 90px;">LEVEL / GRADE</th>
+              <th rowspan="2" style="width: 100px;">COMMUNITY</th>
+              ${ESL_CORE_SUBJECTS.map(subj => `
+                <th colspan="3" class="pillar-header" style="background-color: ${subj.printColor}; color: ${subj.printText}; border: 1px solid #cbd5e1;">
+                  ${subj.label}
+                </th>
               `).join("")}
+              ${ESL_ADDED_SUBJECTS.map(subj => `
+                <th colspan="3" class="pillar-header" style="background-color: ${subj.printColor}; color: ${subj.printText}; border: 1px solid #cbd5e1;">
+                  ${subj.label}
+                </th>
+              `).join("")}
+              <th rowspan="2" style="width: 120px; text-align: center;">GENERAL AVERAGE</th>
+            </tr>
+            <tr class="header-main">
+              ${[...ESL_CORE_SUBJECTS, ...ESL_ADDED_SUBJECTS].flatMap(subj => [
+                `<th class="sub-header" style="background-color: ${subj.printColor}; color: ${subj.printText};">MULTIPLE CHOICE</th>`,
+                `<th class="sub-header" style="background-color: ${subj.printColor}; color: ${subj.printText};">ESSAY VOCABS</th>`,
+                `<th class="sub-header" style="background-color: ${subj.printColor}; color: ${subj.printText}; font-weight: bold;">TOTAL</th>`
+              ]).join("")}
             </tr>
           </thead>
           <tbody>
@@ -439,23 +605,23 @@ export default function AdminDashboard() {
             <td>${row.community}</td>
         `;
 
-        ESL_PILLARS.forEach(p => {
-          [p.core, p.added].forEach(subjKey => {
-            const sc = row.subjectScores[subjKey];
-            if (sc && sc.hasScore) {
-              const pctCls = sc.percentage >= 80 ? "pct-high" : sc.percentage >= 70 ? "pct-med" : "pct-low";
-              const breakdown = (sc.objScore > 0 || sc.subjScore > 0) ? `<br/><span class="score-breakdown">MC: ${sc.objScore} | V/E: ${sc.subjScore}</span>` : "";
-              html += `<td class="data-center"><span class="score-val">${sc.earnedScore}/${sc.maxScore}</span> <span class="score-pct ${pctCls}">(${sc.percentage}%)</span>${breakdown}</td>`;
-            } else {
-              html += `<td class="data-center" style="color: #cbd5e1;">—</td>`;
-            }
-          });
+        [...ESL_CORE_SUBJECTS, ...ESL_ADDED_SUBJECTS].forEach(subj => {
+          const sc = row.subjectScores[subj.key];
+          const hasScore = sc && sc.hasScore;
+          const mc = hasScore && sc.objScore !== undefined && sc.objScore !== null ? sc.objScore : "";
+          const ev = hasScore && sc.subjScore !== undefined && sc.subjScore !== null ? sc.subjScore : "";
+          const tot = hasScore ? sc.earnedScore : 0;
+          html += `
+            <td class="data-center" style="font-family: monospace;">${mc}</td>
+            <td class="data-center" style="font-family: monospace;">${ev}</td>
+            <td class="data-total" style="font-family: monospace; ${hasScore ? 'color: #0f172a;' : 'color: #94a3b8;'}">${tot}</td>
+          `;
         });
 
         html += `
             <td class="${avgCls}">
               ${avg}%
-              <br/><span style="font-size: 8pt; font-weight: normal; color: #64748b;">${row.completedCount} of ${row.totalSubjectsCount} subjects</span>
+              <br/><span style="font-size: 7.5pt; font-weight: normal; color: #64748b;">${row.completedCount} of ${row.totalSubjectsCount} subjects</span>
             </td>
           </tr>
         `;
@@ -493,7 +659,19 @@ export default function AdminDashboard() {
         "Student Code",
         "Grade Level",
         "Community",
-        ...STANDARD_PILLARS.flatMap(p => [`"${p.core} (Core)"`, `"${getPillarHeaderAddedLabel(p, reportFilterGrade)} (Added)"`]),
+        ...STANDARD_CORE_SUBJECTS.flatMap(s => [
+          `"${s.label} (Multiple Choice)"`,
+          `"${s.label} (Essay/Vocabs)"`,
+          `"${s.label} (Total)"`
+        ]),
+        ...STANDARD_ADDED_SUBJECTS.flatMap(s => {
+          const lbl = getPillarHeaderAddedLabel(s.key, reportFilterGrade);
+          return [
+            `"${lbl} (Multiple Choice)"`,
+            `"${lbl} (Essay/Vocabs)"`,
+            `"${lbl} (Total)"`
+          ];
+        }),
         "General Average (%)",
         "Subjects Completed"
       ];
@@ -507,15 +685,13 @@ export default function AdminDashboard() {
           `"${(row.community || 'Main').replace(/"/g, '""')}"`,
         ];
 
-        STANDARD_PILLARS.forEach(p => {
-          [p.core, p.added].forEach(subjKey => {
-            const sc = row.subjectScores[subjKey];
-            if (sc && sc.hasScore) {
-              rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
-            } else {
-              rowCols.push('"—"');
-            }
-          });
+        [...STANDARD_CORE_SUBJECTS, ...STANDARD_ADDED_SUBJECTS].forEach(subj => {
+          const sc = row.subjectScores[subj.key];
+          const hasScore = sc && sc.hasScore;
+          const mc = hasScore && sc.objScore !== undefined && sc.objScore !== null ? sc.objScore : "";
+          const ev = hasScore && sc.subjScore !== undefined && sc.subjScore !== null ? sc.subjScore : "";
+          const tot = hasScore ? sc.earnedScore : 0;
+          rowCols.push(`"${mc}"`, `"${ev}"`, `"${tot}"`);
         });
 
         rowCols.push(`"${row.generalAverage}%"`);
@@ -534,7 +710,16 @@ export default function AdminDashboard() {
         "Student Code",
         "Level / Grade",
         "Community",
-        ...ESL_PILLARS.flatMap(p => [`"${p.core} (Core)"`, `"${p.added} (Added)"`]),
+        ...ESL_CORE_SUBJECTS.flatMap(s => [
+          `"${s.label} (Multiple Choice)"`,
+          `"${s.label} (Essay/Vocabs)"`,
+          `"${s.label} (Total)"`
+        ]),
+        ...ESL_ADDED_SUBJECTS.flatMap(s => [
+          `"${s.label} (Multiple Choice)"`,
+          `"${s.label} (Essay/Vocabs)"`,
+          `"${s.label} (Total)"`
+        ]),
         "General Average (%)",
         "Subjects Completed"
       ];
@@ -548,15 +733,13 @@ export default function AdminDashboard() {
           `"${(row.community || 'Main').replace(/"/g, '""')}"`,
         ];
 
-        ESL_PILLARS.forEach(p => {
-          [p.core, p.added].forEach(subjKey => {
-            const sc = row.subjectScores[subjKey];
-            if (sc && sc.hasScore) {
-              rowCols.push(`"${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)"`);
-            } else {
-              rowCols.push('"—"');
-            }
-          });
+        [...ESL_CORE_SUBJECTS, ...ESL_ADDED_SUBJECTS].forEach(subj => {
+          const sc = row.subjectScores[subj.key];
+          const hasScore = sc && sc.hasScore;
+          const mc = hasScore && sc.objScore !== undefined && sc.objScore !== null ? sc.objScore : "";
+          const ev = hasScore && sc.subjScore !== undefined && sc.subjScore !== null ? sc.subjScore : "";
+          const tot = hasScore ? sc.earnedScore : 0;
+          rowCols.push(`"${mc}"`, `"${ev}"`, `"${tot}"`);
         });
 
         rowCols.push(`"${row.generalAverage}%"`);
@@ -1356,123 +1539,89 @@ export default function AdminDashboard() {
     return title || "General Subject";
   };
 
+  // Helper to match arbitrary subject text against a known subject slot key
+  const isSubjectMatchingSlot = (subjStr, slotKey) => {
+    if (!subjStr || !slotKey) return false;
+    const s = subjStr.toLowerCase().trim();
+    const k = slotKey.toLowerCase().trim();
+    if (s === k) return true;
+
+    if (k === "mapeh" || k.includes("pe") || k.includes("physical education")) {
+      return s.includes("mapeh") || s.includes("pe & health") || s.includes("pe and health") || s.includes("physical education") || s.includes("hope") || s.includes("music") || s.includes("arts") || s.includes("pe 1") || s.includes("pe 3") || s === "pe";
+    }
+    if (k === "values" || k.includes("diss") || k.includes("diass") || k.includes("applied social")) {
+      return s.includes("values") || s.includes("esp") || s.includes("edukasyon sa pagpapakatao") || s.includes("discipline ideas in social") || s.includes("disciplines & ideas in the applied") || s.includes("applied social") || s.includes("diss") || s.includes("diass") || s.includes("character") || s.includes("ethics") || s.includes("moral") || s.includes("clve");
+    }
+    if (k === "tle" || k.includes("empowerment") || k.includes("media") || k.includes("mil")) {
+      return s.includes("tle") || s.includes("technology") || s.includes("livelihood") || s.includes("empowerment") || s.includes("media and information") || s.includes("media & information") || s.includes("mil") || s.includes("ict") || s.includes("computer") || s.includes("epp");
+    }
+    if (k === "literature" || k.includes("politics") || k.includes("21st century") || k.includes("literacy")) {
+      return s.includes("literature") || s.includes("lit") || s.includes("philippine politics") || s.includes("politics and governance") || s.includes("politics") || s.includes("ppg") || s.includes("21st century") || s.includes("literacy from the philippines") || s.includes("contemporary arts") || s.includes("panitikan");
+    }
+    if (k === "english") {
+      return (s.includes("english") || s.includes("language arts")) && !s.includes("literature") && !s.includes("reading") && !s.includes("grammar") && !s.includes("speaking") && !s.includes("vocabulary") && !s.includes("21st century");
+    }
+    if (k === "social science") {
+      return (s.includes("social") || s.includes("history") || s.includes("araling panlipunan") || s.includes("ap") || s.includes("kasaysayan") || s.includes("civics") || s.includes("economics") || s.includes("ucsp")) && !s.includes("values") && !s.includes("discipline ideas in social") && !s.includes("applied social");
+    }
+    if (k === "science") {
+      return (s.includes("science") || s.includes("biology") || s.includes("physics") || s.includes("chemistry") || s.includes("earth science")) && !s.includes("social") && !s.includes("tle");
+    }
+    if (k === "math") {
+      return (s.includes("math") || s.includes("algebra") || s.includes("geometry") || s.includes("calculus") || s.includes("statistics") || s.includes("trigonometry")) && !s.includes("mapeh") && !s.includes("pe");
+    }
+    if (k === "reading") {
+      return s.includes("reading") || s.includes("comprehension");
+    }
+    if (k === "grammar") {
+      return s.includes("grammar") || s.includes("structure");
+    }
+    if (k === "speaking") {
+      return s.includes("speaking") || s.includes("oral") || s.includes("speech");
+    }
+    if (k === "vocabulary") {
+      return s.includes("vocabulary") || s.includes("vocab") || s.includes("word bank");
+    }
+
+    return false;
+  };
+
   // Check if an exam or submission matches a specific pillar subject column
   const isExamMatchingSubject = (exam, sub, targetSubject) => {
     if (!targetSubject) return false;
     const ts = targetSubject.toLowerCase().trim();
 
-    // Priority 1: Exact specificSubject property on exam doc or submission
-    const spec = (exam?.specificSubject || sub?.specificSubject || "").toLowerCase().trim();
+    // Priority 1: Direct subject property on exam doc or submission (e.g. from dedicated class)
+    const rawSubj = (exam?.subject || sub?.subject || "").trim();
+    if (rawSubj) {
+      if (rawSubj.toLowerCase() === ts) return true;
+      if (isSubjectMatchingSlot(rawSubj, targetSubject)) return true;
+    }
+
+    // Priority 2: Exact specificSubject property on exam doc or submission
+    const spec = (exam?.specificSubject || sub?.specificSubject || "").trim();
     if (spec) {
-      if (spec === ts) return true;
-      if (ts === "mapeh" && (spec === "physical education" || spec.includes("pe") || spec.includes("hope") || spec.includes("music") || spec.includes("arts"))) {
-        return true;
-      }
-      if (ts === "tle" && (spec === "technology" || spec === "livelihood" || spec.includes("ict") || spec.includes("epp"))) {
-        return true;
-      }
-      if (ts === "values" && (spec === "esp" || spec.includes("values") || spec.includes("character"))) {
-        return true;
-      }
-      if (ts === "literature" && (spec === "lit" || spec.includes("literature") || spec.includes("panitikan"))) {
-        return true;
-      }
-      if (ts === "reading" && (spec === "reading" || spec.includes("reading") || spec.includes("comprehension"))) {
-        return true;
-      }
-      if (ts === "grammar" && (spec === "grammar" || spec.includes("grammar") || spec.includes("structure"))) {
-        return true;
-      }
-      if (ts === "speaking" && (spec === "speaking" || spec.includes("speaking") || spec.includes("oral"))) {
-        return true;
-      }
-      if (ts === "vocabulary" && (spec === "vocabulary" || spec.includes("vocab"))) {
-        return true;
-      }
-      return false;
+      if (spec.toLowerCase() === ts) return true;
+      if (isSubjectMatchingSlot(spec, targetSubject)) return true;
     }
 
-    // Priority 2: Title keywords (CRITICAL for multi-subject classrooms like MAPEH inside Math, or Added inside ESL/SHS)
+    // Priority 3: Classroom slug from classId
+    const rawClassId = (exam?.classId || sub?.classId || "").toLowerCase();
+    const slug = rawClassId.includes("_") ? rawClassId.split("_").slice(1).join("_") : rawClassId;
+    if (slug) {
+      const cleanSlug = slug.replace(/[^a-z0-9]/g, " ");
+      if (isSubjectMatchingSlot(cleanSlug, targetSubject)) return true;
+    }
+
+    // Priority 4: Title keywords
     const title = (exam?.title || sub?.examTitle || "").toLowerCase();
-    if (ts === "mapeh" || ts.includes("pe & health") || ts.includes("physical education") || ts.includes("hope")) {
-      if (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("physical education") || title.includes("pe ") || title.includes("pe-") || title.includes("pe:") || title.includes("(pe)") || title.includes("hope") || title.includes("pe 1") || title.includes("pe 3") || title.includes("pe&health")) {
-        return true;
-      }
-    } else if (ts === "tle" || ts.includes("empowerment") || ts.includes("media & information") || ts.includes("mil")) {
-      if (title.includes("tle") || title.includes("technology") || title.includes("livelihood") || title.includes("ict") || title.includes("computer") || title.includes("epp") || title.includes("empowerment") || title.includes("media and information") || title.includes("media & information") || title.includes("mil")) {
-        return true;
-      }
-    } else if (ts === "literature" || ts.includes("politics") || ts.includes("21st century")) {
-      if (title.includes("literature") || title.includes("lit") || title.includes("panitikan") || title.includes("contemporary arts") || title.includes("creative writing") || title.includes("21st century") || title.includes("politics") || title.includes("governance") || title.includes("ppg")) {
-        return true;
-      }
-    } else if (ts === "values" || ts === "diss" || ts === "diass" || ts.includes("applied social")) {
-      if (title.includes("values") || title.includes("esp") || title.includes("edukasyon sa pagpapakatao") || title.includes("character") || title.includes("ethics") || title.includes("moral") || title.includes("clve") || title.includes("diss") || title.includes("diass")) {
-        return true;
-      }
-    } else if (ts === "reading") {
-      if ((title.includes("reading") || title.includes("comprehension")) && !title.includes("values") && !title.includes("esp")) {
-        return true;
-      }
-    } else if (ts === "grammar") {
-      if ((title.includes("grammar") || title.includes("structure")) && !title.includes("mapeh") && !title.includes("music") && !title.includes("arts") && !title.includes("pe")) {
-        return true;
-      }
-    } else if (ts === "speaking") {
-      if ((title.includes("speaking") || title.includes("oral") || title.includes("speech") || title.includes("pronunciation")) && !title.includes("literature") && !title.includes("lit")) {
-        return true;
-      }
-    } else if (ts === "vocabulary") {
-      if ((title.includes("vocabulary") || title.includes("vocab") || title.includes("word bank")) && !title.includes("tle") && !title.includes("ict") && !title.includes("technology")) {
-        return true;
-      }
-    } else if (ts === "math") {
-      if ((title.includes("math") || title.includes("algebra") || title.includes("geometry") || title.includes("calculus") || title.includes("statistics") || title.includes("trigonometry")) && 
-          !title.includes("mapeh") && !title.includes("music") && !title.includes("arts") && !title.includes("pe") && !title.includes("physical education") && !title.includes("hope")) {
-        return true;
-      }
-    } else if (ts === "science") {
-      if ((title.includes("science") || title.includes("biology") || title.includes("physics") || title.includes("chemistry") || title.includes("earth science")) && 
-          !title.includes("social") && !title.includes("tle") && !title.includes("technology") && !title.includes("ict")) {
-        return true;
-      }
-    } else if (ts === "english") {
-      if ((title.includes("english") || title.includes("language arts")) && 
-          !title.includes("literature") && !title.includes("reading") && !title.includes("grammar") && !title.includes("speaking") && !title.includes("vocabulary") && !title.includes("contemporary arts")) {
-        return true;
-      }
-    } else if (ts === "social science") {
-      if ((title.includes("social") || title.includes("history") || title.includes("araling panlipunan") || title.includes("ap") || title.includes("kasaysayan") || title.includes("civics") || title.includes("economics") || title.includes("diss") || title.includes("diass") || title.includes("ucsp") || title.includes("philippine politics")) && 
-          !title.includes("values") && !title.includes("esp")) {
-        return true;
-      }
+    if (title) {
+      if (isSubjectMatchingSlot(title, targetSubject)) return true;
     }
 
-    // Priority 3: Direct subject property on exam doc (ONLY if title didn't indicate an Added subject)
-    const subj = (exam?.subject || sub?.subject || "").toLowerCase().trim();
-    if (subj) {
-      if (subj === ts) {
-        if (ts === "math" && (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("pe"))) return false;
-        if (ts === "science" && (title.includes("tle") || title.includes("ict") || title.includes("social"))) return false;
-        if (ts === "english" && (title.includes("literature") || title.includes("lit") || title.includes("reading") || title.includes("grammar") || title.includes("speaking") || title.includes("vocabulary"))) return false;
-        if (ts === "social science" && (title.includes("values") || title.includes("esp"))) return false;
-        if (ts === "reading" && (title.includes("values") || title.includes("esp"))) return false;
-        if (ts === "grammar" && (title.includes("mapeh") || title.includes("music") || title.includes("arts") || title.includes("pe"))) return false;
-        if (ts === "speaking" && (title.includes("literature") || title.includes("lit"))) return false;
-        if (ts === "vocabulary" && (title.includes("tle") || title.includes("technology") || title.includes("ict"))) return false;
-        return true;
-      }
-      if (ts === "mapeh" && (subj === "physical education" || subj.includes("pe") || subj.includes("hope"))) {
-        return true;
-      }
-    }
-
-    // Priority 4: Fallback to extractSubjectName
-    const extracted = extractSubjectName(exam, sub).toLowerCase().trim();
-    if (extracted === ts) return true;
-    if (ts === "mapeh" && (extracted === "physical education" || extracted.includes("pe") || extracted.includes("hope"))) {
-      return true;
-    }
+    // Priority 5: Fallback to extractSubjectName
+    const extracted = extractSubjectName(exam, sub);
+    if (extracted && isSubjectMatchingSlot(extracted, targetSubject)) return true;
 
     return false;
   };
@@ -1555,42 +1704,39 @@ export default function AdminDashboard() {
     if (candidateExams.length >= 2) {
       // 1. Try explicit matching first
       const explicitCore = candidateExams.find(e => {
+        const rawSubj = (e.subject || "").trim();
         const spec = (e.specificSubject || "").toLowerCase().trim();
-        const tit = (e.title || "").toLowerCase();
-        return spec === pillar.core.toLowerCase() || 
-          (tit.includes(pillar.core.toLowerCase()) && 
-           !tit.includes(effectiveAddedSubject.toLowerCase()) && 
-           !tit.includes(pillar.added.toLowerCase()) && 
-           !tit.includes("pe") && 
-           !tit.includes("mapeh") && 
-           !tit.includes("values") && 
-           !tit.includes("tle") && 
-           !tit.includes("literature") &&
-           !tit.includes("diass") &&
-           !tit.includes("diss") &&
-           !tit.includes("empowerment") &&
-           !tit.includes("mil") &&
-           !tit.includes("media") &&
-           !tit.includes("politics") &&
-           !tit.includes("21st century"));
+        const cId = (e.classId || "").toLowerCase();
+        const coreLower = pillar.core.toLowerCase();
+
+        if (rawSubj && rawSubj.toLowerCase() === coreLower) return true;
+        if (spec === coreLower) return true;
+        if (cId.includes(coreLower.replace(/\s+/g, '-')) && !isExamMatchingSubject(e, null, effectiveAddedSubject) && !isExamMatchingSubject(e, null, pillar.added)) {
+          return true;
+        }
+        return isExamMatchingSubject(e, null, pillar.core) && !isExamMatchingSubject(e, null, effectiveAddedSubject) && !isExamMatchingSubject(e, null, pillar.added);
       });
 
       const explicitAdded = candidateExams.find(e => {
+        const rawSubj = (e.subject || "").trim();
         const spec = (e.specificSubject || "").toLowerCase().trim();
-        const tit = (e.title || "").toLowerCase();
-        return spec === effectiveAddedSubject.toLowerCase() || 
-          spec === pillar.added.toLowerCase() || 
-          tit.includes(effectiveAddedSubject.toLowerCase()) || 
-          tit.includes(pillar.added.toLowerCase()) ||
-          (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("pe-") || tit.includes("physical education") || tit.includes("hope") || tit.includes("music") || tit.includes("arts") || tit.includes("pe 1") || tit.includes("pe 3"))) ||
-          (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp") || tit.includes("diass") || tit.includes("diss"))) ||
-          (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict") || tit.includes("empowerment") || tit.includes("media") || tit.includes("mil"))) ||
-          (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit") || tit.includes("politics") || tit.includes("governance") || tit.includes("21st century")));
+        const addedLower = pillar.added.toLowerCase();
+        const effLower = effectiveAddedSubject.toLowerCase();
+
+        if (rawSubj && (rawSubj.toLowerCase() === addedLower || rawSubj.toLowerCase() === effLower || isSubjectMatchingSlot(rawSubj, pillar.added))) return true;
+        if (spec === addedLower || spec === effLower || isSubjectMatchingSlot(spec, pillar.added)) return true;
+        return isExamMatchingSubject(e, null, effectiveAddedSubject) || isExamMatchingSubject(e, null, pillar.added);
       });
 
       if (explicitCore && explicitAdded && (explicitCore.firestoreId !== explicitAdded.firestoreId && explicitCore.id !== explicitAdded.id)) {
         coreExam = explicitCore;
         addedExam = explicitAdded;
+      } else if (explicitCore && !explicitAdded) {
+        coreExam = explicitCore;
+        addedExam = candidateExams.find(e => (e.firestoreId || e.id) !== (coreExam.firestoreId || coreExam.id));
+      } else if (!explicitCore && explicitAdded) {
+        addedExam = explicitAdded;
+        coreExam = candidateExams.find(e => (e.firestoreId || e.id) !== (addedExam.firestoreId || addedExam.id));
       } else {
         // 2. Flexible Dynamic Ceilings: Sort by maxScore descending (Higher maxScore = Core, Lower maxScore = Added)
         const sortedByScore = [...candidateExams].sort((a, b) => (Number(b.maxScore) || 0) - (Number(a.maxScore) || 0));
@@ -1599,16 +1745,7 @@ export default function AdminDashboard() {
       }
     } else if (candidateExams.length === 1) {
       const single = candidateExams[0];
-      const spec = (single.specificSubject || "").toLowerCase().trim();
-      const tit = (single.title || "").toLowerCase();
-      const isExplicitAdded = spec === effectiveAddedSubject.toLowerCase() || 
-        spec === pillar.added.toLowerCase() || 
-        tit.includes(effectiveAddedSubject.toLowerCase()) || 
-        tit.includes(pillar.added.toLowerCase()) ||
-        (pillar.added === "MAPEH" && (tit.includes("mapeh") || tit.includes("pe ") || tit.includes("pe-") || tit.includes("physical education") || tit.includes("hope") || tit.includes("pe 1") || tit.includes("pe 3"))) ||
-        (pillar.added === "Values" && (tit.includes("values") || tit.includes("esp") || tit.includes("diass") || tit.includes("diss"))) ||
-        (pillar.added === "TLE" && (tit.includes("tle") || tit.includes("technology") || tit.includes("ict") || tit.includes("empowerment") || tit.includes("media") || tit.includes("mil"))) ||
-        (pillar.added === "Literature" && (tit.includes("literature") || tit.includes("lit") || tit.includes("politics") || tit.includes("governance") || tit.includes("21st century")));
+      const isExplicitAdded = isExamMatchingSubject(single, null, effectiveAddedSubject) || isExamMatchingSubject(single, null, pillar.added);
 
       if (isExplicitAdded) {
         addedExam = single;
@@ -3552,16 +3689,16 @@ export default function AdminDashboard() {
                       </h3>
                     </div>
                     <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 print:border-none print:p-0 print:text-slate-700 print:text-[10px]">
-                      {standardStudents.length} Students • 4 Core Pillars (8 Subjects)
+                      {standardStudents.length} Students • 4 Core & 4 Added Subjects
                     </span>
                   </div>
 
                   <div className="overflow-x-auto academic-print-table-wrap">
                     <table className="w-full text-left text-xs border-collapse academic-print-table">
                       <thead>
-                        {/* Row 1: Core Pillars */}
+                        {/* Row 1: Core Subjects (Left) + Added Subjects (Right) */}
                         <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider print:bg-slate-100 print:text-black">
-                          <th rowSpan={2} className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-20 border-r border-slate-200 dark:border-slate-700 print:static print:bg-slate-100 print:p-1 print:text-[8px]">
+                          <th rowSpan={2} className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-20 border-r border-slate-200 dark:border-slate-700 print:static print:bg-slate-100 print:p-1 print:text-[8px] min-w-[160px]">
                             Student Name
                           </th>
                           <th rowSpan={2} className="p-3.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-700 print:p-1 print:text-[8px]">
@@ -3570,31 +3707,48 @@ export default function AdminDashboard() {
                           <th rowSpan={2} className="p-3.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-700 print:p-1 print:text-[8px]">
                             Community
                           </th>
-                          {STANDARD_PILLARS.map((pillar) => (
+
+                          {/* 4 Core Subjects on Left */}
+                          {STANDARD_CORE_SUBJECTS.map((subj) => (
                             <th
-                              key={pillar.core}
-                              colSpan={2}
-                              className="p-2.5 text-center font-extrabold border-r border-slate-200 dark:border-slate-700 tracking-wider bg-slate-100/70 dark:bg-slate-800/50 print:bg-slate-200 print:p-1 print:text-[8px] print:text-black"
+                              key={subj.key}
+                              colSpan={3}
+                              className={`p-2.5 text-center font-black border-r border-slate-200 dark:border-slate-700 tracking-wider text-xs uppercase ${subj.headerBg} print:p-1 print:text-[8px]`}
                             >
-                              {pillar.core.toUpperCase()}
+                              {subj.label}
                             </th>
                           ))}
+
+                          {/* 4 Added Subjects on Right */}
+                          {STANDARD_ADDED_SUBJECTS.map((subj) => {
+                            const label = getPillarHeaderAddedLabel(subj.key, reportFilterGrade);
+                            return (
+                              <th
+                                key={subj.key}
+                                colSpan={3}
+                                className={`p-2.5 text-center font-black border-r border-slate-200 dark:border-slate-700 tracking-wider text-xs uppercase ${subj.headerBg} print:p-1 print:text-[8px]`}
+                              >
+                                {label}
+                              </th>
+                            );
+                          })}
 
                           <th rowSpan={2} className="p-3.5 text-center min-w-[130px] sticky right-0 bg-slate-50 dark:bg-slate-800 z-20 border-l border-slate-200 dark:border-slate-700 print:static print:bg-slate-100 print:p-1 print:text-[8px] print:min-w-0">
                             General Average
                           </th>
                         </tr>
 
-                        {/* Row 2: Sub-headers (Core vs Added) */}
-                        <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-400 uppercase tracking-wider print:bg-slate-50 print:text-black">
-                          {STANDARD_PILLARS.flatMap((pillar) => [
-                            <th key={`${pillar.core}-core`} className="p-2 text-center border-r border-slate-100 dark:border-slate-700 min-w-[100px] print:min-w-0 print:p-1 print:text-[7.5px]">
-                              <div>{pillar.core}</div>
-                              <span className="text-[8px] text-brand-600 dark:text-brand-400 font-semibold lowercase print:text-slate-600">core</span>
+                        {/* Row 2: Sub-headers (Multiple Choice | Essay Vocabs | Total) */}
+                        <tr className="border-b border-slate-200 dark:border-slate-700 text-[9px] font-bold uppercase tracking-tight print:text-black">
+                          {[...STANDARD_CORE_SUBJECTS, ...STANDARD_ADDED_SUBJECTS].flatMap((subj) => [
+                            <th key={`${subj.key}-mc`} className={`py-1.5 px-2 text-center border-r border-slate-200 dark:border-slate-700 text-[8.5px] font-bold italic tracking-tighter ${subj.subHeaderBg} print:p-0.5 print:text-[6.5px]`}>
+                              MULTIPLE CHOICE
                             </th>,
-                            <th key={`${pillar.core}-added`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 min-w-[110px] print:min-w-0 print:p-1 print:text-[7.5px]">
-                              <div>{getPillarHeaderAddedLabel(pillar, reportFilterGrade)}</div>
-                              <span className="text-[8px] text-amber-600 dark:text-amber-400 font-semibold lowercase print:text-slate-600">added</span>
+                            <th key={`${subj.key}-ev`} className={`py-1.5 px-2 text-center border-r border-slate-200 dark:border-slate-700 text-[8.5px] font-bold italic tracking-tighter ${subj.subHeaderBg} print:p-0.5 print:text-[6.5px]`}>
+                              ESSAY VOCABS
+                            </th>,
+                            <th key={`${subj.key}-tot`} className={`py-1.5 px-2.5 text-center border-r border-slate-300 dark:border-slate-600 text-[9.5px] font-black tracking-wider ${subj.subHeaderBg} print:p-0.5 print:text-[7.5px]`}>
+                              TOTAL
                             </th>
                           ])}
                         </tr>
@@ -3615,7 +3769,7 @@ export default function AdminDashboard() {
                           return (
                             <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors print:hover:bg-transparent">
                               {/* Student Name */}
-                              <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800 print:static print:bg-white print:p-1 print:text-[8px] print:text-black">
+                              <td className="p-3 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 border-r border-slate-100 dark:border-slate-800 print:static print:bg-white print:p-1 print:text-[8px] print:text-black">
                                 <div>{st.studentName}</div>
                                 {st.studentCode && (
                                   <span className="block text-[10px] text-slate-400 font-mono font-normal print:text-[7px] print:text-slate-500">
@@ -3625,69 +3779,52 @@ export default function AdminDashboard() {
                               </td>
 
                               {/* Grade Level */}
-                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-black">
+                              <td className="p-3 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-black">
                                 {st.gradeLevel}
                               </td>
 
                               {/* Community */}
-                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-black">
+                              <td className="p-3 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-black">
                                 {st.community}
                               </td>
 
-                              {/* 4 Pillars: 8 Data Cells */}
-                              {STANDARD_PILLARS.flatMap((pillar) => {
-                                const renderCell = (subjKey) => {
-                                  const sc = st.subjectScores[subjKey];
-                                  if (!sc || !sc.hasScore) {
-                                    return (
-                                      <td key={subjKey} className="p-3 text-center text-slate-300 dark:text-slate-600 font-mono border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-slate-400">
-                                        —
-                                      </td>
-                                    );
-                                  }
-
-                                  const pct = sc.percentage;
-                                  const badgeStyle =
-                                    pct >= 80
-                                      ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                                      : pct >= 70
-                                      ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
-                                      : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
-
-                                  return (
-                                    <td key={subjKey} className="p-3 text-center font-mono border-r border-slate-100 dark:border-slate-800 print:p-1">
-                                      <div className="flex flex-col items-center justify-center space-y-0.5">
-                                        <div className="flex items-center space-x-1.5 print:space-x-1">
-                                          <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs print:text-[8px] print:text-black">
-                                            {sc.earnedScore}/{sc.maxScore}
-                                          </span>
-                                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle} print:text-[7px] print:p-0.5`}>
-                                            {pct}%
-                                          </span>
-                                        </div>
-                                        {sc.effectiveLabel && sc.effectiveLabel !== subjKey && (
-                                          <span className="text-[8.5px] font-bold text-amber-600 dark:text-amber-400 print:text-slate-600 truncate max-w-[120px]">
-                                            {sc.effectiveLabel}
-                                          </span>
-                                        )}
-                                        {(sc.objScore > 0 || sc.subjScore > 0) && (
-                                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal print:text-[6.5px] print:text-slate-600">
-                                            MC: {sc.objScore} | V/E: {sc.subjScore}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </td>
-                                  );
-                                };
+                              {/* 8 Subjects (4 Core + 4 Added): 24 Columns */}
+                              {[...STANDARD_CORE_SUBJECTS, ...STANDARD_ADDED_SUBJECTS].flatMap((subj) => {
+                                const sc = st.subjectScores[subj.key];
+                                const hasScore = sc && sc.hasScore;
+                                const tooltip = hasScore
+                                  ? `Score: ${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)${sc.examTitle ? ` • ${sc.examTitle}` : ''}`
+                                  : "No score recorded";
 
                                 return [
-                                  renderCell(pillar.core),
-                                  renderCell(pillar.added)
+                                  <td
+                                    key={`${subj.key}-mc`}
+                                    title={tooltip}
+                                    className={`p-2 text-center font-mono text-xs border-r border-slate-200/50 dark:border-slate-800/50 ${subj.cellBg} print:p-0.5 print:text-[7.5px]`}
+                                  >
+                                    {hasScore && sc.objScore !== undefined && sc.objScore !== null ? sc.objScore : ""}
+                                  </td>,
+                                  <td
+                                    key={`${subj.key}-ev`}
+                                    title={tooltip}
+                                    className={`p-2 text-center font-mono text-xs border-r border-slate-200/50 dark:border-slate-800/50 ${subj.cellBg} print:p-0.5 print:text-[7.5px]`}
+                                  >
+                                    {hasScore && sc.subjScore !== undefined && sc.subjScore !== null ? sc.subjScore : ""}
+                                  </td>,
+                                  <td
+                                    key={`${subj.key}-tot`}
+                                    title={tooltip}
+                                    className={`p-2 text-center font-mono text-xs font-black border-r border-slate-300/80 dark:border-slate-700 ${subj.cellBg} ${
+                                      hasScore ? "text-slate-900 dark:text-slate-100" : "text-slate-400 dark:text-slate-500 font-bold"
+                                    } print:p-0.5 print:text-[8px]`}
+                                  >
+                                    {hasScore ? sc.earnedScore : 0}
+                                  </td>
                                 ];
                               })}
 
                               {/* General Average */}
-                              <td className="p-3.5 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 border-l border-slate-100 dark:border-slate-800 print:static print:bg-white print:p-1">
+                              <td className="p-3 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 border-l border-slate-100 dark:border-slate-800 print:static print:bg-white print:p-1">
                                 <div className="flex flex-col items-center justify-center space-y-1 print:space-y-0">
                                   <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge} print:text-[8px] print:p-0.5`}>
                                     <span>{genAvg}%</span>
@@ -3717,16 +3854,16 @@ export default function AdminDashboard() {
                       </h3>
                     </div>
                     <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 print:border-none print:p-0 print:text-slate-700 print:text-[10px]">
-                      {eslStudents.length} Students • 4 Core Pillars (8 Subjects)
+                      {eslStudents.length} Students • 4 Core & 4 Added Subjects
                     </span>
                   </div>
 
                   <div className="overflow-x-auto academic-print-table-wrap">
                     <table className="w-full text-left text-xs border-collapse academic-print-table">
                       <thead>
-                        {/* Header Row 1: Merged Pillar Categories */}
+                        {/* Header Row 1: Core Subjects (Left) + Added Subjects (Right) */}
                         <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider print:bg-slate-100 print:text-black">
-                          <th rowSpan={2} className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10 print:static print:bg-slate-100 print:p-1 print:text-[8px] border-r border-slate-200 dark:border-slate-700">
+                          <th rowSpan={2} className="p-3.5 sticky left-0 bg-slate-50 dark:bg-slate-800 z-10 print:static print:bg-slate-100 print:p-1 print:text-[8px] border-r border-slate-200 dark:border-slate-700 min-w-[160px]">
                             Student Name
                           </th>
                           <th rowSpan={2} className="p-3.5 print:p-1 print:text-[8px] border-r border-slate-200 dark:border-slate-700">
@@ -3736,13 +3873,25 @@ export default function AdminDashboard() {
                             Community
                           </th>
 
-                          {ESL_PILLARS.map((pillar) => (
+                          {/* 4 ESL Core Subjects on Left */}
+                          {ESL_CORE_SUBJECTS.map((subj) => (
                             <th
-                              key={pillar.core}
-                              colSpan={2}
-                              className="p-2.5 text-center text-xs font-black uppercase tracking-wider border-r border-slate-200 dark:border-slate-700 print:p-1 print:text-[8.5px] bg-teal-50/70 dark:bg-teal-950/30 text-teal-700 dark:text-teal-300"
+                              key={subj.key}
+                              colSpan={3}
+                              className={`p-2.5 text-center font-black border-r border-slate-200 dark:border-slate-700 tracking-wider text-xs uppercase ${subj.headerBg} print:p-1 print:text-[8px]`}
                             >
-                              {pillar.core}
+                              {subj.label}
+                            </th>
+                          ))}
+
+                          {/* 4 ESL Added Subjects on Right */}
+                          {ESL_ADDED_SUBJECTS.map((subj) => (
+                            <th
+                              key={subj.key}
+                              colSpan={3}
+                              className={`p-2.5 text-center font-black border-r border-slate-200 dark:border-slate-700 tracking-wider text-xs uppercase ${subj.headerBg} print:p-1 print:text-[8px]`}
+                            >
+                              {subj.label}
                             </th>
                           ))}
 
@@ -3751,14 +3900,17 @@ export default function AdminDashboard() {
                           </th>
                         </tr>
 
-                        {/* Header Row 2: Sub-headers for Core & Added */}
-                        <tr className="bg-slate-100/70 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-700 text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider print:bg-slate-50 print:text-black">
-                          {ESL_PILLARS.flatMap((pillar) => [
-                            <th key={`${pillar.core}-core`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 print:p-0.5 print:text-[7px]">
-                              {pillar.core} <span className="text-[8px] font-normal text-slate-400 dark:text-slate-500 lowercase">(Core)</span>
+                        {/* Header Row 2: Sub-headers (Multiple Choice | Essay Vocabs | Total) */}
+                        <tr className="border-b border-slate-200 dark:border-slate-700 text-[9px] font-bold uppercase tracking-tight print:text-black">
+                          {[...ESL_CORE_SUBJECTS, ...ESL_ADDED_SUBJECTS].flatMap((subj) => [
+                            <th key={`${subj.key}-mc`} className={`py-1.5 px-2 text-center border-r border-slate-200 dark:border-slate-700 text-[8.5px] font-bold italic tracking-tighter ${subj.subHeaderBg} print:p-0.5 print:text-[6.5px]`}>
+                              MULTIPLE CHOICE
                             </th>,
-                            <th key={`${pillar.core}-added`} className="p-2 text-center border-r border-slate-200 dark:border-slate-700 print:p-0.5 print:text-[7px]">
-                              {pillar.added} <span className="text-[8px] font-normal text-slate-400 dark:text-slate-500 lowercase">(Added)</span>
+                            <th key={`${subj.key}-ev`} className={`py-1.5 px-2 text-center border-r border-slate-200 dark:border-slate-700 text-[8.5px] font-bold italic tracking-tighter ${subj.subHeaderBg} print:p-0.5 print:text-[6.5px]`}>
+                              ESSAY VOCABS
+                            </th>,
+                            <th key={`${subj.key}-tot`} className={`py-1.5 px-2.5 text-center border-r border-slate-300 dark:border-slate-600 text-[9.5px] font-black tracking-wider ${subj.subHeaderBg} print:p-0.5 print:text-[7.5px]`}>
+                              TOTAL
                             </th>
                           ])}
                         </tr>
@@ -3777,7 +3929,7 @@ export default function AdminDashboard() {
 
                           return (
                             <tr key={st.id || st.studentName} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors print:hover:bg-transparent">
-                              <td className="p-3.5 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 print:static print:bg-white print:p-1 print:text-[8px] print:text-black border-r border-slate-100 dark:border-slate-800">
+                              <td className="p-3 font-bold text-slate-900 dark:text-slate-100 sticky left-0 bg-white dark:bg-slate-900 z-10 print:static print:bg-white print:p-1 print:text-[8px] print:text-black border-r border-slate-100 dark:border-slate-800">
                                 <div>{st.studentName}</div>
                                 {st.studentCode && (
                                   <span className="block text-[10px] text-slate-400 font-mono font-normal print:text-[7px] print:text-slate-500">
@@ -3785,62 +3937,50 @@ export default function AdminDashboard() {
                                   </span>
                                 )}
                               </td>
-                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black border-r border-slate-100 dark:border-slate-800">
+                              <td className="p-3 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black border-r border-slate-100 dark:border-slate-800">
                                 {st.gradeLevel}
                               </td>
-                              <td className="p-3.5 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black border-r border-slate-100 dark:border-slate-800">
+                              <td className="p-3 font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap print:p-1 print:text-[8px] print:text-black border-r border-slate-100 dark:border-slate-800">
                                 {st.community}
                               </td>
 
-                              {/* 4 Pillars: 8 Data Cells */}
-                              {ESL_PILLARS.flatMap((pillar) => {
-                                const renderCell = (subjKey) => {
-                                  const sc = st.subjectScores[subjKey];
-                                  if (!sc || !sc.hasScore) {
-                                    return (
-                                      <td key={subjKey} className="p-3 text-center text-slate-300 dark:text-slate-600 font-mono border-r border-slate-100 dark:border-slate-800 print:p-1 print:text-[8px] print:text-slate-400">
-                                        —
-                                      </td>
-                                    );
-                                  }
-
-                                  const pct = sc.percentage;
-                                  const badgeStyle =
-                                    pct >= 80
-                                      ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                                      : pct >= 70
-                                      ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800"
-                                      : "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800";
-
-                                  return (
-                                    <td key={subjKey} className="p-3 text-center font-mono border-r border-slate-100 dark:border-slate-800 print:p-1">
-                                      <div className="flex flex-col items-center justify-center space-y-0.5">
-                                        <div className="flex items-center space-x-1.5 print:space-x-1">
-                                          <span className="font-extrabold text-slate-900 dark:text-slate-100 text-xs print:text-[8px] print:text-black">
-                                            {sc.earnedScore}/{sc.maxScore}
-                                          </span>
-                                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-black border ${badgeStyle} print:text-[7px] print:p-0.5`}>
-                                            {pct}%
-                                          </span>
-                                        </div>
-                                        {(sc.objScore > 0 || sc.subjScore > 0) && (
-                                          <span className="text-[9px] text-slate-400 dark:text-slate-500 font-normal print:text-[6.5px] print:text-slate-600">
-                                            MC: {sc.objScore} | V/E: {sc.subjScore}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </td>
-                                  );
-                                };
+                              {/* 8 Subjects (4 Core + 4 Added): 24 Columns */}
+                              {[...ESL_CORE_SUBJECTS, ...ESL_ADDED_SUBJECTS].flatMap((subj) => {
+                                const sc = st.subjectScores[subj.key];
+                                const hasScore = sc && sc.hasScore;
+                                const tooltip = hasScore
+                                  ? `Score: ${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)${sc.examTitle ? ` • ${sc.examTitle}` : ''}`
+                                  : "No score recorded";
 
                                 return [
-                                  renderCell(pillar.core),
-                                  renderCell(pillar.added)
+                                  <td
+                                    key={`${subj.key}-mc`}
+                                    title={tooltip}
+                                    className={`p-2 text-center font-mono text-xs border-r border-slate-200/50 dark:border-slate-800/50 ${subj.cellBg} print:p-0.5 print:text-[7.5px]`}
+                                  >
+                                    {hasScore && sc.objScore !== undefined && sc.objScore !== null ? sc.objScore : ""}
+                                  </td>,
+                                  <td
+                                    key={`${subj.key}-ev`}
+                                    title={tooltip}
+                                    className={`p-2 text-center font-mono text-xs border-r border-slate-200/50 dark:border-slate-800/50 ${subj.cellBg} print:p-0.5 print:text-[7.5px]`}
+                                  >
+                                    {hasScore && sc.subjScore !== undefined && sc.subjScore !== null ? sc.subjScore : ""}
+                                  </td>,
+                                  <td
+                                    key={`${subj.key}-tot`}
+                                    title={tooltip}
+                                    className={`p-2 text-center font-mono text-xs font-black border-r border-slate-300/80 dark:border-slate-700 ${subj.cellBg} ${
+                                      hasScore ? "text-slate-900 dark:text-slate-100" : "text-slate-400 dark:text-slate-500 font-bold"
+                                    } print:p-0.5 print:text-[8px]`}
+                                  >
+                                    {hasScore ? sc.earnedScore : 0}
+                                  </td>
                                 ];
                               })}
 
                               {/* General Average */}
-                              <td className="p-3.5 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 border-l border-slate-100 dark:border-slate-800 print:static print:bg-white print:p-1">
+                              <td className="p-3 text-center sticky right-0 bg-white dark:bg-slate-900 z-10 border-l border-slate-100 dark:border-slate-800 print:static print:bg-white print:p-1">
                                 <div className="flex flex-col items-center justify-center space-y-1 print:space-y-0">
                                   <span className={`inline-flex items-center space-x-1 px-3 py-1 rounded-xl text-xs font-black border font-mono shadow-2xs ${avgBadge} print:text-[8px] print:p-0.5`}>
                                     <span>{genAvg}%</span>
