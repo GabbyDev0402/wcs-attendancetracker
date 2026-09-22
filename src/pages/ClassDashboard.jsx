@@ -390,6 +390,11 @@ export default function ClassDashboard() {
   const [isExamSubmissionsLoading, setIsExamSubmissionsLoading] = useState(false);
   const [examGradeSuccessToast, setExamGradeSuccessToast] = useState(false);
 
+  // Exam Scope Read Receipts Modal State
+  const [viewingReadReceiptsExam, setViewingReadReceiptsExam] = useState(null);
+  const [receiptsFilterTab, setReceiptsFilterTab] = useState("all"); // "all" | "read" | "unread"
+  const [receiptsSearchQuery, setReceiptsSearchQuery] = useState("");
+
   // Tasks State (Tab 5 - E-Class Record Phase 1)
   const [tasks, setTasks] = useState([]);
   const [isTasksLoading, setIsTasksLoading] = useState(false);
@@ -3552,16 +3557,26 @@ export default function ClassDashboard() {
                       {/* Student Acknowledgment & Grading Status */}
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                         <div className="flex items-center space-x-2">
-                          <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                            readSubs.length === classStudents.length && classStudents.length > 0
-                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
-                              : readSubs.length > 0
-                              ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800"
-                              : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-100 dark:border-slate-700"
-                          }`}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setViewingReadReceiptsExam(exam);
+                              setReceiptsFilterTab("all");
+                              setReceiptsSearchQuery("");
+                            }}
+                            title="Click to view student read receipts"
+                            className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                              readSubs.length === classStudents.length && classStudents.length > 0
+                                ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 shadow-2xs"
+                                : readSubs.length > 0
+                                ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/50 shadow-2xs"
+                                : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/60 shadow-2xs"
+                            }`}
+                          >
                             <Eye className="h-3.5 w-3.5" />
-                            <span>{readSubs.length} of {classStudents.length} students read the exam scope</span>
-                          </span>
+                            <span>{readSubs.length} of {classStudents.length} students read</span>
+                            <span className="text-[10px] underline ml-0.5 opacity-75 font-normal">(View List)</span>
+                          </button>
                         </div>
 
                         <div className="flex items-center space-x-2">
@@ -6133,6 +6148,281 @@ export default function ClassDashboard() {
           </div>
         </div>
       )}
+
+      {/* MODAL 4: Exam Scope Read Receipts Modal */}
+      {viewingReadReceiptsExam && (() => {
+        const examDocId = viewingReadReceiptsExam.firestoreId || viewingReadReceiptsExam.id;
+        const subsForThisExam = examSubmissions.filter(
+          s => s.examId === examDocId || s.examId === viewingReadReceiptsExam.id
+        );
+
+        const studentReceipts = classStudents.map(st => {
+          const stId = st.uid || st.id;
+          const sub = subsForThisExam.find(s => s.studentId === stId);
+          const stStatus = (sub?.status || "").toLowerCase();
+          const isAcknowledged = !!sub && (
+            stStatus === "acknowledged" ||
+            stStatus === "turned_in" ||
+            stStatus === "graded" ||
+            !!sub.acknowledgedAt ||
+            !!sub.readAt
+          );
+          let timestamp = null;
+          let formattedTime = "";
+          const rawTime = sub?.acknowledgedAt || sub?.readAt || sub?.submittedAt || sub?.updatedAt;
+          if (rawTime) {
+            try {
+              const d = rawTime.toDate ? rawTime.toDate() : new Date(rawTime);
+              if (!isNaN(d.getTime())) {
+                timestamp = d;
+                formattedTime = d.toLocaleString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                  hour12: true
+                });
+              }
+            } catch (e) {}
+          }
+          return {
+            student: st,
+            studentId: stId,
+            name: formatStudentName(st),
+            isAcknowledged,
+            timestamp,
+            formattedTime,
+            submission: sub
+          };
+        });
+
+        const totalEnrolled = studentReceipts.length;
+        const readCount = studentReceipts.filter(r => r.isAcknowledged).length;
+        const unreadCount = totalEnrolled - readCount;
+        const readPercent = totalEnrolled > 0 ? Math.round((readCount / totalEnrolled) * 100) : 0;
+
+        let displayedReceipts = studentReceipts;
+        if (receiptsFilterTab === "read") {
+          displayedReceipts = displayedReceipts.filter(r => r.isAcknowledged);
+        } else if (receiptsFilterTab === "unread") {
+          displayedReceipts = displayedReceipts.filter(r => !r.isAcknowledged);
+        }
+
+        if (receiptsSearchQuery.trim()) {
+          const q = receiptsSearchQuery.trim().toLowerCase();
+          displayedReceipts = displayedReceipts.filter(r =>
+            r.name.toLowerCase().includes(q) ||
+            (r.student.studentCode || "").toLowerCase().includes(q)
+          );
+        }
+
+        displayedReceipts.sort((a, b) => {
+          if (a.isAcknowledged && !b.isAcknowledged) return -1;
+          if (!a.isAcknowledged && b.isAcknowledged) return 1;
+          if (a.isAcknowledged && b.isAcknowledged) {
+            if (a.timestamp && b.timestamp) return b.timestamp - a.timestamp;
+            if (a.timestamp && !b.timestamp) return -1;
+            if (!a.timestamp && b.timestamp) return 1;
+            return a.name.localeCompare(b.name);
+          }
+          return a.name.localeCompare(b.name);
+        });
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-5 transition-all my-8 max-h-[90vh] flex flex-col">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 shrink-0">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2.5 rounded-2xl bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-800 shrink-0">
+                    <Eye className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
+                      Exam Scope Read Receipts
+                    </h3>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">{viewingReadReceiptsExam.title}</span>
+                      <span>•</span>
+                      <span>{viewingReadReceiptsExam.quarter || "1st Quarter"}</span>
+                      <span>•</span>
+                      <span>{viewingReadReceiptsExam.category || "Exam"}</span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewingReadReceiptsExam(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Progress & Metrics Summary */}
+              <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 space-y-3 shrink-0">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-slate-700 dark:text-slate-200">Acknowledgment Progress</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                      {readPercent}%
+                    </span>
+                  </div>
+                  <span className="font-semibold text-slate-500 dark:text-slate-400 text-[11px]">
+                    <strong className="text-emerald-600 dark:text-emerald-400">{readCount}</strong> of {totalEnrolled} students
+                  </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                    style={{ width: `${readPercent}%` }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 pt-1 text-center">
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-2xs">
+                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</div>
+                    <div className="text-base font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{totalEnrolled}</div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-emerald-100 dark:border-emerald-900/50 shadow-2xs">
+                    <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Acknowledged</div>
+                    <div className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">{readCount}</div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-amber-100 dark:border-amber-900/50 shadow-2xs">
+                    <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pending / Unread</div>
+                    <div className="text-base font-extrabold text-amber-600 dark:text-amber-400 mt-0.5">{unreadCount}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Search and Filter Tabs */}
+              <div className="space-y-2.5 shrink-0">
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={receiptsSearchQuery}
+                    onChange={(e) => setReceiptsSearchQuery(e.target.value)}
+                    placeholder="Search student by name or code..."
+                    className="w-full pl-9 pr-4 py-2 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-purple-500 transition-colors"
+                  />
+                </div>
+
+                <div className="flex items-center space-x-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setReceiptsFilterTab("all")}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      receiptsFilterTab === "all"
+                        ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-xs"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    All ({totalEnrolled})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptsFilterTab("read")}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      receiptsFilterTab === "read"
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    Acknowledged ({readCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptsFilterTab("unread")}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      receiptsFilterTab === "unread"
+                        ? "bg-amber-600 text-white shadow-xs"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    Unread ({unreadCount})
+                  </button>
+                </div>
+              </div>
+
+              {/* Student List */}
+              <div className="overflow-y-auto border border-slate-100 dark:border-slate-800 rounded-2xl flex-1 divide-y divide-slate-100 dark:divide-slate-800">
+                {displayedReceipts.length > 0 ? (
+                  displayedReceipts.map((r, idx) => (
+                    <div
+                      key={r.studentId || idx}
+                      className="p-3.5 flex items-center justify-between hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      <div className="flex items-center space-x-3 min-w-0">
+                        <div
+                          className={`h-9 w-9 rounded-full flex items-center justify-center font-bold text-xs uppercase shrink-0 border ${
+                            r.isAcknowledged
+                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700"
+                          }`}
+                        >
+                          {(r.student.internationalName || r.student.name || "ST").substring(0, 2)}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">
+                            {r.name}
+                          </div>
+                          <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">
+                            {r.student.gradeLevel || r.student.grade || classInfo.grade || "Grade"} • Code: {r.student.studentCode || "—"}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 text-right ml-3">
+                        {r.isAcknowledged ? (
+                          <div>
+                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
+                              <CheckCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+                              <span>Acknowledged</span>
+                            </span>
+                            {r.formattedTime && (
+                              <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                                {r.formattedTime}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                            <Clock className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                            <span>Not Read Yet</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-12 text-center text-slate-400 dark:text-slate-500 text-xs flex flex-col items-center justify-center space-y-2">
+                    <Search className="h-6 w-6 text-slate-300 dark:text-slate-600" />
+                    <span>No students match your filter or search query.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 shrink-0">
+                <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                  Live updates in real time as students acknowledge
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setViewingReadReceiptsExam(null)}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Google Forms Style Rich-Text Link Modal */}
       {linkModal.isOpen && (
