@@ -364,7 +364,7 @@ export default function ClassDashboard() {
   const [gradedVocabDateFilter, setGradedVocabDateFilter] = useState(todayStr);
   const [isGradedVocabLoading, setIsGradedVocabLoading] = useState(false);
 
-  // Exams State (Tab 3) - Google Forms + Exam Scope Architecture
+  // Exams State (Tab 3) - Exam Scope Architecture
   const [exams, setExams] = useState([]);
   const [isExamsLoading, setIsExamsLoading] = useState(false);
   const [examPublishSuccess, setExamPublishSuccess] = useState(false);
@@ -378,11 +378,6 @@ export default function ClassDashboard() {
   const [scopeCategory, setScopeCategory] = useState("1st Monthly Exam");
   const [scopeMaxScore, setScopeMaxScore] = useState(0);
   const [isSavingScope, setIsSavingScope] = useState(false);
-
-  // Edit Google Form Link State
-  const [editingExamLink, setEditingExamLink] = useState(null);
-  const [editFormUrlInput, setEditFormUrlInput] = useState("");
-  const [isSavingExamLink, setIsSavingExamLink] = useState(false);
 
   // Rapid 'Input Scores' Modal State
   const [isInputScoresModalOpen, setIsInputScoresModalOpen] = useState(false);
@@ -1067,16 +1062,26 @@ export default function ClassDashboard() {
   };
 
   // -------------------------------------------------------------
-  // TAB 4: EXAMS LOGIC (Google Forms + Exam Scope Architecture)
+  // TAB 4: EXAMS LOGIC (Exam Scope Architecture)
   // -------------------------------------------------------------
   const classTag = `${user?.id}_${classId}`;
 
   useEffect(() => {
-    if (activeTab === "exams") {
-      if (!fetchedTabsRef.current["exams"]) {
-        loadExams();
-        fetchedTabsRef.current["exams"] = true;
-      }
+    if (activeTab === "exams" && classId && user?.id) {
+      loadExams();
+
+      // Real-time listener for student acknowledgments & submissions
+      const tag = `${user.id}_${classId}`;
+      const classIdVariants = Array.from(new Set([tag, classId, decodeURIComponent(classId)]));
+      const subQ = query(collection(db, "exam_submissions"), where("classId", "in", classIdVariants));
+      const unsub = onSnapshot(subQ, (subSnap) => {
+        const classSubs = subSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
+        setExamSubmissions(classSubs);
+      }, (e) => {
+        console.error("Error listening to exam submissions:", e);
+      });
+
+      return () => unsub();
     }
   }, [activeTab, classId, user?.id]);
 
@@ -1212,32 +1217,6 @@ export default function ClassDashboard() {
       alert("Failed to save exam scope: " + e.message);
     } finally {
       setIsSavingScope(false);
-    }
-  };
-
-  // Quick Link Edit/Add Handlers
-  const handleOpenEditLinkModal = (exam) => {
-    setEditingExamLink(exam);
-    setEditFormUrlInput(exam.googleFormUrl || "");
-  };
-
-  const handleSaveExamLink = async () => {
-    if (!editingExamLink) return;
-    const examDocId = editingExamLink.firestoreId || editingExamLink.id;
-
-    setIsSavingExamLink(true);
-    try {
-      await updateDoc(doc(db, "exams", examDocId), {
-        googleFormUrl: editFormUrlInput.trim()
-      });
-
-      setEditingExamLink(null);
-      setEditFormUrlInput("");
-      loadExams();
-    } catch (e) {
-      alert("Failed to update Google Form link: " + e.message);
-    } finally {
-      setIsSavingExamLink(false);
     }
   };
 
@@ -2616,11 +2595,6 @@ export default function ClassDashboard() {
                 {exams.length}
               </span>
             )}
-            {examSubmissions.filter(s => (s.status || "").toLowerCase() === "turned_in" || (s.status || "").toLowerCase().includes("pending")).length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-purple-600 text-white font-black animate-pulse" title="Pending exam submissions awaiting scoring">
-                {examSubmissions.filter(s => (s.status || "").toLowerCase() === "turned_in" || (s.status || "").toLowerCase().includes("pending")).length}
-              </span>
-            )}
           </button>
 
           <button
@@ -3500,7 +3474,7 @@ export default function ClassDashboard() {
                 Exams & Assessments
               </h2>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                Publish exam scopes & study guidelines, attach Google Form links, and rapidly enter scores for E-Class Record.
+                Publish exam scopes & study guidelines, track student acknowledgments, and rapidly enter scores for E-Class Record.
               </p>
             </div>
 
@@ -3521,7 +3495,10 @@ export default function ClassDashboard() {
               {exams.map((exam) => {
                 const examDocId = exam.firestoreId || exam.id;
                 const subsForThisExam = examSubmissions.filter(sub => sub.examId === examDocId || sub.examId === exam.id);
-                const turnedInSubs = subsForThisExam.filter(s => (s.status || "").toLowerCase() === "turned_in" || (s.status || "").toLowerCase().includes("pending"));
+                const readSubs = subsForThisExam.filter(s => {
+                  const st = (s.status || "").toLowerCase();
+                  return st === "acknowledged" || st === "turned_in" || s.status === "graded" || !!s.acknowledgedAt || !!s.readAt;
+                });
                 const gradedSubs = subsForThisExam.filter(s => s.status === "graded");
 
                 return (
@@ -3572,43 +3549,22 @@ export default function ClassDashboard() {
                         </div>
                       )}
 
-                      {/* Google Form Link Section */}
-                      <div className="flex items-center justify-between pt-1">
-                        {exam.googleFormUrl ? (
-                          <div className="flex items-center space-x-2">
-                            <a
-                              href={exam.googleFormUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center space-x-1.5 text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                              <span>Open Google Form</span>
-                            </a>
-                            <button
-                              onClick={() => handleOpenEditLinkModal(exam)}
-                              className="text-[10px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline cursor-pointer"
-                            >
-                              (Edit Link)
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => handleOpenEditLinkModal(exam)}
-                            className="inline-flex items-center space-x-1 text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            <span>Add Google Form Link</span>
-                          </button>
-                        )}
+                      {/* Student Acknowledgment & Grading Status */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <div className="flex items-center space-x-2">
+                          <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                            readSubs.length === classStudents.length && classStudents.length > 0
+                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800"
+                              : readSubs.length > 0
+                              ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800"
+                              : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-100 dark:border-slate-700"
+                          }`}>
+                            <Eye className="h-3.5 w-3.5" />
+                            <span>{readSubs.length} of {classStudents.length} students read the exam scope</span>
+                          </span>
+                        </div>
 
                         <div className="flex items-center space-x-2">
-                          {turnedInSubs.length > 0 && (
-                            <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 px-2 py-0.5 rounded-full border border-purple-200 dark:border-purple-800 animate-pulse">
-                              <ListChecks className="h-3 w-3" />
-                              <span>{turnedInSubs.length} Turned In</span>
-                            </span>
-                          )}
                           <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
                             {gradedSubs.length} / {classStudents.length} Graded
                           </span>
@@ -5936,61 +5892,6 @@ export default function ClassDashboard() {
         </div>
       )}
 
-      {/* MODAL 2: Add/Edit Google Form Link Modal */}
-      {editingExamLink && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 font-heading">
-                Google Form Link
-              </h3>
-              <button
-                onClick={() => setEditingExamLink(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Attach or update the Google Form URL for <strong className="text-slate-700 dark:text-slate-200">{editingExamLink.title}</strong>:
-            </p>
-
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                Google Form URL
-              </label>
-              <input
-                type="url"
-                value={editFormUrlInput}
-                onChange={(e) => setEditFormUrlInput(e.target.value)}
-                placeholder="https://docs.google.com/forms/d/e/..."
-                className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors font-mono"
-              />
-            </div>
-
-            <div className="flex items-center justify-end space-x-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditingExamLink(null)}
-                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveExamLink}
-                disabled={isSavingExamLink}
-                className="inline-flex items-center space-x-1.5 px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
-              >
-                <Check className="h-4 w-4" />
-                <span>{isSavingExamLink ? "Saving..." : "Save Link"}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* MODAL 3: Rapid 'Input Scores' Spreadsheet Modal */}
       {isInputScoresModalOpen && selectedExamForScores && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
@@ -6059,7 +5960,13 @@ export default function ClassDashboard() {
                       const stId = st.uid || st.id;
                       const subsForThisExam = examSubmissions.filter(sub => sub.examId === (selectedExamForScores.firestoreId || selectedExamForScores.id));
                       const studentSub = subsForThisExam.find(s => s.studentId === stId);
-                      const isTurnedIn = studentSub && ((studentSub.status || "").toLowerCase() === "turned_in" || (studentSub.status || "").toLowerCase().includes("pending"));
+                      const isRead = studentSub && (
+                        (studentSub.status || "").toLowerCase() === "acknowledged" ||
+                        (studentSub.status || "").toLowerCase() === "turned_in" ||
+                        studentSub.status === "graded" ||
+                        !!studentSub.acknowledgedAt ||
+                        !!studentSub.readAt
+                      );
                       const rawObj = objScoreInputs[stId] ?? "";
                       const rawSubj = subjScoreInputs[stId] ?? "";
                       const hasObj = rawObj !== "" && rawObj !== null && rawObj !== undefined;
@@ -6172,14 +6079,14 @@ export default function ClassDashboard() {
                                   Unsubmit
                                 </button>
                               </div>
-                            ) : isTurnedIn ? (
-                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/60 animate-pulse">
-                                <CheckCircle className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-                                <span>Turned In</span>
+                            ) : isRead ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-purple-50 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                <Eye className="h-3 w-3 text-purple-600 dark:text-purple-400" />
+                                <span>Read Scope</span>
                               </span>
                             ) : (
                               <span className="text-[10px] font-semibold text-slate-400">
-                                Pending
+                                Unread
                               </span>
                             )}
                           </td>
