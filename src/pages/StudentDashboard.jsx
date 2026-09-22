@@ -11,19 +11,15 @@ import {
   CheckCircle, 
   Clock, 
   BookOpen, 
-  Sparkles,
-  ShieldCheck,
-  Pencil,
-  Send,
-  MessageSquare,
-  AlertCircle,
-  FileText,
-  Calendar,
-  Eye,
-  Bell,
-  FolderKanban,
-  Clipboard,
-  X
+  Sparkles, 
+  ShieldCheck, 
+  Pencil, 
+  Send, 
+  MessageSquare, 
+  AlertCircle, 
+  FileText, 
+  Bell, 
+  FolderKanban 
 } from "lucide-react";
 
 export default function StudentDashboard() {
@@ -42,22 +38,20 @@ export default function StudentDashboard() {
   const todayStr = getTodayManila();
 
   // Attendance & Sessions State
-  const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [allSessionsList, setAllSessionsList] = useState([]);
   const [todayVocabSubmissions, setTodayVocabSubmissions] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
   const [myTaskSubmissions, setMyTaskSubmissions] = useState([]);
   const [allExams, setAllExams] = useState([]);
   const [myExamSubmissions, setMyExamSubmissions] = useState([]);
-  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [attendanceStats, setAttendanceStats] = useState({
     present: 0,
     late: 0,
+    lateMinutes: 0,
     absent: 0,
     excused: 0,
     totalSessions: 0,
-    averageScore: 100,
-    subjectBreakdown: {}
+    averageScore: 100
   });
   const [isLoading, setIsLoading] = useState(true);
 
@@ -150,25 +144,20 @@ export default function StudentDashboard() {
 
         const deduplicatedLogs = Array.from(sessionMap.values());
 
-        let present = 0, late = 0, absent = 0, excused = 0;
-        const subjectBreakdown = {};
+        let present = 0, late = 0, absent = 0, excused = 0, totalLateMinutes = 0;
 
         deduplicatedLogs.forEach(log => {
           const st = (log.status || "").toLowerCase();
-          if (st === "present") present++;
-          else if (st === "late") late++;
-          else if (st === "absent") absent++;
-          else if (st === "excused") excused++;
-
-          const subjKey = log.fullSubjectName || log.subject;
-          if (!subjectBreakdown[subjKey]) {
-            subjectBreakdown[subjKey] = { total: 0, present: 0, late: 0, absent: 0, excused: 0 };
+          if (st === "present") {
+            present++;
+          } else if (st === "late") {
+            late++;
+            totalLateMinutes += (Number(log.minutesLate) || 0);
+          } else if (st === "absent") {
+            absent++;
+          } else if (st === "excused") {
+            excused++;
           }
-          subjectBreakdown[subjKey].total++;
-          if (st === "present") subjectBreakdown[subjKey].present++;
-          else if (st === "late") subjectBreakdown[subjKey].late++;
-          else if (st === "absent") subjectBreakdown[subjKey].absent++;
-          else if (st === "excused") subjectBreakdown[subjKey].excused++;
         });
 
         const totalSessions = present + late + absent + excused;
@@ -177,14 +166,13 @@ export default function StudentDashboard() {
         setAttendanceStats({
           present,
           late,
+          lateMinutes: totalLateMinutes,
           absent,
           excused,
           totalSessions,
-          averageScore,
-          subjectBreakdown
+          averageScore
         });
 
-        setAttendanceRecords(deduplicatedLogs.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)));
         setIsLoading(false);
       }, (err) => {
         console.warn("Error listening to sessions:", err);
@@ -351,10 +339,6 @@ export default function StudentDashboard() {
 
 
 
-  const presentCount = attendanceRecords.filter((r) => r.status === "present" || r.status === "Present").length;
-  const lateCount = attendanceRecords.filter((r) => r.status === "late" || r.status === "Late").length;
-  const absentCount = attendanceRecords.filter((r) => r.status === "absent" || r.status === "Absent").length;
-
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Student Welcome Header Banner */}
@@ -462,8 +446,18 @@ export default function StudentDashboard() {
               <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400">{attendanceStats.present}</div>
               <div className="text-[8px] text-emerald-600 dark:text-emerald-500 font-semibold">Present</div>
             </div>
-            <div className="p-1.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/40">
-              <div className="text-xs font-bold text-amber-700 dark:text-amber-400">{attendanceStats.late}</div>
+            <div
+              className="p-1.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/40"
+              title={attendanceStats.lateMinutes > 0 ? `${attendanceStats.late} late session(s) (${attendanceStats.lateMinutes}m total)` : `${attendanceStats.late} late session(s)`}
+            >
+              <div className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center justify-center gap-0.5">
+                <span>{attendanceStats.late}</span>
+                {attendanceStats.lateMinutes > 0 && (
+                  <span className="text-[9px] font-semibold text-amber-600/90 dark:text-amber-400/90">
+                    ({attendanceStats.lateMinutes}m)
+                  </span>
+                )}
+              </div>
               <div className="text-[8px] text-amber-600 dark:text-amber-500 font-semibold">Late</div>
             </div>
             <div className="p-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/40">
@@ -475,14 +469,6 @@ export default function StudentDashboard() {
               <div className="text-[8px] text-red-600 dark:text-red-500 font-semibold">Absent</div>
             </div>
           </div>
-
-          <button
-            onClick={() => setIsAttendanceModalOpen(true)}
-            className="w-full inline-flex items-center justify-center space-x-1.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer"
-          >
-            <Eye className="h-3.5 w-3.5" />
-            <span>View Breakdown & Logs</span>
-          </button>
         </div>
       </div>
 
@@ -832,128 +818,6 @@ export default function StudentDashboard() {
         })()}
       </div>
 
-      {/* ATTENDANCE BREAKDOWN & HISTORY MODAL */}
-      {isAttendanceModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl space-y-6 max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
-              <div className="flex items-center space-x-3">
-                <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-2xl">
-                  <Calendar className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 font-heading">
-                    Attendance Summary & Logs
-                  </h3>
-                  <p className="text-xs text-slate-400 dark:text-slate-500">
-                    Detailed breakdown of your recorded attendance across all subject classrooms.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsAttendanceModalOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Subject Breakdown Cards */}
-            {attendanceStats.subjectBreakdown && Object.keys(attendanceStats.subjectBreakdown).length > 0 && (
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                  Breakdown By Subject
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {Object.entries(attendanceStats.subjectBreakdown).map(([subjectName, counts]) => (
-                    <div key={subjectName} className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{subjectName}</span>
-                        <span className="text-[10px] font-extrabold text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-2 py-0.5 rounded-md">
-                          {counts.total} Session{counts.total !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <div className="flex items-center space-x-3 text-[11px] font-semibold text-slate-500">
-                        <span className="text-emerald-600 font-bold">{counts.present} Present</span>
-                        {counts.late > 0 && <span className="text-amber-600 font-bold">{counts.late} Late</span>}
-                        {counts.excused > 0 && <span className="text-indigo-600 font-bold">{counts.excused} Excused</span>}
-                        {counts.absent > 0 && <span className="text-red-600 font-bold">{counts.absent} Absent</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Individual Attendance Logs Table */}
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                All Logged Attendance Records ({attendanceRecords.length})
-              </h4>
-
-              {attendanceRecords.length > 0 ? (
-                <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden">
-                  {attendanceRecords.map((log, idx) => {
-                    const st = (log.status || "").toLowerCase();
-                    return (
-                      <div key={log.id || idx} className="p-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
-                        <div className="flex items-center space-x-3">
-                          <span className="text-xs font-mono font-bold text-slate-500 dark:text-slate-400">
-                            📅 {log.date}
-                          </span>
-                          <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                            {log.fullSubjectName || log.subject}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          {st === "present" && (
-                            <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 rounded-lg border border-emerald-100 dark:border-emerald-800">
-                              <CheckCircle className="h-3 w-3" />
-                              <span>Present</span>
-                            </span>
-                          )}
-                          {st === "late" && (
-                            <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2.5 py-1 rounded-lg border border-amber-100 dark:border-amber-800">
-                              <Clock className="h-3 w-3" />
-                              <span>Late ({log.minutesLate}m)</span>
-                            </span>
-                          )}
-                          {st === "excused" && (
-                            <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800">
-                              <ShieldCheck className="h-3 w-3" />
-                              <span>Excused</span>
-                            </span>
-                          )}
-                          {st === "absent" && (
-                            <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2.5 py-1 rounded-lg border border-red-100 dark:border-red-800">
-                              <X className="h-3 w-3" />
-                              <span>Absent</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="py-8 text-center text-slate-400 text-xs">
-                  No attendance records logged yet.
-                </div>
-              )}
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => setIsAttendanceModalOpen(false)}
-                className="px-5 py-2.5 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
