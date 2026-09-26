@@ -516,7 +516,7 @@ export default function TeacherDashboard() {
             Good day, {user?.name || "Teacher"}
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 transition-colors">
-            Here is your daily master schedule and attendance overview.
+            Here is your daily schedule, classroom assessments, and academic overview.
           </p>
         </div>
         <div className="text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 rounded-xl px-4 py-2 shadow-sm flex items-center space-x-2 transition-colors">

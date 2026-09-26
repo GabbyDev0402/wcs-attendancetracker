@@ -59,11 +59,12 @@ export default function Navbar() {
             <Link to="/" className="flex items-center space-x-2.5 group text-left">
               <img 
                 src="/logo.png" 
-                alt="Washington School Logo" 
+                alt="Washington School International Logo" 
                 className="h-9 w-9 object-contain rounded-lg border border-slate-100 dark:border-slate-800 transition-all group-hover:scale-105 shrink-0 bg-white"
               />
-              <span className="font-heading text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap transition-colors">
-                Washington <span className="text-brand-600 font-semibold">School</span>
+              <span className="font-heading text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap transition-colors flex items-center space-x-1.5">
+                <span>WSI</span>
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded-md bg-brand-50 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 border border-brand-200/80 dark:border-brand-800 tracking-normal">(Online)</span>
               </span>
             </Link>
           </div>

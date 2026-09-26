@@ -216,7 +216,7 @@ export default function WeeklyLessonReport() {
 
       {/* Printable Report Header (Visible on print or web preview) */}
       <div className="hidden print:block mb-4 text-center">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Washington School</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Washington School International (Online)</h1>
         <h2 className="text-lg font-semibold text-slate-700 dark:text-slate-300">Weekly Lesson Report</h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">Instructor: {user?.name || "Teacher"} | Period: {startDate} to {endDate}</p>
       </div>

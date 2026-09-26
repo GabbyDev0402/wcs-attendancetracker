@@ -353,13 +353,13 @@ export default function StudentDashboard() {
             <div>
               <div className="inline-flex items-center space-x-2 px-2.5 py-0.5 rounded-full bg-brand-50 dark:bg-brand-500/20 text-brand-700 dark:text-brand-300 border border-brand-200/80 dark:border-brand-500/30 text-[10px] font-bold uppercase tracking-wider mb-1 shadow-2xs">
                 <ShieldCheck className="h-3 w-3 text-brand-600 dark:text-brand-400" />
-                <span>Verified Student Digital Notebook</span>
+                <span>WSI Online • Verified Student Portal</span>
               </div>
               <h1 className="text-2xl sm:text-3xl font-black font-heading tracking-tight text-slate-900 dark:text-white">
                 Welcome back, {user?.name || user?.internationalName || "Student"}!
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-300 mt-1 font-medium">
-                Submit your daily diary entries and class vocabulary sentences below.
+                Access your classes, exam scopes, daily diaries, and learning tasks.
               </p>
             </div>
           </div>

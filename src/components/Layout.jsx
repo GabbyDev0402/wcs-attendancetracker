@@ -19,7 +19,7 @@ export default function Layout() {
       {/* Modern Minimalist Footer */}
       <footer className="border-t border-slate-100 dark:border-slate-800 bg-white/40 dark:bg-slate-900/40 py-6 text-center transition-colors duration-200">
         <p className="text-xs text-slate-400 dark:text-slate-500">
-          &copy; {new Date().getFullYear()} Washington School. All rights reserved. Attendance Portal.
+          &copy; {new Date().getFullYear()} Washington School International (Online). All rights reserved. Online Portal.
         </p>
       </footer>
     </div>

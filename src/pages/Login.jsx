@@ -219,15 +219,15 @@ export default function Login() {
         <div className="flex flex-col items-center text-center space-y-3.5 mb-8">
           <img 
             src="/logo.png" 
-            alt="Washington School Logo" 
+            alt="Washington School International Logo" 
             className="h-16 w-16 object-contain rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-white p-1.5 shadow-sm transition-colors"
           />
           <div>
-            <h1 className="font-heading text-2xl font-bold tracking-tight text-slate-900 dark:text-white transition-colors">
-              Washington School
+            <h1 className="font-heading text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white transition-colors">
+              Washington School International <span className="text-brand-600 font-semibold block sm:inline">(Online)</span>
             </h1>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-medium transition-colors">
-              {loginType === "faculty" ? "Faculty & Staff Attendance Portal" : "Student Master Code Portal"}
+              {loginType === "faculty" ? "Faculty & Staff Online Portal" : "Student Online Portal"}
             </p>
           </div>
         </div>

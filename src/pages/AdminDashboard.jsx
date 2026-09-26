@@ -482,7 +482,7 @@ export default function AdminDashboard() {
           <thead>
             <tr>
               <th colspan="28" class="title-banner">
-                WASHINGTON COMPREHENSIVE SCHOOL • STANDARD CURRICULUM MASTER REPORT (${reportFilterExamCategory} • ${reportFilterQuarter})
+                WASHINGTON SCHOOL INTERNATIONAL (ONLINE) • STANDARD CURRICULUM MASTER REPORT (${reportFilterExamCategory} • ${reportFilterQuarter})
               </th>
             </tr>
             <tr class="header-main">
@@ -561,7 +561,7 @@ export default function AdminDashboard() {
           <thead>
             <tr>
               <th colspan="28" class="title-banner" style="background-color: #0f766e;">
-                WASHINGTON COMPREHENSIVE SCHOOL • ESL PROGRAM MASTER REPORT (${reportFilterExamCategory} • ${reportFilterQuarter})
+                WASHINGTON SCHOOL INTERNATIONAL (ONLINE) • ESL PROGRAM MASTER REPORT (${reportFilterExamCategory} • ${reportFilterQuarter})
               </th>
             </tr>
             <tr class="header-main">
@@ -2211,7 +2211,7 @@ export default function AdminDashboard() {
       return;
     }
 
-    let text = `📢 WASHINGTON COMPREHENSIVE SCHOOL — MISSING SCORES NOTICE\n`;
+    let text = `📢 WASHINGTON SCHOOL INTERNATIONAL (ONLINE) — MISSING SCORES NOTICE\n`;
     text += `Assessment Category: ${reportFilterExamCategory} (${reportFilterQuarter})\n`;
     text += `Generated: ${new Date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}\n\n`;
 
@@ -2289,7 +2289,7 @@ export default function AdminDashboard() {
           <thead>
             <tr>
               <th colspan="6" class="title-banner">
-                WASHINGTON COMPREHENSIVE SCHOOL • MISSING SCORES & DEFICIENCY AUDIT (${reportFilterExamCategory} • ${reportFilterQuarter})
+                WASHINGTON SCHOOL INTERNATIONAL (ONLINE) • MISSING SCORES & DEFICIENCY AUDIT (${reportFilterExamCategory} • ${reportFilterQuarter})
               </th>
             </tr>
             <tr class="header-main">
@@ -2469,8 +2469,8 @@ export default function AdminDashboard() {
       {/* Header Panel */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0 print:hidden">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-heading transition-colors">
-            Admin Console
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-heading transition-colors">
+            Admin Console <span className="text-slate-400 dark:text-slate-500 font-normal">—</span> <span className="text-brand-600 dark:text-brand-400">Washington School International (Online)</span>
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 transition-colors">
             Manage academic staff profiles, master schedules, and global student master list.
@@ -2760,7 +2760,7 @@ export default function AdminDashboard() {
               <div className="hidden print:block mb-6 text-slate-900 border-b border-slate-300 pb-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h1 className="text-2xl font-bold font-heading">Washington School — Global Student Directory</h1>
+                    <h1 className="text-2xl font-bold font-heading">Washington School International (Online) — Global Student Directory</h1>
                     <p className="text-sm text-slate-600 mt-1">Student Account Credentials & Access Roster</p>
                   </div>
                   <div className="text-right text-xs text-slate-600 font-mono space-y-0.5">
@@ -3669,7 +3669,7 @@ export default function AdminDashboard() {
             <div className="space-y-8">
               {/* Print-only School Header Banner */}
               <div className="hidden print:block mb-6 text-center border-b-2 border-slate-900 pb-3">
-                <h1 className="text-base font-black text-black uppercase tracking-wider">Washington Comprehensive School</h1>
+                <h1 className="text-base font-black text-black uppercase tracking-wider">Washington School International (Online)</h1>
                 <p className="text-xs text-slate-800 font-bold mt-0.5">
                   Institutional Academic Performance Reports • {reportFilterExamCategory} {reportFilterQuarter !== "All" ? `• ${reportFilterQuarter}` : ""}
                 </p>
