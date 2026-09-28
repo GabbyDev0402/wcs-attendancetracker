@@ -369,15 +369,14 @@ export default function ClassDashboard() {
   const [isExamsLoading, setIsExamsLoading] = useState(false);
   const [examPublishSuccess, setExamPublishSuccess] = useState(false);
 
-  // Add Exam Scope Modal State
-  const [isAddExamScopeModalOpen, setIsAddExamScopeModalOpen] = useState(false);
-  const [editingExamScope, setEditingExamScope] = useState(null);
-  const [scopeTitle, setScopeTitle] = useState("");
-  const [scopeText, setScopeText] = useState("");
-  const [scopeQuarter, setScopeQuarter] = useState("1st Quarter");
-  const [scopeCategory, setScopeCategory] = useState("1st Monthly Exam");
-  const [scopeMaxScore, setScopeMaxScore] = useState(0);
-  const [isSavingScope, setIsSavingScope] = useState(false);
+  // Add Exam Modal State
+  const [isAddExamModalOpen, setIsAddExamModalOpen] = useState(false);
+  const [editingExam, setEditingExam] = useState(null);
+  const [examCategory, setExamCategory] = useState("1st Monthly Exam");
+  const [examQuarter, setExamQuarter] = useState("1st Quarter");
+  const [examMaxScore, setExamMaxScore] = useState(50);
+  const [examTitleCustom, setExamTitleCustom] = useState("");
+  const [isSavingExam, setIsSavingExam] = useState(false);
 
   // Rapid 'Input Scores' Modal State
   const [isInputScoresModalOpen, setIsInputScoresModalOpen] = useState(false);
@@ -389,11 +388,6 @@ export default function ClassDashboard() {
   const [examSubmissions, setExamSubmissions] = useState([]);
   const [isExamSubmissionsLoading, setIsExamSubmissionsLoading] = useState(false);
   const [examGradeSuccessToast, setExamGradeSuccessToast] = useState(false);
-
-  // Exam Scope Read Receipts Modal State
-  const [viewingReadReceiptsExam, setViewingReadReceiptsExam] = useState(null);
-  const [receiptsFilterTab, setReceiptsFilterTab] = useState("all"); // "all" | "read" | "unread"
-  const [receiptsSearchQuery, setReceiptsSearchQuery] = useState("");
 
   // Tasks State (Tab 5 - E-Class Record Phase 1)
   const [tasks, setTasks] = useState([]);
@@ -1133,35 +1127,56 @@ export default function ClassDashboard() {
     }
   };
 
-  // Add & Edit Exam Scope Handlers
-  const handleOpenAddExamScopeModal = () => {
-    setEditingExamScope(null);
-    setScopeTitle("");
-    setScopeText("");
-    setScopeQuarter("1st Quarter");
-    setScopeCategory("1st Monthly Exam");
-    setScopeMaxScore(0);
-    setIsAddExamScopeModalOpen(true);
+  // Exam Auto-Title Generator Helper
+  const getAutoExamTitle = (cat = examCategory) => {
+    const categoryName = (cat || "1st Monthly Exam").trim();
+    const grade = (classInfo?.grade || "").trim();
+    const subj = (classInfo?.subject || classInfo?.name || "").trim();
+
+    let classPart = "";
+    if (grade && subj) {
+      if (subj.toLowerCase().includes(grade.toLowerCase())) {
+        classPart = subj;
+      } else {
+        classPart = `${grade} ${subj}`;
+      }
+    } else {
+      classPart = subj || grade || (classInfo?.name || "Class");
+    }
+    return `${categoryName} - ${classPart}`.trim();
   };
 
-  const handleOpenEditExamScopeModal = (exam) => {
-    setEditingExamScope(exam);
-    setScopeTitle(exam.title || "");
-    setScopeText(exam.scopeText || "");
-    setScopeQuarter(exam.quarter || "1st Quarter");
-    setScopeCategory(exam.category || "1st Monthly Exam");
-    setScopeMaxScore(exam.maxScore ?? 0);
-    setIsAddExamScopeModalOpen(true);
+  // Add & Edit Exam Handlers
+  const handleOpenAddExamModal = () => {
+    setEditingExam(null);
+    setExamCategory("1st Monthly Exam");
+    setExamQuarter("1st Quarter");
+    setExamMaxScore(50);
+    setExamTitleCustom("");
+    setIsAddExamModalOpen(true);
   };
 
-  const handleDeleteExamScope = async (exam) => {
+  const handleOpenEditExamModal = (exam) => {
+    setEditingExam(exam);
+    setExamCategory(exam.category || "1st Monthly Exam");
+    setExamQuarter(exam.quarter || "1st Quarter");
+    setExamMaxScore(exam.maxScore ?? 50);
+    setExamTitleCustom(exam.title || "");
+    setIsAddExamModalOpen(true);
+  };
+
+  // Backwards compatibility aliases
+  const handleOpenAddExamScopeModal = handleOpenAddExamModal;
+  const handleOpenEditExamScopeModal = handleOpenEditExamModal;
+
+  const handleDeleteExam = async (exam) => {
     if (!exam) return;
     const examDocId = exam.firestoreId || exam.id;
-    const confirmDelete = window.confirm(`Are you sure you want to delete the exam scope "${exam.title}"? This action cannot be undone.`);
+    const confirmDelete = window.confirm(`Are you sure you want to delete the exam "${exam.title}"? This action cannot be undone.`);
     if (!confirmDelete) return;
 
     try {
-      // 1. Cascade delete all submissions associated with this exam scope
+      // 1. Cascade delete all submissions associated with this exam
       const subsQ = query(collection(db, "exam_submissions"), where("examId", "==", examDocId));
       const subsSnap = await getDocs(subsQ);
       const deleteSubPromises = subsSnap.docs.map(d => deleteDoc(doc(db, "exam_submissions", d.id)));
@@ -1171,59 +1186,73 @@ export default function ClassDashboard() {
       await deleteDoc(doc(db, "exams", examDocId));
       loadExams();
     } catch (e) {
-      alert("Failed to delete exam scope: " + e.message);
+      alert("Failed to delete exam: " + e.message);
     }
   };
 
-  const handleSaveExamScope = async () => {
-    if (!scopeTitle.trim()) {
-      alert("Please enter an exam title/topic.");
+  const handleDeleteExamScope = handleDeleteExam;
+
+  const handleSaveExam = async (openScoresImmediately = true) => {
+    const generatedTitle = getAutoExamTitle(examCategory);
+    const finalTitle = (examTitleCustom.trim() || generatedTitle).trim();
+
+    if (!finalTitle) {
+      alert("Please enter a valid exam title.");
       return;
     }
-    if (!scopeMaxScore || Number(scopeMaxScore) <= 0) {
+    if (!examMaxScore || Number(examMaxScore) <= 0) {
       alert("Please enter a valid max score (greater than 0).");
       return;
     }
 
-    setIsSavingScope(true);
+    setIsSavingExam(true);
     try {
       const tag = `${user.id}_${classId}`;
       const payload = {
         classId: tag,
         teacherId: user?.id || user?.uid,
         academicYear: CURRENT_ACADEMIC_YEAR,
-        title: scopeTitle.trim(),
+        title: finalTitle,
         subject: classInfo.subject || "",
         grade: classInfo.grade || "",
-        scopeText: scopeText || "",
-        quarter: scopeQuarter,
-        category: scopeCategory,
-        maxScore: Number(scopeMaxScore) || 100,
+        quarter: examQuarter,
+        category: examCategory,
+        maxScore: Number(examMaxScore) || 50,
         status: "published",
         updatedAt: serverTimestamp()
       };
 
-      if (editingExamScope) {
-        const examDocId = editingExamScope.firestoreId || editingExamScope.id;
+      let savedDoc = null;
+      if (editingExam) {
+        const examDocId = editingExam.firestoreId || editingExam.id;
         await updateDoc(doc(db, "exams", examDocId), payload);
+        savedDoc = { firestoreId: examDocId, id: examDocId, ...payload };
       } else {
-        await addDoc(collection(db, "exams"), {
+        const docRef = await addDoc(collection(db, "exams"), {
           ...payload,
           createdAt: serverTimestamp()
         });
+        savedDoc = { firestoreId: docRef.id, id: docRef.id, ...payload };
       }
 
-      setIsAddExamScopeModalOpen(false);
-      setEditingExamScope(null);
+      setIsAddExamModalOpen(false);
+      setEditingExam(null);
       setExamPublishSuccess(true);
       setTimeout(() => setExamPublishSuccess(false), 3000);
-      loadExams();
+      await loadExams();
+
+      // One-click: immediately launch Input Scores spreadsheet modal!
+      if (openScoresImmediately && savedDoc && !editingExam) {
+        handleOpenInputScoresModal(savedDoc);
+      }
     } catch (e) {
-      alert("Failed to save exam scope: " + e.message);
+      alert("Failed to save exam: " + e.message);
     } finally {
-      setIsSavingScope(false);
+      setIsSavingExam(false);
     }
   };
+
+  const handleSaveExamScope = () => handleSaveExam(true);
 
   // Rapid 'Input Scores' Modal Handlers
   const handleOpenInputScoresModal = (exam) => {
@@ -3479,32 +3508,29 @@ export default function ClassDashboard() {
                 Exams & Assessments
               </h2>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                Publish exam scopes & study guidelines, track student acknowledgments, and rapidly enter scores for E-Class Record.
+                Record exams, manage assessment categories, and rapidly input scores for E-Class Record and Academic Reports.
               </p>
             </div>
 
             <button
-              onClick={handleOpenAddExamScopeModal}
-              className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0"
+              onClick={handleOpenAddExamModal}
+              className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Plus className="h-4 w-4" />
-              <span>Add Exam Scope</span>
+              <span>Add Exam</span>
             </button>
           </div>
 
           {/* Exam Cards Grid */}
           {isExamsLoading ? (
-            <div className="py-16 text-center text-slate-400 text-sm">Loading exam scopes...</div>
+            <div className="py-16 text-center text-slate-400 text-sm">Loading exams...</div>
           ) : exams.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {exams.map((exam) => {
                 const examDocId = exam.firestoreId || exam.id;
                 const subsForThisExam = examSubmissions.filter(sub => sub.examId === examDocId || sub.examId === exam.id);
-                const readSubs = subsForThisExam.filter(s => {
-                  const st = (s.status || "").toLowerCase();
-                  return st === "acknowledged" || st === "turned_in" || s.status === "graded" || !!s.acknowledgedAt || !!s.readAt;
-                });
                 const gradedSubs = subsForThisExam.filter(s => s.status === "graded");
+                const isFullyGraded = gradedSubs.length === classStudents.length && classStudents.length > 0;
 
                 return (
                   <div key={examDocId} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors flex flex-col justify-between">
@@ -3526,20 +3552,20 @@ export default function ClassDashboard() {
                         <div className="flex items-center space-x-1.5 shrink-0">
                           <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
                             <Sparkles className="h-3 w-3" />
-                            <span>Max: {exam.maxScore || 100} pts</span>
+                            <span>Max: {exam.maxScore || 50} pts</span>
                           </span>
 
                           <button
-                            onClick={() => handleOpenEditExamScopeModal(exam)}
-                            title="Edit Exam Scope"
+                            onClick={() => handleOpenEditExamModal(exam)}
+                            title="Edit Exam Settings"
                             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
 
                           <button
-                            onClick={() => handleDeleteExamScope(exam)}
-                            title="Delete Exam Scope"
+                            onClick={() => handleDeleteExam(exam)}
+                            title="Delete Exam"
                             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-600 hover:border-red-300 dark:hover:text-red-400 transition-colors cursor-pointer"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -3547,43 +3573,18 @@ export default function ClassDashboard() {
                         </div>
                       </div>
 
-                      {/* Scope Text Preview */}
-                      {exam.scopeText && (
-                        <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800 max-h-28 overflow-y-auto prose prose-slate dark:prose-invert max-w-none text-slate-800 dark:text-slate-100">
-                          <div dangerouslySetInnerHTML={{ __html: exam.scopeText.replace(/&nbsp;/g, ' ') }} />
-                        </div>
-                      )}
-
-                      {/* Student Acknowledgment & Grading Status */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                        <div className="flex items-center space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setViewingReadReceiptsExam(exam);
-                              setReceiptsFilterTab("all");
-                              setReceiptsSearchQuery("");
-                            }}
-                            title="Click to view student read receipts"
-                            className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-all hover:scale-[1.02] active:scale-[0.98] ${
-                              readSubs.length === classStudents.length && classStudents.length > 0
-                                ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 shadow-2xs"
-                                : readSubs.length > 0
-                                ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/50 shadow-2xs"
-                                : "bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/60 shadow-2xs"
-                            }`}
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                            <span>{readSubs.length} of {classStudents.length} students read</span>
-                            <span className="text-[10px] underline ml-0.5 opacity-75 font-normal">(View List)</span>
-                          </button>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-                            {gradedSubs.length} / {classStudents.length} Graded
-                          </span>
-                        </div>
+                      {/* Grading Status */}
+                      <div className="pt-1">
+                        <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                          isFullyGraded
+                            ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                            : gradedSubs.length > 0
+                            ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+                            : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                        }`}>
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          <span>{gradedSubs.length} of {classStudents.length} Students Graded</span>
+                        </span>
                       </div>
                     </div>
 
@@ -3591,7 +3592,7 @@ export default function ClassDashboard() {
                     <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end">
                       <button
                         onClick={() => handleOpenInputScoresModal(exam)}
-                        className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+                        className="inline-flex items-center space-x-2 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
                       >
                         <FileSpreadsheet className="h-4 w-4" />
                         <span>Input Scores</span>
@@ -3604,8 +3605,8 @@ export default function ClassDashboard() {
           ) : (
             <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
               <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Exam Scopes Added Yet</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Click "Add Exam Scope" to publish the first assessment topic and study guidelines.</p>
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Exams Added Yet</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">Click "Add Exam" to select a category and start entering student scores.</p>
             </div>
           )}
         </div>
@@ -5775,21 +5776,22 @@ export default function ClassDashboard() {
         </div>
       )}
 
-      {/* MODAL 1: Add Exam Scope Modal */}
-      {isAddExamScopeModalOpen && (
+      {/* MODAL 1: Add Exam Modal */}
+      {isAddExamModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-6 transition-all my-8">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 transition-all my-8">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
               <div>
                 <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
-                  {editingExamScope ? "Edit Exam Scope & Guidelines" : "Add Exam Scope & Guidelines"}
+                  {editingExam ? "Edit Exam Settings" : "Add Exam"}
                 </h3>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  {editingExamScope ? "Update assessment topics, max score, or instructions for students." : "Publish assessment topics, test coverage, and instructions for students."}
+                  {editingExam ? "Update category, quarter, or max score." : "Select category to auto-generate the exam and input scores."}
                 </p>
               </div>
               <button
-                onClick={() => setIsAddExamScopeModalOpen(false)}
+                onClick={() => setIsAddExamModalOpen(false)}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
@@ -5797,29 +5799,59 @@ export default function ClassDashboard() {
             </div>
 
             <div className="space-y-4">
-              {/* Exam Title */}
+              {/* Category Selector */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                  Exam Title / Topic *
+                  Exam Category *
                 </label>
-                <input
-                  type="text"
-                  value={scopeTitle}
-                  onChange={(e) => setScopeTitle(e.target.value)}
-                  placeholder="e.g., 1st Monthly Exam — Reading Comprehension"
-                  className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                />
+                <select
+                  value={examCategory}
+                  onChange={(e) => {
+                    const newCat = e.target.value;
+                    setExamCategory(newCat);
+                    if (newCat.includes("1st")) setExamQuarter("1st Quarter");
+                    else if (newCat.includes("2nd")) setExamQuarter("2nd Quarter");
+                    else if (newCat.includes("3rd")) setExamQuarter("3rd Quarter");
+                    else if (newCat.includes("4th")) setExamQuarter("4th Quarter");
+                  }}
+                  className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                >
+                  <option value="1st Monthly Exam">1st Monthly Exam</option>
+                  <option value="2nd Monthly Exam">2nd Monthly Exam</option>
+                  <option value="3rd Monthly Exam">3rd Monthly Exam</option>
+                  <option value="4th Monthly Exam">4th Monthly Exam</option>
+                  <option value="5th Monthly Exam">5th Monthly Exam</option>
+                  <option value="6th Monthly Exam">6th Monthly Exam</option>
+                  <option value="7th Monthly Exam">7th Monthly Exam</option>
+                  <option value="1st Quarterly Exam">1st Quarterly Exam</option>
+                  <option value="2nd Quarterly Exam">2nd Quarterly Exam</option>
+                  <option value="3rd Quarterly Exam">3rd Quarterly Exam</option>
+                  <option value="4th Quarterly Exam">4th Quarterly Exam</option>
+                </select>
               </div>
 
-              {/* Quarter, Category, Max Score */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Auto-Generated Title Live Preview Card */}
+              <div className="bg-brand-50/50 dark:bg-brand-950/30 p-4 rounded-2xl border border-brand-100 dark:border-brand-800/60 space-y-1">
+                <span className="text-[10px] font-bold text-brand-600 dark:text-brand-400 uppercase tracking-wider block">
+                  Auto-Generated Title
+                </span>
+                <div className="text-sm font-extrabold text-slate-900 dark:text-white font-heading">
+                  {examTitleCustom.trim() || getAutoExamTitle(examCategory)}
+                </div>
+                <p className="text-[10.5px] text-slate-400 dark:text-slate-500">
+                  Automatically mapped to <strong className="text-slate-600 dark:text-slate-300">{classInfo.grade || "Grade"}</strong> • <strong className="text-slate-600 dark:text-slate-300">{classInfo.subject || classInfo.name || "Subject"}</strong> for institutional records.
+                </p>
+              </div>
+
+              {/* Quarter & Max Score */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
                     Quarter *
                   </label>
                   <select
-                    value={scopeQuarter}
-                    onChange={(e) => setScopeQuarter(e.target.value)}
+                    value={examQuarter}
+                    onChange={(e) => setExamQuarter(e.target.value)}
                     className="w-full text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                   >
                     <option value="1st Quarter">1st Quarter</option>
@@ -5831,54 +5863,15 @@ export default function ClassDashboard() {
 
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                    Category *
-                  </label>
-                  <select
-                    value={scopeCategory}
-                    onChange={(e) => setScopeCategory(e.target.value)}
-                    className="w-full text-xs font-semibold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                  >
-                    <option value="1st Monthly Exam">1st Monthly Exam</option>
-                    <option value="2nd Monthly Exam">2nd Monthly Exam</option>
-                    <option value="3rd Monthly Exam">3rd Monthly Exam</option>
-                    <option value="4th Monthly Exam">4th Monthly Exam</option>
-                    <option value="5th Monthly Exam">5th Monthly Exam</option>
-                    <option value="6th Monthly Exam">6th Monthly Exam</option>
-                    <option value="7th Monthly Exam">7th Monthly Exam</option>
-                    <option value="1st Quarterly Exam">1st Quarterly Exam</option>
-                    <option value="2nd Quarterly Exam">2nd Quarterly Exam</option>
-                    <option value="3rd Quarterly Exam">3rd Quarterly Exam</option>
-                    <option value="4th Quarterly Exam">4th Quarterly Exam</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                    Max Score *
+                    Max Score (Points) *
                   </label>
                   <input
                     type="number"
-                    min="0"
-                    value={scopeMaxScore}
-                    onChange={(e) => setScopeMaxScore(e.target.value)}
+                    min="1"
+                    value={examMaxScore}
+                    onChange={(e) => setExamMaxScore(e.target.value)}
+                    placeholder="50"
                     className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
-                  />
-                </div>
-              </div>
-
-              {/* Scope Rich Text Editor */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                  Exam Scope & Instructions
-                </label>
-                <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden">
-                  <ReactQuill
-                    theme="snow"
-                    value={scopeText}
-                    onChange={setScopeText}
-                    modules={quillModules}
-                    placeholder="Enter coverage, coverage topics, reviewer guidelines, or test instructions..."
-                    className="text-slate-800 dark:text-slate-100 min-h-[140px]"
                   />
                 </div>
               </div>
@@ -5888,19 +5881,19 @@ export default function ClassDashboard() {
             <div className="flex items-center justify-end space-x-3 border-t border-slate-100 dark:border-slate-800 pt-4">
               <button
                 type="button"
-                onClick={() => setIsAddExamScopeModalOpen(false)}
+                onClick={() => setIsAddExamModalOpen(false)}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={handleSaveExamScope}
-                disabled={isSavingScope}
-                className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                onClick={() => handleSaveExam(true)}
+                disabled={isSavingExam}
+                className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98]"
               >
                 <CheckCircle className="h-4 w-4" />
-                <span>{isSavingScope ? "Saving..." : (editingExamScope ? "Update Exam Scope" : "Publish Exam Scope")}</span>
+                <span>{isSavingExam ? "Saving..." : editingExam ? "Update Exam" : "Add & Input Scores"}</span>
               </button>
             </div>
           </div>
@@ -6148,281 +6141,6 @@ export default function ClassDashboard() {
           </div>
         </div>
       )}
-
-      {/* MODAL 4: Exam Scope Read Receipts Modal */}
-      {viewingReadReceiptsExam && (() => {
-        const examDocId = viewingReadReceiptsExam.firestoreId || viewingReadReceiptsExam.id;
-        const subsForThisExam = examSubmissions.filter(
-          s => s.examId === examDocId || s.examId === viewingReadReceiptsExam.id
-        );
-
-        const studentReceipts = classStudents.map(st => {
-          const stId = st.uid || st.id;
-          const sub = subsForThisExam.find(s => s.studentId === stId);
-          const stStatus = (sub?.status || "").toLowerCase();
-          const isAcknowledged = !!sub && (
-            stStatus === "acknowledged" ||
-            stStatus === "turned_in" ||
-            stStatus === "graded" ||
-            !!sub.acknowledgedAt ||
-            !!sub.readAt
-          );
-          let timestamp = null;
-          let formattedTime = "";
-          const rawTime = sub?.acknowledgedAt || sub?.readAt || sub?.submittedAt || sub?.updatedAt;
-          if (rawTime) {
-            try {
-              const d = rawTime.toDate ? rawTime.toDate() : new Date(rawTime);
-              if (!isNaN(d.getTime())) {
-                timestamp = d;
-                formattedTime = d.toLocaleString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                  hour: "numeric",
-                  minute: "2-digit",
-                  hour12: true
-                });
-              }
-            } catch (e) {}
-          }
-          return {
-            student: st,
-            studentId: stId,
-            name: formatStudentName(st),
-            isAcknowledged,
-            timestamp,
-            formattedTime,
-            submission: sub
-          };
-        });
-
-        const totalEnrolled = studentReceipts.length;
-        const readCount = studentReceipts.filter(r => r.isAcknowledged).length;
-        const unreadCount = totalEnrolled - readCount;
-        const readPercent = totalEnrolled > 0 ? Math.round((readCount / totalEnrolled) * 100) : 0;
-
-        let displayedReceipts = studentReceipts;
-        if (receiptsFilterTab === "read") {
-          displayedReceipts = displayedReceipts.filter(r => r.isAcknowledged);
-        } else if (receiptsFilterTab === "unread") {
-          displayedReceipts = displayedReceipts.filter(r => !r.isAcknowledged);
-        }
-
-        if (receiptsSearchQuery.trim()) {
-          const q = receiptsSearchQuery.trim().toLowerCase();
-          displayedReceipts = displayedReceipts.filter(r =>
-            r.name.toLowerCase().includes(q) ||
-            (r.student.studentCode || "").toLowerCase().includes(q)
-          );
-        }
-
-        displayedReceipts.sort((a, b) => {
-          if (a.isAcknowledged && !b.isAcknowledged) return -1;
-          if (!a.isAcknowledged && b.isAcknowledged) return 1;
-          if (a.isAcknowledged && b.isAcknowledged) {
-            if (a.timestamp && b.timestamp) return b.timestamp - a.timestamp;
-            if (a.timestamp && !b.timestamp) return -1;
-            if (!a.timestamp && b.timestamp) return 1;
-            return a.name.localeCompare(b.name);
-          }
-          return a.name.localeCompare(b.name);
-        });
-
-        return (
-          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
-            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-5 transition-all my-8 max-h-[90vh] flex flex-col">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 shrink-0">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2.5 rounded-2xl bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border border-purple-100 dark:border-purple-800 shrink-0">
-                    <Eye className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
-                      Exam Scope Read Receipts
-                    </h3>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">{viewingReadReceiptsExam.title}</span>
-                      <span>•</span>
-                      <span>{viewingReadReceiptsExam.quarter || "1st Quarter"}</span>
-                      <span>•</span>
-                      <span>{viewingReadReceiptsExam.category || "Exam"}</span>
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setViewingReadReceiptsExam(null)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Progress & Metrics Summary */}
-              <div className="bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 space-y-3 shrink-0">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold text-slate-700 dark:text-slate-200">Acknowledgment Progress</span>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
-                      {readPercent}%
-                    </span>
-                  </div>
-                  <span className="font-semibold text-slate-500 dark:text-slate-400 text-[11px]">
-                    <strong className="text-emerald-600 dark:text-emerald-400">{readCount}</strong> of {totalEnrolled} students
-                  </span>
-                </div>
-
-                {/* Progress Bar */}
-                <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 rounded-full transition-all duration-300"
-                    style={{ width: `${readPercent}%` }}
-                  />
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-                  <div className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 shadow-2xs">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Enrolled</div>
-                    <div className="text-base font-extrabold text-slate-800 dark:text-slate-100 mt-0.5">{totalEnrolled}</div>
-                  </div>
-                  <div className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-emerald-100 dark:border-emerald-900/50 shadow-2xs">
-                    <div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Acknowledged</div>
-                    <div className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">{readCount}</div>
-                  </div>
-                  <div className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-amber-100 dark:border-amber-900/50 shadow-2xs">
-                    <div className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">Pending / Unread</div>
-                    <div className="text-base font-extrabold text-amber-600 dark:text-amber-400 mt-0.5">{unreadCount}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Search and Filter Tabs */}
-              <div className="space-y-2.5 shrink-0">
-                <div className="relative">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    value={receiptsSearchQuery}
-                    onChange={(e) => setReceiptsSearchQuery(e.target.value)}
-                    placeholder="Search student by name or code..."
-                    className="w-full pl-9 pr-4 py-2 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-purple-500 transition-colors"
-                  />
-                </div>
-
-                <div className="flex items-center space-x-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setReceiptsFilterTab("all")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      receiptsFilterTab === "all"
-                        ? "bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 shadow-xs"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    All ({totalEnrolled})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setReceiptsFilterTab("read")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      receiptsFilterTab === "read"
-                        ? "bg-emerald-600 text-white shadow-xs"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    Acknowledged ({readCount})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setReceiptsFilterTab("unread")}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      receiptsFilterTab === "unread"
-                        ? "bg-amber-600 text-white shadow-xs"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700"
-                    }`}
-                  >
-                    Unread ({unreadCount})
-                  </button>
-                </div>
-              </div>
-
-              {/* Student List */}
-              <div className="overflow-y-auto border border-slate-100 dark:border-slate-800 rounded-2xl flex-1 divide-y divide-slate-100 dark:divide-slate-800">
-                {displayedReceipts.length > 0 ? (
-                  displayedReceipts.map((r, idx) => (
-                    <div
-                      key={r.studentId || idx}
-                      className="p-3.5 flex items-center justify-between hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
-                    >
-                      <div className="flex items-center space-x-3 min-w-0">
-                        <div
-                          className={`h-9 w-9 rounded-full flex items-center justify-center font-bold text-xs uppercase shrink-0 border ${
-                            r.isAcknowledged
-                              ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700"
-                          }`}
-                        >
-                          {(r.student.internationalName || r.student.name || "ST").substring(0, 2)}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">
-                            {r.name}
-                          </div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">
-                            {r.student.gradeLevel || r.student.grade || classInfo.grade || "Grade"} • Code: {r.student.studentCode || "—"}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="shrink-0 text-right ml-3">
-                        {r.isAcknowledged ? (
-                          <div>
-                            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
-                              <CheckCircle className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                              <span>Acknowledged</span>
-                            </span>
-                            {r.formattedTime && (
-                              <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                                {r.formattedTime}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                            <Clock className="h-3 w-3 text-slate-400 dark:text-slate-500" />
-                            <span>Not Read Yet</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="py-12 text-center text-slate-400 dark:text-slate-500 text-xs flex flex-col items-center justify-center space-y-2">
-                    <Search className="h-6 w-6 text-slate-300 dark:text-slate-600" />
-                    <span>No students match your filter or search query.</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 shrink-0">
-                <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                  Live updates in real time as students acknowledge
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setViewingReadReceiptsExam(null)}
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Google Forms Style Rich-Text Link Modal */}
       {linkModal.isOpen && (

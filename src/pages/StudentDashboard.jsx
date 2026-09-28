@@ -42,8 +42,6 @@ export default function StudentDashboard() {
   const [todayVocabSubmissions, setTodayVocabSubmissions] = useState([]);
   const [allTasks, setAllTasks] = useState([]);
   const [myTaskSubmissions, setMyTaskSubmissions] = useState([]);
-  const [allExams, setAllExams] = useState([]);
-  const [myExamSubmissions, setMyExamSubmissions] = useState([]);
   const [attendanceStats, setAttendanceStats] = useState({
     present: 0,
     late: 0,
@@ -232,50 +230,12 @@ export default function StudentDashboard() {
       console.warn("Error listening to student task submissions:", err);
     });
 
-    // 6. Real-time Exams Listener (Scoped to student's enrolled classes)
-    let unsubExams = () => {};
-    if (enrolledClasses.length > 0 && enrolledClasses.length <= 30) {
-      const examsQuery = query(
-        collection(db, "exams"),
-        where("status", "==", "published"),
-        where("classId", "in", enrolledClasses)
-      );
-      unsubExams = onSnapshot(examsQuery, (examsSnap) => {
-        const list = examsSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
-        setAllExams(list);
-      }, (err) => {
-        console.warn("Error listening to exams:", err);
-      });
-    } else if (enrolledClasses.length > 30) {
-      const examsQuery = query(collection(db, "exams"), where("status", "==", "published"));
-      unsubExams = onSnapshot(examsQuery, (examsSnap) => {
-        const list = examsSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
-        setAllExams(list.filter(e => enrolledClasses.includes(e.classId)));
-      }, (err) => {
-        console.warn("Error listening to exams:", err);
-      });
-    }
-
-    // 7. Real-time Student Exam Submissions Listener
-    const examSubQuery = query(
-      collection(db, "exam_submissions"),
-      where("studentId", "==", user.id)
-    );
-    const unsubExamSubs = onSnapshot(examSubQuery, (subSnap) => {
-      const list = subSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
-      setMyExamSubmissions(list);
-    }, (err) => {
-      console.warn("Error listening to student exam submissions:", err);
-    });
-
     return () => {
       unsubDiary();
       unsubSessions();
       unsubSubmissions();
       unsubTasks();
       unsubTaskSubs();
-      unsubExams();
-      unsubExamSubs();
     };
   }, [user?.id]);
 
@@ -359,7 +319,7 @@ export default function StudentDashboard() {
                 Welcome back, {user?.name || user?.internationalName || "Student"}!
               </h1>
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-300 mt-1 font-medium">
-                Access your classes, exam scopes, daily diaries, and learning tasks.
+                Access your classes, assessments, daily diaries, and learning tasks.
               </p>
             </div>
           </div>
@@ -695,24 +655,6 @@ export default function StudentDashboard() {
 
                 const pendingTasksCount = pendingClassTasks.length;
 
-                // Step F: Calculate Unacknowledged Exam Scopes count for this specific classroom
-                const classExams = (allExams || []).filter(ex => 
-                  ex.classId === classTag || 
-                  ex.classId === extractedClassId || 
-                  `${ex.teacherId}_${ex.classId}` === classTag
-                );
-
-                const unreadClassExams = classExams.filter(exam => {
-                  const examDocId = exam.firestoreId || exam.id;
-                  const sub = (myExamSubmissions || []).find(s => s.examId === examDocId || s.examId === exam.id);
-                  if (!sub) return true;
-                  const st = (sub.status || "").toLowerCase();
-                  const isAck = st === "acknowledged" || st === "turned_in" || st === "graded" || !!sub.acknowledgedAt || !!sub.readAt;
-                  return !isAck;
-                });
-
-                const pendingExamsCount = unreadClassExams.length;
-
                 return (
                   <div
                     key={classTag || index}
@@ -721,8 +663,6 @@ export default function StudentDashboard() {
                         ? "border-amber-300 dark:border-amber-700/80 shadow-xs" 
                         : pendingTasksCount > 0
                         ? "border-blue-300 dark:border-blue-700/80 shadow-xs"
-                        : pendingExamsCount > 0
-                        ? "border-purple-300 dark:border-purple-700/80 shadow-xs"
                         : "border-slate-200/80 dark:border-slate-700/60 hover:border-brand-500/50 dark:hover:border-brand-400/50"
                     }`}
                   >
@@ -733,8 +673,6 @@ export default function StudentDashboard() {
                             ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400"
                             : pendingTasksCount > 0
                             ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400"
-                            : pendingExamsCount > 0
-                            ? "bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-400"
                             : "bg-brand-100/60 dark:bg-brand-900/40 text-brand-600 dark:text-brand-400"
                         }`}>
                           <GraduationCap className="h-5 w-5" />
@@ -765,19 +703,7 @@ export default function StudentDashboard() {
                             </Link>
                           )}
 
-                          {pendingExamsCount > 0 && (
-                            <Link
-                              to={`/student/class/${encodeURIComponent(classTag)}?tab=exams`}
-                              onClick={(e) => e.stopPropagation()}
-                              title="Click to review exam scope and acknowledge"
-                              className="bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/40 dark:hover:bg-purple-800/50 text-purple-800 dark:text-purple-200 ring-1 ring-purple-300 dark:ring-purple-700 animate-pulse px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 border border-purple-300 dark:border-purple-700/60 shadow-xs cursor-pointer hover:scale-105 transition-all group/examNotif"
-                            >
-                              <BookOpen className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400 group-hover/examNotif:scale-110 transition-transform" />
-                              <span>{pendingExamsCount} Exam Scope{pendingExamsCount > 1 ? "s" : ""}</span>
-                            </Link>
-                          )}
-
-                          {!showNotification && pendingTasksCount === 0 && pendingExamsCount === 0 && (
+                          {!showNotification && pendingTasksCount === 0 && (
                             <span className="text-[10px] font-extrabold uppercase tracking-wider text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/30 px-2.5 py-1 rounded-lg border border-brand-100 dark:border-brand-800/50">
                               Active Classroom
                             </span>
@@ -802,8 +728,6 @@ export default function StudentDashboard() {
                           ? "bg-amber-600 hover:bg-amber-700"
                           : pendingTasksCount > 0
                           ? "bg-blue-600 hover:bg-blue-700"
-                          : pendingExamsCount > 0
-                          ? "bg-purple-600 hover:bg-purple-700"
                           : "bg-slate-950 dark:bg-brand-600 hover:bg-brand-600 dark:hover:bg-brand-500"
                       }`}
                     >

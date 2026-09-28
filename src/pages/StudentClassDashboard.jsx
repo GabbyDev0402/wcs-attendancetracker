@@ -86,8 +86,6 @@ export default function StudentClassDashboard() {
   const [examSubmissionsMap, setExamSubmissionsMap] = useState({});
   const [examSubmissionsList, setExamSubmissionsList] = useState([]);
   const [isExamsLoading, setIsExamsLoading] = useState(true);
-  const [isSubmittingExam, setIsSubmittingExam] = useState({});
-  const [examMarkSuccess, setExamMarkSuccess] = useState({});
 
   // Tasks State (Tab 3)
   const [tasksList, setTasksList] = useState([]);
@@ -231,56 +229,6 @@ export default function StudentClassDashboard() {
       unsubExamSubs();
     };
   }, [user?.id, targetClassTag]);
-
-  // Acknowledge Exam Scope Handler
-  const handleAcknowledgeExam = async (exam) => {
-    if (!user || !exam) return;
-    const studentUid = user.id || user.uid;
-    const examDocId = exam.firestoreId || exam.id;
-    const subDocId = `${studentUid}_${examDocId}`;
-
-    setIsSubmittingExam(prev => ({ ...prev, [examDocId]: true }));
-    try {
-      const studentName = user.internationalName || formatStudentName(user) || user.fullName || "Student";
-      const payload = {
-        examId: examDocId,
-        classId: targetClassTag,
-        teacherId: extractedTeacherId || (targetClassTag.includes("_") ? targetClassTag.split("_")[0] : ""),
-        studentId: studentUid,
-        studentName: studentName,
-        status: "acknowledged",
-        readAt: serverTimestamp(),
-        acknowledgedAt: serverTimestamp(),
-        objScore: 0,
-        subjScore: 0,
-        maxScore: Number(exam.maxScore) || 100,
-        academicYear: CURRENT_ACADEMIC_YEAR,
-        submittedAt: serverTimestamp()
-      };
-
-      await setDoc(doc(db, "exam_submissions", subDocId), payload, { merge: true });
-
-      // Optimistically update local examSubmissionsMap for immediate UI response
-      setExamSubmissionsMap(prev => ({
-        ...prev,
-        [examDocId]: {
-          ...(prev[examDocId] || {}),
-          ...payload,
-          acknowledgedAt: new Date().toISOString(),
-          readAt: new Date().toISOString()
-        }
-      }));
-
-      setExamMarkSuccess(prev => ({ ...prev, [examDocId]: true }));
-      setTimeout(() => {
-        setExamMarkSuccess(prev => ({ ...prev, [examDocId]: false }));
-      }, 3000);
-    } catch (err) {
-      alert("Failed to acknowledge exam scope: " + err.message);
-    } finally {
-      setIsSubmittingExam(prev => ({ ...prev, [examDocId]: false }));
-    }
-  };
 
   // Load Published Tasks & Student Task Submissions
   const loadTasksData = async () => {
@@ -472,20 +420,6 @@ export default function StudentClassDashboard() {
     return !isSubmitted && !isPastDue;
   }).length;
 
-  // Helper to check if submission counts as acknowledged/read
-  const isExamAcknowledged = (sub) => {
-    if (!sub) return false;
-    const st = (sub.status || "").toLowerCase();
-    return st === "acknowledged" || st === "turned_in" || st === "graded" || !!sub.acknowledgedAt || !!sub.readAt;
-  };
-
-  // Active / pending exams count (unacknowledged)
-  const pendingActiveExamsCount = (examsList || []).filter(exam => {
-    const examDocId = exam.firestoreId || exam.id;
-    const sub = examSubmissionsMap[examDocId] || examSubmissionsMap[exam.id];
-    return !isExamAcknowledged(sub);
-  }).length;
-
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top Navigation Back Button */}
@@ -545,9 +479,9 @@ export default function StudentClassDashboard() {
         >
           <BookOpen className="h-4 w-4" />
           <span>Exams & Assessments</span>
-          {pendingActiveExamsCount > 0 && (
-            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-purple-50 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-bold border border-purple-100 dark:border-purple-800">
-              {pendingActiveExamsCount}
+          {examsList.length > 0 && (
+            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold">
+              {examsList.length}
             </span>
           )}
         </button>
@@ -894,7 +828,7 @@ export default function StudentClassDashboard() {
                   Exams & Assessments
                 </h2>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  Review exam scopes & study guidelines, acknowledge readiness, and track test scores for {displayTitle}.
+                  View scheduled assessments and track your test scores for {displayTitle}.
                 </p>
               </div>
             </div>
@@ -907,10 +841,7 @@ export default function StudentClassDashboard() {
               {examsList.map((ex) => {
                 const examDocId = ex.firestoreId || ex.id;
                 const mySubmission = examSubmissionsMap[examDocId] || examSubmissionsMap[ex.id];
-                const isGraded = mySubmission?.status === "graded" || mySubmission?.status === "Graded";
-                const isAcknowledged = isExamAcknowledged(mySubmission);
-                const isSubmitting = isSubmittingExam[examDocId];
-                const isSuccess = examMarkSuccess[examDocId];
+                const isGraded = mySubmission?.status === "graded" || mySubmission?.status === "Graded" || (mySubmission && (mySubmission.objScore !== undefined || mySubmission.subjScore !== undefined));
 
                 return (
                   <div
@@ -934,46 +865,22 @@ export default function StudentClassDashboard() {
                           </div>
                         </div>
 
-                        {/* Submission / Read Status Badge */}
+                        {/* Submission / Graded Status Badge */}
                         {isGraded ? (
                           <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
                             <CheckCircle className="h-3.5 w-3.5" />
                             <span>✅ Graded</span>
                           </span>
-                        ) : isAcknowledged ? (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800">
-                            <Eye className="h-3.5 w-3.5" />
-                            <span>Acknowledged & Read</span>
-                          </span>
                         ) : (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-100 dark:border-amber-800">
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-blue-800">
                             <Clock className="h-3.5 w-3.5" />
-                            <span>Unread Scope</span>
+                            <span>Scheduled</span>
                           </span>
                         )}
                       </div>
-
-                      {/* Scope & Guidelines (Rich Text) */}
-                      {ex.scopeText && (
-                        <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800 max-h-36 overflow-y-auto">
-                          <div 
-                            className="prose prose-slate dark:prose-invert max-w-none w-full min-w-0 whitespace-normal break-normal text-slate-800 dark:text-slate-100 text-xs font-medium"
-                            style={{ wordBreak: 'normal', overflowWrap: 'break-word', whiteSpace: 'pre-wrap' }}
-                            dangerouslySetInnerHTML={{ __html: (ex.scopeText || "").replace(/&nbsp;/g, ' ') }} 
-                          />
-                        </div>
-                      )}
-
-                      {/* Toast / Feedback Banner */}
-                      {isSuccess && (
-                        <div className="text-xs font-bold text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 p-2.5 rounded-xl border border-purple-100 dark:border-purple-800 flex items-center space-x-1.5 animate-fade-in">
-                          <Sparkles className="h-3.5 w-3.5" />
-                          <span>Exam scope acknowledged!</span>
-                        </div>
-                      )}
                     </div>
 
-                    {/* Action Area */}
+                    {/* Action Area / Score Display */}
                     <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
                       {isGraded ? (
                         <div className="flex items-center justify-between w-full">
@@ -984,24 +891,13 @@ export default function StudentClassDashboard() {
                             Score: {(Number(mySubmission.objScore) || 0) + (Number(mySubmission.subjScore) || 0)} / {ex.maxScore || 100} pts
                           </div>
                         </div>
-                      ) : isAcknowledged ? (
-                        <div className="flex items-center justify-between w-full text-xs font-semibold text-slate-500 dark:text-slate-400">
-                          <span className="inline-flex items-center space-x-1.5 text-purple-700 dark:text-purple-300 font-bold">
-                            <Check className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                            <span>Scope Acknowledged</span>
-                          </span>
-                          <span className="text-slate-400 dark:text-slate-500">Awaiting Teacher Grading</span>
-                        </div>
                       ) : (
-                        <div className="flex items-center justify-end space-x-2 w-full">
-                          <button
-                            onClick={() => handleAcknowledgeExam(ex)}
-                            disabled={isSubmitting}
-                            className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
-                          >
-                            <Eye className="h-4 w-4" />
-                            <span>{isSubmitting ? "Saving..." : "Acknowledge Exam Scope"}</span>
-                          </button>
+                        <div className="flex items-center justify-between w-full text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          <span className="inline-flex items-center space-x-1.5 text-slate-600 dark:text-slate-400 font-medium">
+                            <Clock className="h-3.5 w-3.5 text-slate-400" />
+                            <span>Max Score: <strong className="font-bold text-slate-700 dark:text-slate-300">{ex.maxScore || 100} pts</strong></span>
+                          </span>
+                          <span className="text-slate-400 dark:text-slate-500 text-xs">Awaiting Teacher Grading</span>
                         </div>
                       )}
                     </div>
