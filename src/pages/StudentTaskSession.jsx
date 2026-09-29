@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { toast, confirmDialog } from "../context/FeedbackContext";
 import { db } from "../firebase/config";
 import { doc, getDoc, collection, addDoc, query, where, getDocs } from "firebase/firestore";
 import { formatStudentName } from "../utils/helpers";
@@ -63,13 +64,13 @@ export default function StudentTaskSession() {
           }
         }
       } else {
-        alert("Task or Quiz not found.");
+        toast.error("Task or Quiz not found.");
         navigate(user?.role === "teacher" || user?.role === "admin" ? `/class/${encodeURIComponent(classId)}` : `/student/class/${encodeURIComponent(classId)}`);
         return;
       }
     } catch (e) {
       console.error("Error loading task:", e);
-      alert("Failed to load task session: " + e.message);
+      toast.error("Failed to load task session: " + e.message);
     } finally {
       setIsLoading(false);
     }
@@ -140,13 +141,18 @@ export default function StudentTaskSession() {
         }
 
         if (isMissing) {
-          alert("Please answer all required questions before submitting.");
+          toast.warning("Please answer all required questions before submitting.");
           return;
         }
       }
     }
 
-    const confirmSubmit = window.confirm("Are you sure you want to submit your task/quiz answers?");
+    const confirmSubmit = await confirmDialog({
+      title: "Submit Assignment?",
+      message: "Are you sure you want to submit your task/quiz answers? You will not be able to edit them after submission.",
+      confirmText: "Submit",
+      type: "info"
+    });
     if (!confirmSubmit) return;
 
     setIsSubmitting(true);
@@ -219,8 +225,9 @@ export default function StudentTaskSession() {
       const docRef = await addDoc(collection(db, "task_submissions"), payload);
       setSubmission({ id: docRef.id, ...payload });
       setAlreadySubmitted(true);
+      toast.success("Assignment submitted successfully!");
     } catch (e) {
-      alert("Failed to submit task: " + e.message);
+      toast.error("Failed to submit task: " + e.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -228,7 +235,12 @@ export default function StudentTaskSession() {
 
   const handleMarkExternalTaskDone = async () => {
     if (alreadySubmitted) return;
-    const confirm = window.confirm("Mark this assignment as turned in / done?");
+    const confirm = await confirmDialog({
+      title: "Mark as Done?",
+      message: "Are you sure you want to mark this external assignment as turned in / done?",
+      confirmText: "Mark as Done",
+      type: "info"
+    });
     if (!confirm) return;
 
     setIsSubmitting(true);
@@ -250,8 +262,9 @@ export default function StudentTaskSession() {
       const docRef = await addDoc(collection(db, "task_submissions"), payload);
       setSubmission({ id: docRef.id, ...payload });
       setAlreadySubmitted(true);
+      toast.success("Assignment marked as turned in!");
     } catch (e) {
-      alert("Failed to mark task as done: " + e.message);
+      toast.error("Failed to mark task as done: " + e.message);
     } finally {
       setIsSubmitting(false);
     }

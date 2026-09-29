@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
+import { toast, confirmDialog } from "../context/FeedbackContext";
 import { formatStudentName } from "../utils/helpers";
 import { 
   Users, 
@@ -155,7 +156,13 @@ export default function TeacherRoster() {
   };
 
   const handleUnenrollStudent = async (studentId, studentName) => {
-    if (!window.confirm(`Are you sure you want to unenroll ${studentName} from your roster? This will remove them from your active view without deleting their account from the Global Master List.`)) return;
+    const confirmed = await confirmDialog({
+      title: "Unenroll Student?",
+      message: `Are you sure you want to unenroll ${studentName} from your roster? This will remove them from your active view without deleting their account from the Global Master List.`,
+      confirmText: "Unenroll",
+      type: "danger"
+    });
+    if (!confirmed) return;
 
     try {
       const studentRef = doc(db, "users", studentId);
@@ -177,8 +184,9 @@ export default function TeacherRoster() {
       // Synchronize local state immediately
       setStudentRoster(prev => prev.filter(s => s.id !== studentId));
       loadStudents();
+      toast.success(`${studentName} unenrolled from roster.`);
     } catch (err) {
-      alert("Failed to unenroll student: " + err.message);
+      toast.error("Failed to unenroll student: " + err.message);
     }
   };
 

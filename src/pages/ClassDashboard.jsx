@@ -32,6 +32,7 @@ import {
   serverTimestamp
 } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
+import { toast, confirmDialog } from "../context/FeedbackContext";
 import { formatStudentName, formatTime12Hour } from "../utils/helpers";
 import {
   ArrowLeft,
@@ -597,7 +598,13 @@ export default function ClassDashboard() {
   };
 
   const handleUnenrollStudent = async (studentId, studentName) => {
-    if (!window.confirm(`Are you sure you want to unenroll ${studentName} from this classroom? They will remain on the Global Master List.`)) return;
+    const confirmed = await confirmDialog({
+      title: "Unenroll Student?",
+      message: `Are you sure you want to unenroll ${studentName} from this classroom? They will remain on the Global Master List.`,
+      confirmText: "Unenroll",
+      type: "danger"
+    });
+    if (!confirmed) return;
 
     try {
       const studentRef = doc(db, "users", studentId);
@@ -611,8 +618,9 @@ export default function ClassDashboard() {
 
       setClassStudents(prev => prev.filter(s => (s.id !== studentId && s.uid !== studentId)));
       loadClassRoster();
+      toast.success(`${studentName} unenrolled from class.`);
     } catch (err) {
-      alert("Failed to unenroll student: " + err.message);
+      toast.error("Failed to unenroll student: " + err.message);
     }
   };
 
@@ -793,19 +801,19 @@ export default function ClassDashboard() {
 
       if (existingSessionId) {
         await updateDoc(doc(db, "sessions", existingSessionId), payload);
-        alert("Attendance Updated!");
+        toast.success("Attendance Updated!");
       } else {
         const docId = `${classId}-${attendanceDate}`;
         await setDoc(doc(db, "sessions", docId), payload);
         setExistingSessionId(docId);
-        alert("Attendance Logged!");
+        toast.success("Attendance Logged!");
       }
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
       if (activeTab === "vocabularies") loadClassHistory();
     } catch (err) {
-      alert("Failed to save attendance: " + err.message);
+      toast.error("Failed to save attendance: " + err.message);
     } finally {
       setIsSavingAttendance(false);
     }
@@ -815,9 +823,12 @@ export default function ClassDashboard() {
   const handleDeleteSession = async (sessionToDelete) => {
     if (!sessionToDelete) return;
 
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this log? This will remove the attendance record and withdraw the vocabulary assignment from the students."
-    );
+    const confirmed = await confirmDialog({
+      title: "Delete Lesson Log?",
+      message: "Are you sure you want to delete this log? This will remove the attendance record and withdraw the vocabulary assignment from students.",
+      confirmText: "Delete Log",
+      type: "danger"
+    });
     if (!confirmed) return;
 
     try {
@@ -858,8 +869,9 @@ export default function ClassDashboard() {
       // UI State Sync: Instantly remove deleted session from local state
       setClassSessionsHistory(prev => prev.filter(s => s.date !== sessionDate || s.classId !== sessionToDelete.classId));
       loadPendingVocabSubmissions();
+      toast.success("Lesson log deleted successfully.");
     } catch (err) {
-      alert("Failed to delete lesson log: " + err.message);
+      toast.error("Failed to delete lesson log: " + err.message);
     }
   };
 
@@ -1048,13 +1060,13 @@ export default function ClassDashboard() {
         gradedBy: user.id
       });
 
-      alert("Feedback & Micro-grades Updated!");
+      toast.success("Feedback & Micro-grades Updated!");
       setIsVocabModalOpen(false);
       setSelectedVocabSub(null);
       setVocabFeedbackInput("");
       setModalSentences([]);
     } catch (err) {
-      alert("Failed to save grade feedback: " + err.message);
+      toast.error("Failed to save grade feedback: " + err.message);
     } finally {
       setIsGradingVocab(false);
     }
@@ -1172,7 +1184,12 @@ export default function ClassDashboard() {
   const handleDeleteExam = async (exam) => {
     if (!exam) return;
     const examDocId = exam.firestoreId || exam.id;
-    const confirmDelete = window.confirm(`Are you sure you want to delete the exam "${exam.title}"? This action cannot be undone.`);
+    const confirmDelete = await confirmDialog({
+      title: "Delete Assessment?",
+      message: `Are you sure you want to delete the exam "${exam.title}"? This action cannot be undone.`,
+      confirmText: "Delete Exam",
+      type: "danger"
+    });
     if (!confirmDelete) return;
 
     try {
@@ -1184,9 +1201,10 @@ export default function ClassDashboard() {
 
       // 2. Delete the exam document
       await deleteDoc(doc(db, "exams", examDocId));
+      toast.success("Exam deleted successfully.");
       loadExams();
     } catch (e) {
-      alert("Failed to delete exam: " + e.message);
+      toast.error("Failed to delete exam: " + e.message);
     }
   };
 
@@ -1197,11 +1215,11 @@ export default function ClassDashboard() {
     const finalTitle = (examTitleCustom.trim() || generatedTitle).trim();
 
     if (!finalTitle) {
-      alert("Please enter a valid exam title.");
+      toast.warning("Please enter a valid exam title.");
       return;
     }
     if (!examMaxScore || Number(examMaxScore) <= 0) {
-      alert("Please enter a valid max score (greater than 0).");
+      toast.warning("Please enter a valid max score (greater than 0).");
       return;
     }
 
@@ -1246,7 +1264,7 @@ export default function ClassDashboard() {
         handleOpenInputScoresModal(savedDoc);
       }
     } catch (e) {
-      alert("Failed to save exam: " + e.message);
+      toast.error("Failed to save exam: " + e.message);
     } finally {
       setIsSavingExam(false);
     }
@@ -1298,7 +1316,7 @@ export default function ClassDashboard() {
     });
 
     if (hasExceeded) {
-      alert(`One or more students have scores exceeding the maximum of ${maxScore} points. Please adjust them before saving.`);
+      toast.warning(`One or more students have scores exceeding the maximum of ${maxScore} points.`);
       return;
     }
 
@@ -1361,9 +1379,10 @@ export default function ClassDashboard() {
       setSubjScoreInputs({});
       setExamGradeSuccessToast(true);
       setTimeout(() => setExamGradeSuccessToast(false), 3000);
+      toast.success("Exam scores saved successfully!");
       loadExams();
     } catch (e) {
-      alert("Failed to save exam scores: " + e.message);
+      toast.error("Failed to save exam scores: " + e.message);
     } finally {
       setIsSavingScores(false);
     }
@@ -1572,9 +1591,12 @@ export default function ClassDashboard() {
   const handleDeleteTask = async (taskToDelete) => {
     if (!taskToDelete) return;
 
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this task? All student submissions and grades for this task will be permanently lost."
-    );
+    const confirmed = await confirmDialog({
+      title: "Delete Task?",
+      message: "Are you sure you want to delete this task? All student submissions and grades for this task will be permanently lost.",
+      confirmText: "Delete Task",
+      type: "danger"
+    });
     if (!confirmed) return;
 
     try {
@@ -1589,12 +1611,12 @@ export default function ClassDashboard() {
       // Step B: Delete main task doc
       await deleteDoc(doc(db, "tasks", taskId));
 
-      alert("Task and associated submissions deleted successfully.");
+      toast.success("Task and associated submissions deleted successfully.");
       loadTasks();
       loadTaskSubmissions();
     } catch (e) {
       console.error("Error deleting task:", e);
-      alert("Failed to delete task: " + e.message);
+      toast.error("Failed to delete task: " + e.message);
     }
   };
 
@@ -1611,7 +1633,7 @@ export default function ClassDashboard() {
     const maxVal = Number(selectedExternalTaskSub.maxScore) || 50;
 
     if (scoreVal < 0 || scoreVal > maxVal) {
-      alert(`Please enter a score between 0 and ${maxVal}.`);
+      toast.warning(`Please enter a score between 0 and ${maxVal}.`);
       return;
     }
 
@@ -1627,8 +1649,9 @@ export default function ClassDashboard() {
       setSelectedExternalTaskSub(null);
       setExternalTaskScoreInput("");
       loadTaskSubmissions();
+      toast.success("Grade saved successfully!");
     } catch (err) {
-      alert("Failed to save grade: " + err.message);
+      toast.error("Failed to save grade: " + err.message);
     } finally {
       setIsSavingExternalTaskGrade(false);
     }
@@ -1711,8 +1734,9 @@ export default function ClassDashboard() {
       setManualQuizObjScores({});
       setManualQuizSubjScores({});
       loadTaskSubmissions();
+      toast.success("Quiz grade saved successfully!");
     } catch (err) {
-      alert("Failed to save quiz grade: " + err.message);
+      toast.error("Failed to save quiz grade: " + err.message);
     } finally {
       setIsSavingQuizGrade(false);
     }
@@ -1725,16 +1749,20 @@ export default function ClassDashboard() {
         status: "pending_review"
       });
       loadTaskSubmissions();
+      toast.success("Submission moved to pending review.");
     } catch (err) {
-      alert("Failed to move submission to pending: " + err.message);
+      toast.error("Failed to move submission to pending: " + err.message);
     }
   };
 
   const handleMoveAllGradedToPending = async (subsToMove) => {
     if (!subsToMove || subsToMove.length === 0) return;
-    const confirmed = window.confirm(
-      `Are you sure you want to move all ${subsToMove.length} submission(s) in this quarter back to Pending Submissions for review?`
-    );
+    const confirmed = await confirmDialog({
+      title: "Move to Pending?",
+      message: `Are you sure you want to move all ${subsToMove.length} submission(s) in this quarter back to Pending Submissions for review?`,
+      confirmText: "Move to Pending",
+      type: "warning"
+    });
     if (!confirmed) return;
 
     try {
@@ -1748,8 +1776,9 @@ export default function ClassDashboard() {
         })
       );
       loadTaskSubmissions();
+      toast.success(`Moved ${subsToMove.length} submission(s) to pending.`);
     } catch (err) {
-      alert("Failed to move submissions to pending: " + err.message);
+      toast.error("Failed to move submissions to pending: " + err.message);
     } finally {
       setIsTaskSubmissionsLoading(false);
     }
@@ -2006,7 +2035,7 @@ export default function ClassDashboard() {
 
   const handleExportCSV = () => {
     if (classStudents.length === 0) {
-      alert("No students enrolled to export.");
+      toast.warning("No students enrolled to export.");
       return;
     }
 
@@ -2401,13 +2430,13 @@ export default function ClassDashboard() {
   };
 
   const handlePublishTask = async () => {
-    if (!taskTitle.trim()) { alert("Please enter a task title."); return; }
-    if (!taskDueDate) { alert("Please select a due date."); return; }
+    if (!taskTitle.trim()) { toast.warning("Please enter a task title."); return; }
+    if (!taskDueDate) { toast.warning("Please select a due date."); return; }
 
     if (taskMode === "external") {
-      if (!taskExternalUrl.trim()) { alert("Please enter the external Google Form/Doc URL."); return; }
+      if (!taskExternalUrl.trim()) { toast.warning("Please enter the external Google Form/Doc URL."); return; }
     } else if (taskMode === "inApp") {
-      if (taskQuestions.length === 0) { alert("Please add at least one question to the quiz."); return; }
+      if (taskQuestions.length === 0) { toast.warning("Please add at least one question to the quiz."); return; }
     }
 
     try {
@@ -2456,9 +2485,10 @@ export default function ClassDashboard() {
         setTaskPublishSuccess(false);
         setCopiedPublishLink(false);
       }, 5000);
+      toast.success("Task published successfully!");
       loadTasks();
     } catch (e) {
-      alert("Failed to save task: " + e.message);
+      toast.error("Failed to save task: " + e.message);
     }
   };
 

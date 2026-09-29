@@ -3,6 +3,7 @@ import { auth, db, provisionUserSecondary, generateStudentAccount } from "../fir
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { useAuth } from "../context/AuthContext";
+import { toast, confirmDialog } from "../context/FeedbackContext";
 import ProfileSettingsModal from "../components/ProfileSettingsModal";
 import { formatStudentName, formatScheduleString } from "../utils/helpers";
 import { 
@@ -432,7 +433,7 @@ export default function AdminDashboard() {
 
   const handleExportAcademicReportExcel = () => {
     if (standardStudents.length === 0 && eslStudents.length === 0) {
-      alert("No academic records available to export.");
+      toast.warning("No academic records available to export.");
       return;
     }
 
@@ -645,7 +646,7 @@ export default function AdminDashboard() {
 
   const handleExportAcademicReportCSV = () => {
     if (standardStudents.length === 0 && eslStudents.length === 0) {
-      alert("No academic records available to export.");
+      toast.warning("No academic records available to export.");
       return;
     }
 
@@ -1011,7 +1012,7 @@ export default function AdminDashboard() {
       }
     } catch (err) {
       console.error("Error toggling class enrollment:", err);
-      alert("Failed to update class enrollment: " + err.message);
+      toast.error("Failed to update class enrollment: " + err.message);
     } finally {
       setIsTogglingEnrollment(false);
     }
@@ -1290,7 +1291,13 @@ export default function AdminDashboard() {
 
   // Graceful Teacher Deletion with Student Enrollment Cleanup
   const handleDeleteTeacher = async (teacherId, teacherName) => {
-    if (!window.confirm(`Are you sure you want to delete teacher ${teacherName}? This will clean up their class enrollments from student profiles without deleting student accounts.`)) return;
+    const confirmed = await confirmDialog({
+      title: "Delete Teacher?",
+      message: `Are you sure you want to delete teacher ${teacherName}? This will clean up their class enrollments from student profiles without deleting student accounts.`,
+      confirmText: "Delete Teacher",
+      type: "danger"
+    });
+    if (!confirmed) return;
 
     try {
       const qStuds = query(collection(db, "users"), where("role", "==", "student"));
@@ -1317,15 +1324,22 @@ export default function AdminDashboard() {
 
       await Promise.all(updatePromises);
       await deleteDoc(doc(db, "users", teacherId));
+      toast.success(`Teacher ${teacherName} deleted and student enrollments cleaned up.`);
       loadData();
     } catch (err) {
-      alert("Failed to delete teacher and clean up student enrollments: " + err.message);
+      toast.error("Failed to delete teacher and clean up student enrollments: " + err.message);
     }
   };
 
   // Admin Permanent Student Deletion (with Cascading Submission Cleanup)
   const handleDeleteStudent = async (studentId, studentName) => {
-    if (!window.confirm(`Are you sure you want to PERMANENTLY delete student ${studentName || 'this student'}? This will remove their record and all their submissions from the database.`)) return;
+    const confirmed = await confirmDialog({
+      title: "Delete Student Permanently?",
+      message: `Are you sure you want to PERMANENTLY delete student ${studentName || 'this student'}? This will remove their record and all their submissions from the database.`,
+      confirmText: "Delete Permanently",
+      type: "danger"
+    });
+    if (!confirmed) return;
 
     try {
       await deleteDoc(doc(db, "users", studentId));
@@ -1337,15 +1351,22 @@ export default function AdminDashboard() {
       const vocabDeletes = vocabSnap.docs.map(v => deleteDoc(v.ref));
 
       await Promise.all([...diaryDeletes, ...vocabDeletes]);
+      toast.success(`Student ${studentName || ''} deleted successfully.`);
       loadData();
     } catch (err) {
-      alert("Failed to delete student document: " + err.message);
+      toast.error("Failed to delete student document: " + err.message);
     }
   };
 
   // Clean up ghost submissions left over from deleted or unassigned students
   const handleCleanGhostSubmissions = async () => {
-    if (!window.confirm("Clean up ghost submissions from deleted or unassigned student accounts?")) return;
+    const confirmed = await confirmDialog({
+      title: "Clean Up Ghost Submissions?",
+      message: "Clean up ghost submissions from deleted or unassigned student accounts?",
+      confirmText: "Clean Up",
+      type: "warning"
+    });
+    if (!confirmed) return;
 
     try {
       const activeStudentIds = new Set(students.map(s => s.id));
@@ -1371,9 +1392,9 @@ export default function AdminDashboard() {
       ];
 
       await Promise.all(purgePromises);
-      alert(`Cleaned up ${purgePromises.length} ghost submission(s)!`);
+      toast.success(`Cleaned up ${purgePromises.length} ghost submission(s)!`);
     } catch (err) {
-      alert("Failed to clean up ghost submissions: " + err.message);
+      toast.error("Failed to clean up ghost submissions: " + err.message);
     }
   };
 
@@ -2207,7 +2228,7 @@ export default function AdminDashboard() {
   const handleCopyDeficiencyNotice = () => {
     const allDefs = [...standardDeficiencies, ...eslDeficiencies];
     if (allDefs.length === 0) {
-      alert("All students currently have 100% complete scores for this category!");
+      toast.info("All students currently have 100% complete scores for this category!");
       return;
     }
 
@@ -2240,9 +2261,10 @@ export default function AdminDashboard() {
     navigator.clipboard.writeText(text).then(() => {
       setIsDeficiencyCopied(true);
       setTimeout(() => setIsDeficiencyCopied(false), 3500);
+      toast.success("Deficiency notice copied to clipboard!");
     }).catch(err => {
       console.error("Clipboard error:", err);
-      alert("Failed to copy to clipboard.");
+      toast.error("Failed to copy to clipboard.");
     });
   };
 
@@ -2250,7 +2272,7 @@ export default function AdminDashboard() {
   const handleExportDeficienciesExcel = () => {
     const allDefs = [...standardDeficiencies, ...eslDeficiencies];
     if (allDefs.length === 0) {
-      alert("No students with missing scores to export!");
+      toast.warning("No students with missing scores to export!");
       return;
     }
 
@@ -2448,11 +2470,12 @@ export default function AdminDashboard() {
     try {
       await sendPasswordResetEmail(auth, teacherEmail);
       setResetToastEmail(teacherEmail);
+      toast.success(`Password reset email sent to ${teacherEmail}!`);
       setTimeout(() => {
         setResetToastEmail("");
       }, 4000);
     } catch (err) {
-      alert("Failed to send reset email: " + err.message);
+      toast.error("Failed to send reset email: " + err.message);
     }
   };
 
@@ -4057,7 +4080,7 @@ export default function AdminDashboard() {
                   navigator.clipboard.writeText(
                     `Students pending scores for ${complianceDrilldownClass.subject} (${complianceDrilldownClass.grade} - Teacher ${complianceDrilldownClass.teacherName}):\n${names}`
                   );
-                  alert("Pending students list copied to clipboard!");
+                  toast.success("Pending students list copied to clipboard!");
                 }}
                 className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
               >

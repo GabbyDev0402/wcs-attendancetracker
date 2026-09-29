@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { toast, confirmDialog } from "../context/FeedbackContext";
 import { db } from "../firebase/config";
 import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
 import { formatStudentName } from "../utils/helpers";
@@ -296,8 +297,9 @@ export default function StudentClassDashboard() {
         ...prev,
         [taskId]: { firestoreId: docRef.id, ...payload }
       }));
+      toast.success("Assignment marked as completed!");
     } catch (e) {
-      alert("Failed to mark task as done: " + e.message);
+      toast.error("Failed to mark task as done: " + e.message);
     } finally {
       setIsMarkingDone(prev => ({ ...prev, [taskId]: false }));
     }
@@ -325,7 +327,7 @@ export default function StudentClassDashboard() {
     const sessionInputState = vocabInputs[sessionKey] || {};
 
     if (sessionDate < todayStr) {
-      alert("Submission locked: The deadline for this assignment has passed.");
+      toast.error("Submission locked: The deadline for this assignment has passed.");
       return;
     }
 
@@ -346,7 +348,7 @@ export default function StudentClassDashboard() {
 
     const isAnyEmpty = sentencesArray.some(s => !s.sentence);
     if (isAnyEmpty) {
-      alert("Please write a complete sentence for every assigned vocabulary word before submitting.");
+      toast.warning("Please write a complete sentence for every assigned vocabulary word before submitting.");
       return;
     }
 
@@ -382,15 +384,23 @@ export default function StudentClassDashboard() {
       setTimeout(() => {
         setVocabSuccessMsg((prev) => ({ ...prev, [sessionKey]: "" }));
       }, 3000);
+      toast.success("Vocabulary sentences submitted!");
     } catch (e) {
-      alert("Failed to submit vocabulary sentences: " + e.message);
+      toast.error("Failed to submit vocabulary sentences: " + e.message);
     } finally {
       setIsSubmittingVocab((prev) => ({ ...prev, [sessionKey]: false, [classId]: false }));
     }
   };
 
   const handleUnsubmitVocab = async (session, submissionData) => {
-    if (!window.confirm("Are you sure you want to unsubmit? You can edit and submit again.")) return;
+    const confirmed = await confirmDialog({
+      title: "Unsubmit Homework?",
+      message: "Are you sure you want to unsubmit? You can edit and submit again.",
+      confirmText: "Unsubmit",
+      type: "warning"
+    });
+    if (!confirmed) return;
+
     try {
       const classId = session.classId;
       const sessionDate = session.date || todayStr;
@@ -406,8 +416,9 @@ export default function StudentClassDashboard() {
         return next;
       });
       setVocabInputs(prev => ({ ...prev, [sessionKey]: submissionData.sentences, [classId]: submissionData.sentences }));
+      toast.success("Assignment unsubmitted. You can now edit and resubmit.");
     } catch (e) {
-      alert("Failed to unsubmit: " + e.message);
+      toast.error("Failed to unsubmit: " + e.message);
     }
   };
 

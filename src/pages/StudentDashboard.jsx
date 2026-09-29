@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { toast, confirmDialog } from "../context/FeedbackContext";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { formatStudentName } from "../utils/helpers";
@@ -278,8 +279,9 @@ export default function StudentDashboard() {
       setTodayDiary(payload);
       setDiarySuccessMsg("Diary submitted successfully!");
       setTimeout(() => setDiarySuccessMsg(""), 3000);
+      toast.success("Diary submitted successfully!");
     } catch (e) {
-      alert("Failed to submit diary: " + e.message);
+      toast.error("Failed to submit diary: " + e.message);
     } finally {
       setIsSubmittingDiary(false);
     }
@@ -287,13 +289,21 @@ export default function StudentDashboard() {
 
   // Handle Unsubmit Daily Diary
   const handleUnsubmitDiary = async () => {
-    if (!window.confirm("Are you sure you want to unsubmit your diary? You can edit and submit it again.")) return;
+    const confirmed = await confirmDialog({
+      title: "Unsubmit Diary?",
+      message: "Are you sure you want to unsubmit your diary? You can edit and submit it again.",
+      confirmText: "Unsubmit",
+      type: "warning"
+    });
+    if (!confirmed) return;
+
     try {
       const docId = `${user.id}-${todayStr}`;
       await deleteDoc(doc(db, "diaries", docId));
       setTodayDiary(null);
+      toast.success("Diary unsubmitted. You can now edit and resubmit.");
     } catch (e) {
-      alert("Failed to unsubmit diary: " + e.message);
+      toast.error("Failed to unsubmit diary: " + e.message);
     }
   };
 

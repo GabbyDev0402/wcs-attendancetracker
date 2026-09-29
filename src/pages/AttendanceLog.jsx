@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
+import { toast } from "../context/FeedbackContext";
 import { formatStudentName, formatScheduleString } from "../utils/helpers";
 import { 
   ArrowLeft, 
@@ -330,12 +331,12 @@ export default function AttendanceLog() {
 
       if (existingSessionId) {
         await updateDoc(doc(db, "sessions", existingSessionId), payload);
-        alert("Attendance Updated!");
+        toast.success("Attendance Updated!");
       } else {
         const docId = `${selectedClassId}-${date}`;
         await setDoc(doc(db, "sessions", docId), payload);
         setExistingSessionId(docId);
-        alert("Attendance Logged!");
+        toast.success("Attendance Logged!");
       }
 
       setSaveSuccess(true);
@@ -343,7 +344,7 @@ export default function AttendanceLog() {
         setSaveSuccess(false);
       }, 3000);
     } catch (err) {
-      alert("Failed to save attendance: " + err.message);
+      toast.error("Failed to save attendance: " + err.message);
     } finally {
       setIsSavingAttendance(false);
     }

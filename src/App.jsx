@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { FeedbackProvider } from './context/FeedbackContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import TeacherDashboard from './pages/TeacherDashboard';
@@ -90,76 +91,78 @@ function WildcardRedirect() {
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public Auth Route */}
-          <Route 
-            path="/login" 
-            element={
-              <PublicRoute>
-                <Login />
-              </PublicRoute>
-            } 
-          />
+      <FeedbackProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Public Auth Route */}
+            <Route 
+              path="/login" 
+              element={
+                <PublicRoute>
+                  <Login />
+                </PublicRoute>
+              } 
+            />
 
-          {/* Protected Admin Routes */}
-          <Route 
-            path="/admin" 
-            element={
-              <ProtectedRoute allowedRoles={['admin']}>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<AdminDashboard />} />
-          </Route>
+            {/* Protected Admin Routes */}
+            <Route 
+              path="/admin" 
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <Layout />
+                </ProtectedRoute>
+              } 
+            >
+              <Route index element={<AdminDashboard />} />
+            </Route>
 
-          {/* Protected Student Routes */}
-          <Route 
-            path="/student" 
-            element={
-              <ProtectedRoute allowedRoles={['student']}>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<StudentDashboard />} />
-            <Route path="class/:classId" element={<StudentClassDashboard />} />
-            <Route path="class/:classId/history" element={<StudentVocabHistory />} />
-            <Route path="class/:classId/tasks-history" element={<StudentTaskHistory />} />
-            <Route path="class/:classId/task-history" element={<StudentTaskHistory />} />
-            <Route path="class/:classId/exam/:examId" element={<StudentExamSession />} />
-            <Route path="class/:classId/task/:taskId" element={<StudentTaskSession />} />
-          </Route>
+            {/* Protected Student Routes */}
+            <Route 
+              path="/student" 
+              element={
+                <ProtectedRoute allowedRoles={['student']}>
+                  <Layout />
+                </ProtectedRoute>
+              } 
+            >
+              <Route index element={<StudentDashboard />} />
+              <Route path="class/:classId" element={<StudentClassDashboard />} />
+              <Route path="class/:classId/history" element={<StudentVocabHistory />} />
+              <Route path="class/:classId/tasks-history" element={<StudentTaskHistory />} />
+              <Route path="class/:classId/task-history" element={<StudentTaskHistory />} />
+              <Route path="class/:classId/exam/:examId" element={<StudentExamSession />} />
+              <Route path="class/:classId/task/:taskId" element={<StudentTaskSession />} />
+            </Route>
 
-          {/* Protected Teacher Dashboard Routes */}
-          <Route 
-            path="/teacher" 
-            element={
-              <ProtectedRoute allowedRoles={['teacher']}>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            {/* Overview dashboard */}
-            <Route index element={<TeacherDashboard />} />
+            {/* Protected Teacher Dashboard Routes */}
+            <Route 
+              path="/teacher" 
+              element={
+                <ProtectedRoute allowedRoles={['teacher']}>
+                  <Layout />
+                </ProtectedRoute>
+              } 
+            >
+              {/* Overview dashboard */}
+              <Route index element={<TeacherDashboard />} />
 
-            {/* Google Classroom Portal dynamic route */}
-            <Route path="class/:classId" element={<ClassDashboard />} />
-            
-            {/* Weekly lesson reports (Primary & Aliases) */}
-            <Route path="lesson-reports" element={<WeeklyLessonReport />} />
-            <Route path="lessons" element={<WeeklyLessonReport />} />
-            <Route path="lesson-report" element={<WeeklyLessonReport />} />
-            
-            {/* Monthly reports */}
-            <Route path="reports" element={<MonthlyReports />} />
-          </Route>
+              {/* Google Classroom Portal dynamic route */}
+              <Route path="class/:classId" element={<ClassDashboard />} />
+              
+              {/* Weekly lesson reports (Primary & Aliases) */}
+              <Route path="lesson-reports" element={<WeeklyLessonReport />} />
+              <Route path="lessons" element={<WeeklyLessonReport />} />
+              <Route path="lesson-report" element={<WeeklyLessonReport />} />
+              
+              {/* Monthly reports */}
+              <Route path="reports" element={<MonthlyReports />} />
+            </Route>
 
-          {/* Wildcard Fallback */}
-          <Route path="*" element={<WildcardRedirect />} />
-        </Routes>
-      </BrowserRouter>
+            {/* Wildcard Fallback */}
+            <Route path="*" element={<WildcardRedirect />} />
+          </Routes>
+        </BrowserRouter>
+      </FeedbackProvider>
     </AuthProvider>
   );
 }

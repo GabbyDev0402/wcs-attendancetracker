@@ -18,6 +18,7 @@ import {
   X
 } from "lucide-react";
 import { computeTaskPages } from "../utils/helpers";
+import { toast } from "../context/FeedbackContext";
 
 export default function TaskStudentView({
   task,
@@ -177,7 +178,7 @@ export default function TaskStudentView({
           }
         }
       });
-      alert(`[Teacher Preview Mode]\n\nTask simulation complete!\nObjective auto-scored: ${objScore} / ${totalPoints} points.\n\nIn real student mode, this will auto-score objective questions and submit to your Classroom Grading Queue.`);
+      toast.info(`[Teacher Preview Mode] Task simulation complete! Objective auto-scored: ${objScore} / ${totalPoints} points. In live student mode, this auto-submits to the Classroom Grading Queue.`, 6000);
       return;
     }
 

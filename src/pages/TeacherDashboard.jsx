@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
+import { toast } from "../context/FeedbackContext";
 import { formatStudentName, formatTime12Hour, formatScheduleString } from "../utils/helpers";
 import {
   Users,
@@ -250,12 +251,12 @@ export default function TeacherDashboard() {
         feedback: diaryFeedbackText.trim()
       });
 
-      alert("Feedback Updated!");
+      toast.success("Feedback Updated!");
       setIsDiaryModalOpen(false);
       setSelectedDiary(null);
       setDiaryFeedbackText("");
     } catch (err) {
-      alert("Failed to grade diary: " + err.message);
+      toast.error("Failed to grade diary: " + err.message);
     } finally {
       setIsGradingDiary(false);
     }

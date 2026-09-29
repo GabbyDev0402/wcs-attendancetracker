@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { toast, confirmDialog } from "../context/FeedbackContext";
 import { db } from "../firebase/config";
 import { doc, getDoc, collection, addDoc, serverTimestamp, query, where, getDocs } from "firebase/firestore";
 import { formatStudentName } from "../utils/helpers";
@@ -65,12 +66,12 @@ export default function StudentExamSession() {
         const limitMins = Number(data.timeLimit) || 30;
         setTimeLeft(limitMins * 60);
       } else {
-        alert("Exam not found.");
+        toast.error("Exam not found.");
         navigate(`/student/class/${encodeURIComponent(classId)}`);
       }
     } catch (e) {
       console.error("Error loading exam:", e);
-      alert("Failed to load exam session: " + e.message);
+      toast.error("Failed to load exam session: " + e.message);
     } finally {
       setIsLoading(false);
     }
@@ -82,7 +83,7 @@ export default function StudentExamSession() {
 
     if (timeLeft <= 0) {
       // Auto-submit when time expires
-      alert("⏰ Time is up! Your exam is being automatically submitted.");
+      toast.warning("⏰ Time is up! Your exam is being automatically submitted.");
       handleSubmitExam(true);
       return;
     }
@@ -168,13 +169,18 @@ export default function StudentExamSession() {
           }
 
           if (isMissing) {
-            alert("Please answer all required questions before submitting.");
+            toast.warning("Please answer all required questions before submitting.");
             return;
           }
         }
       }
 
-      const confirmSubmit = window.confirm("Are you sure you want to submit your exam answers?");
+      const confirmSubmit = await confirmDialog({
+        title: "Submit Exam?",
+        message: "Are you sure you want to submit your exam answers? You will not be able to change them after submission.",
+        confirmText: "Submit Exam",
+        type: "info"
+      });
       if (!confirmSubmit) return;
     }
 
@@ -251,16 +257,16 @@ export default function StudentExamSession() {
 
       await addDoc(collection(db, "exam_submissions"), payload);
 
-      alert(
-        finalStatus === "Graded"
-          ? `🎉 Exam Submitted & Auto-Graded!\nYour Score: ${objScore} / ${totalExamPoints} pts`
-          : `✅ Exam Submitted Successfully!\nMultiple Choice Score: ${objScore} / ${maxObjPoints} pts.\nEssay/Vocabulary/Project link questions are pending teacher review.`
-      );
+      if (finalStatus === "Graded") {
+        toast.success(`🎉 Exam Submitted! Score: ${objScore} / ${totalExamPoints} pts`);
+      } else {
+        toast.success(`✅ Exam Submitted! Objective Score: ${objScore} / ${maxObjPoints} pts.`);
+      }
 
       navigate(`/student/class/${encodeURIComponent(classId)}`);
     } catch (e) {
       console.error("Submission error:", e);
-      alert("Failed to submit exam: " + e.message);
+      toast.error("Failed to submit exam: " + e.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -317,8 +323,14 @@ export default function StudentExamSession() {
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center space-x-3">
             <button
-              onClick={() => {
-                if (window.confirm("Are you sure you want to leave? Your answers will not be saved!")) {
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: "Leave Exam?",
+                  message: "Are you sure you want to leave? Your answers will not be saved!",
+                  confirmText: "Leave Exam",
+                  type: "danger"
+                });
+                if (ok) {
                   navigate(`/student/class/${encodeURIComponent(classId)}`);
                 }
               }}
