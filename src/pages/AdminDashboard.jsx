@@ -90,14 +90,14 @@ const createDefaultAssignment = () => ({
 // Canonical School Curriculum Subjects & Aliases
 const CANONICAL_SUBJECTS = [
   {
-    name: "Math",
+    name: "English",
     order: 1,
-    keywords: ["math", "mathematics", "algebra", "calculus", "geometry", "statistics", "trigonometry", "numeracy", "lifepac math", "general math", "basic calculus", "pre-calculus"]
+    keywords: ["english", "language arts", "writing", "communication arts", "laos english"]
   },
   {
-    name: "English",
+    name: "Social Science",
     order: 2,
-    keywords: ["english", "language arts", "writing", "communication arts", "laos english"]
+    keywords: ["social science", "social studies", "social", "history", "araling panlipunan", "ap", "geography", "civics", "economics", "diss", "diass", "philippine history", "world history", "asian studies", "kasaysayan", "philippine politics", "ucsp"]
   },
   {
     name: "Science",
@@ -105,9 +105,9 @@ const CANONICAL_SUBJECTS = [
     keywords: ["science", "biology", "physics", "chemistry", "earth science", "general science", "astronomy", "integrated science", "physical science", "earth and life science"]
   },
   {
-    name: "Social Science",
+    name: "Math",
     order: 4,
-    keywords: ["social science", "social studies", "social", "history", "araling panlipunan", "ap", "geography", "civics", "economics", "diss", "diass", "philippine history", "world history", "asian studies", "kasaysayan", "philippine politics", "ucsp"]
+    keywords: ["math", "mathematics", "algebra", "calculus", "geometry", "statistics", "trigonometry", "numeracy", "lifepac math", "general math", "basic calculus", "pre-calculus"]
   },
   {
     name: "Reading",
@@ -1495,27 +1495,34 @@ export default function AdminDashboard() {
       return trimmed;
     }
 
-    // 1. Exam Title Inspection (Scan Canonical subjects in Title FIRST to prevent classroom subject shadowing)
+    // 1. Direct explicit subject property from exam or submission (Highest Metadata Priority)
+    const rawSubj = exam?.subject || sub?.subject;
+    if (rawSubj && typeof rawSubj === "string" && rawSubj.trim()) {
+      const trimmed = rawSubj.trim();
+      const canonicalMatch = CANONICAL_SUBJECTS.find(cs => 
+        cs.name.toLowerCase() === trimmed.toLowerCase() || 
+        cs.keywords.some(kw => {
+          const kwRegex = new RegExp(`\\b${kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
+          return kwRegex.test(trimmed);
+        })
+      );
+      if (canonicalMatch) return canonicalMatch.name;
+      return trimmed;
+    }
+
+    // 2. Exam Title Inspection
     const examTitle = (exam?.title || sub?.examTitle || "").toLowerCase();
     for (const cs of CANONICAL_SUBJECTS) {
+      // Disambiguation: Never match pure "Science" if title indicates "Social Science", "TLE", or "Araling Panlipunan"
+      if (cs.name === "Science" && (examTitle.includes("social") || examTitle.includes("tle") || examTitle.includes("ap") || examTitle.includes("history"))) {
+        continue;
+      }
       if (cs.keywords.some(kw => {
         const regex = new RegExp(`\\b${kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b|\\(${kw}\\)`, 'i');
         return regex.test(examTitle) || examTitle.includes(kw);
       })) {
         return cs.name;
       }
-    }
-
-    // 2. Direct explicit subject property
-    const rawSubj = exam?.subject || sub?.subject;
-    if (rawSubj && typeof rawSubj === "string" && rawSubj.trim()) {
-      const trimmed = rawSubj.trim();
-      const canonicalMatch = CANONICAL_SUBJECTS.find(cs => 
-        cs.name.toLowerCase() === trimmed.toLowerCase() || 
-        cs.keywords.some(kw => trimmed.toLowerCase().includes(kw))
-      );
-      if (canonicalMatch) return canonicalMatch.name;
-      return trimmed;
     }
 
     // 3. Search Canonical Subjects in Classroom Slug & Teacher Assignments
@@ -1534,6 +1541,10 @@ export default function AdminDashboard() {
 
     const classroomText = `${cleanSlug} ${teacherAsgsText}`;
     for (const cs of CANONICAL_SUBJECTS) {
+      // Disambiguation: Never match pure "Science" if classroom indicates "Social Science" or "TLE"
+      if (cs.name === "Science" && (classroomText.includes("social") || classroomText.includes("tle") || classroomText.includes("ap") || classroomText.includes("history"))) {
+        continue;
+      }
       if (cs.keywords.some(kw => {
         const regex = new RegExp(`\\b${kw.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}\\b`, 'i');
         return regex.test(classroomText) || classroomText.includes(kw);
@@ -1568,7 +1579,7 @@ export default function AdminDashboard() {
     if (s === k) return true;
 
     if (k === "mapeh" || k.includes("pe") || k.includes("physical education")) {
-      return s.includes("mapeh") || s.includes("pe & health") || s.includes("pe and health") || s.includes("physical education") || s.includes("hope") || s.includes("music") || s.includes("arts") || s.includes("pe 1") || s.includes("pe 3") || s === "pe";
+      return (s.includes("mapeh") || s.includes("pe & health") || s.includes("pe and health") || s.includes("physical education") || s.includes("hope") || s.includes("music") || s.includes("arts") || s.includes("pe 1") || s.includes("pe 3") || s === "pe") && !s.includes("math");
     }
     if (k === "values" || k.includes("diss") || k.includes("diass") || k.includes("applied social")) {
       return s.includes("values") || s.includes("esp") || s.includes("edukasyon sa pagpapakatao") || s.includes("discipline ideas in social") || s.includes("disciplines & ideas in the applied") || s.includes("applied social") || s.includes("diss") || s.includes("diass") || s.includes("character") || s.includes("ethics") || s.includes("moral") || s.includes("clve");
@@ -1586,7 +1597,7 @@ export default function AdminDashboard() {
       return (s.includes("social") || s.includes("history") || s.includes("araling panlipunan") || s.includes("ap") || s.includes("kasaysayan") || s.includes("civics") || s.includes("economics") || s.includes("ucsp")) && !s.includes("values") && !s.includes("discipline ideas in social") && !s.includes("applied social");
     }
     if (k === "science") {
-      return (s.includes("science") || s.includes("biology") || s.includes("physics") || s.includes("chemistry") || s.includes("earth science")) && !s.includes("social") && !s.includes("tle");
+      return (s.includes("science") || s.includes("biology") || s.includes("physics") || s.includes("chemistry") || s.includes("earth science")) && !s.includes("social") && !s.includes("tle") && !s.includes("ap") && !s.includes("history");
     }
     if (k === "math") {
       return (s.includes("math") || s.includes("algebra") || s.includes("geometry") || s.includes("calculus") || s.includes("statistics") || s.includes("trigonometry")) && !s.includes("mapeh") && !s.includes("pe");
@@ -1612,30 +1623,63 @@ export default function AdminDashboard() {
     if (!targetSubject) return false;
     const ts = targetSubject.toLowerCase().trim();
 
+    const rawSubj = (exam?.subject || sub?.subject || "").toLowerCase().trim();
+    const spec = (exam?.specificSubject || sub?.specificSubject || "").toLowerCase().trim();
+    const rawClassId = (exam?.classId || sub?.classId || "").toLowerCase();
+    const slug = rawClassId.includes("_") ? rawClassId.split("_").slice(1).join("_") : rawClassId;
+    const cleanSlug = slug.replace(/[^a-z0-9]/g, " ");
+    const title = (exam?.title || sub?.examTitle || sub?.title || "").toLowerCase();
+    const allContext = `${rawSubj} ${spec} ${cleanSlug} ${title}`;
+
+    // Disambiguation Guard 1: Pure Science vs Social Science & TLE
+    if (ts === "science" || ts === "sci") {
+      if (allContext.includes("social") || allContext.includes("ap") || allContext.includes("history") || allContext.includes("araling") || allContext.includes("tle") || allContext.includes("technology")) {
+        return false;
+      }
+    }
+
+    // Disambiguation Guard 2: Social Science vs Pure Science & Values
+    if (ts === "social science" || ts === "social studies" || ts === "social") {
+      if (!allContext.includes("social") && !allContext.includes("history") && !allContext.includes("araling") && !allContext.includes("ap") && !allContext.includes("kasaysayan") && !allContext.includes("civics") && !allContext.includes("economics") && !allContext.includes("ucsp")) {
+        return false;
+      }
+      if (allContext.includes("values") || allContext.includes("esp") || allContext.includes("edukasyon sa pagpapakatao") || allContext.includes("clve")) {
+        return false;
+      }
+    }
+
+    // Disambiguation Guard 3: English vs Literature
+    if (ts === "english") {
+      if (allContext.includes("literature") || allContext.includes("21st century") || allContext.includes("contemporary arts") || allContext.includes("philippine politics")) {
+        return false;
+      }
+    }
+
+    // Disambiguation Guard 4: Math vs MAPEH
+    if (ts === "math" || ts === "mathematics") {
+      if (allContext.includes("mapeh") || allContext.includes("music") || allContext.includes("arts") || allContext.includes("pe") || allContext.includes("health")) {
+        return false;
+      }
+    }
+
     // Priority 1: Direct subject property on exam doc or submission (e.g. from dedicated class)
-    const rawSubj = (exam?.subject || sub?.subject || "").trim();
     if (rawSubj) {
-      if (rawSubj.toLowerCase() === ts) return true;
+      if (rawSubj === ts) return true;
       if (isSubjectMatchingSlot(rawSubj, targetSubject)) return true;
     }
 
     // Priority 2: Exact specificSubject property on exam doc or submission
-    const spec = (exam?.specificSubject || sub?.specificSubject || "").trim();
     if (spec) {
-      if (spec.toLowerCase() === ts) return true;
+      if (spec === ts) return true;
       if (isSubjectMatchingSlot(spec, targetSubject)) return true;
     }
 
     // Priority 3: Classroom slug from classId
-    const rawClassId = (exam?.classId || sub?.classId || "").toLowerCase();
-    const slug = rawClassId.includes("_") ? rawClassId.split("_").slice(1).join("_") : rawClassId;
-    if (slug) {
-      const cleanSlug = slug.replace(/[^a-z0-9]/g, " ");
+    if (cleanSlug) {
       if (isSubjectMatchingSlot(cleanSlug, targetSubject)) return true;
     }
 
     // Priority 4: Title keywords
-    const title = (exam?.title || sub?.examTitle || "").toLowerCase();
     if (title) {
       if (isSubjectMatchingSlot(title, targetSubject)) return true;
     }
@@ -1711,12 +1755,7 @@ export default function AdminDashboard() {
       if (!matchExamGrade(ex, gradeLevel)) return false;
       const isCore = isExamMatchingSubject(ex, null, pillar.core);
       const isAdded = isExamMatchingSubject(ex, null, effectiveAddedSubject) || isExamMatchingSubject(ex, null, pillar.added);
-      
-      const classIdSlug = (ex.classId || "").toLowerCase();
-      const inCoreClass = classIdSlug.includes(pillar.core.toLowerCase().replace(/\s+/g, '-')) || 
-                          classIdSlug.includes(pillar.core.toLowerCase().replace(/\s+/g, ''));
-
-      return isCore || isAdded || inCoreClass;
+      return isCore || isAdded;
     });
 
     let coreExam = null;
@@ -1727,14 +1766,10 @@ export default function AdminDashboard() {
       const explicitCore = candidateExams.find(e => {
         const rawSubj = (e.subject || "").trim();
         const spec = (e.specificSubject || "").toLowerCase().trim();
-        const cId = (e.classId || "").toLowerCase();
         const coreLower = pillar.core.toLowerCase();
 
         if (rawSubj && rawSubj.toLowerCase() === coreLower) return true;
         if (spec === coreLower) return true;
-        if (cId.includes(coreLower.replace(/\s+/g, '-')) && !isExamMatchingSubject(e, null, effectiveAddedSubject) && !isExamMatchingSubject(e, null, pillar.added)) {
-          return true;
-        }
         return isExamMatchingSubject(e, null, pillar.core) && !isExamMatchingSubject(e, null, effectiveAddedSubject) && !isExamMatchingSubject(e, null, pillar.added);
       });
 
@@ -1754,24 +1789,35 @@ export default function AdminDashboard() {
         addedExam = explicitAdded;
       } else if (explicitCore && !explicitAdded) {
         coreExam = explicitCore;
-        addedExam = candidateExams.find(e => (e.firestoreId || e.id) !== (coreExam.firestoreId || coreExam.id));
+        const other = candidateExams.find(e => (e.firestoreId || e.id) !== (coreExam.firestoreId || coreExam.id));
+        if (other && (isExamMatchingSubject(other, null, effectiveAddedSubject) || isExamMatchingSubject(other, null, pillar.added))) {
+          addedExam = other;
+        }
       } else if (!explicitCore && explicitAdded) {
         addedExam = explicitAdded;
-        coreExam = candidateExams.find(e => (e.firestoreId || e.id) !== (addedExam.firestoreId || addedExam.id));
+        const other = candidateExams.find(e => (e.firestoreId || e.id) !== (addedExam.firestoreId || addedExam.id));
+        if (other && isExamMatchingSubject(other, null, pillar.core)) {
+          coreExam = other;
+        }
       } else {
-        // 2. Flexible Dynamic Ceilings: Sort by maxScore descending (Higher maxScore = Core, Lower maxScore = Added)
-        const sortedByScore = [...candidateExams].sort((a, b) => (Number(b.maxScore) || 0) - (Number(a.maxScore) || 0));
-        coreExam = sortedByScore[0];
-        addedExam = sortedByScore[1];
+        const coreMatch = candidateExams.find(e => isExamMatchingSubject(e, null, pillar.core));
+        const addedMatch = candidateExams.find(e => (isExamMatchingSubject(e, null, effectiveAddedSubject) || isExamMatchingSubject(e, null, pillar.added)) && (e.firestoreId || e.id) !== (coreMatch?.firestoreId || coreMatch?.id));
+        coreExam = coreMatch || null;
+        addedExam = addedMatch || null;
       }
     } else if (candidateExams.length === 1) {
       const single = candidateExams[0];
+      const isExplicitCore = isExamMatchingSubject(single, null, pillar.core);
       const isExplicitAdded = isExamMatchingSubject(single, null, effectiveAddedSubject) || isExamMatchingSubject(single, null, pillar.added);
 
-      if (isExplicitAdded) {
-        addedExam = single;
-      } else {
+      if (isExplicitCore && !isExplicitAdded) {
         coreExam = single;
+      } else if (isExplicitAdded && !isExplicitCore) {
+        addedExam = single;
+      } else if (isExplicitCore) {
+        coreExam = single;
+      } else if (isExplicitAdded) {
+        addedExam = single;
       }
     }
 
