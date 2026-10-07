@@ -1245,6 +1245,26 @@ export default function ClassDashboard() {
         const examDocId = editingExam.firestoreId || editingExam.id;
         await updateDoc(doc(db, "exams", examDocId), payload);
         savedDoc = { firestoreId: examDocId, id: examDocId, ...payload };
+
+        // Cascade update existing submissions for this exam to keep category, quarter, title, maxScore in sync
+        try {
+          const subsQ = query(collection(db, "exam_submissions"), where("examId", "==", examDocId));
+          const subsSnap = await getDocs(subsQ);
+          if (!subsSnap.empty) {
+            const updatePromises = subsSnap.docs.map(d =>
+              updateDoc(doc(db, "exam_submissions", d.id), {
+                quarter: examQuarter,
+                category: examCategory,
+                examTitle: finalTitle,
+                maxScore: Number(examMaxScore) || 50,
+                updatedAt: serverTimestamp()
+              })
+            );
+            await Promise.all(updatePromises);
+          }
+        } catch (subErr) {
+          console.warn("Could not cascade update submissions:", subErr);
+        }
       } else {
         const docRef = await addDoc(collection(db, "exams"), {
           ...payload,
@@ -5839,10 +5859,15 @@ export default function ClassDashboard() {
                   onChange={(e) => {
                     const newCat = e.target.value;
                     setExamCategory(newCat);
-                    if (newCat.includes("1st")) setExamQuarter("1st Quarter");
-                    else if (newCat.includes("2nd")) setExamQuarter("2nd Quarter");
-                    else if (newCat.includes("3rd")) setExamQuarter("3rd Quarter");
-                    else if (newCat.includes("4th")) setExamQuarter("4th Quarter");
+                    if (newCat === "1st Monthly Exam" || newCat === "2nd Monthly Exam" || newCat === "1st Quarterly Exam") {
+                      setExamQuarter("1st Quarter");
+                    } else if (newCat === "3rd Monthly Exam" || newCat === "4th Monthly Exam" || newCat === "2nd Quarterly Exam") {
+                      setExamQuarter("2nd Quarter");
+                    } else if (newCat === "5th Monthly Exam" || newCat === "6th Monthly Exam" || newCat === "3rd Quarterly Exam") {
+                      setExamQuarter("3rd Quarter");
+                    } else if (newCat === "7th Monthly Exam" || newCat === "8th Monthly Exam" || newCat === "4th Quarterly Exam") {
+                      setExamQuarter("4th Quarter");
+                    }
                   }}
                   className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                 >
