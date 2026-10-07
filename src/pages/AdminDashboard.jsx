@@ -355,8 +355,8 @@ const ESL_ADDED_SUBJECTS = [
     printText: "#713f12"
   },
   {
-    key: "TLE",
-    label: "TLE",
+    key: "Literature",
+    label: "LITERATURE",
     headerBg: "bg-[#f3e8ff] text-[#581c87] border-[#e9d5ff] dark:bg-purple-950/60 dark:text-purple-200 dark:border-purple-800",
     subHeaderBg: "bg-[#faf5ff] text-[#6b21a8] dark:bg-purple-950/40 dark:text-purple-300",
     cellBg: "bg-[#faf5ff]/40 dark:bg-purple-950/20",
@@ -364,8 +364,8 @@ const ESL_ADDED_SUBJECTS = [
     printText: "#581c87"
   },
   {
-    key: "Literature",
-    label: "LITERATURE",
+    key: "TLE",
+    label: "TLE",
     headerBg: "bg-[#dcfce7] text-[#14532d] border-[#bbf7d0] dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-800",
     subHeaderBg: "bg-[#f0fdf4] text-[#15803d] dark:bg-emerald-950/40 dark:text-emerald-300",
     cellBg: "bg-[#f0fdf4]/40 dark:bg-emerald-950/20",
