@@ -221,8 +221,8 @@ const STANDARD_CORE_SUBJECTS = [
 
 const STANDARD_ADDED_SUBJECTS = [
   {
-    key: "MAPEH",
-    label: "MAPEH",
+    key: "Literature",
+    label: "LITERATURE",
     headerBg: "bg-[#dbeafe] text-[#1e3a8a] border-[#bfdbfe] dark:bg-blue-950/60 dark:text-blue-200 dark:border-blue-800",
     subHeaderBg: "bg-[#eff6ff] text-[#1e40af] dark:bg-blue-950/40 dark:text-blue-300",
     cellBg: "bg-[#eff6ff]/40 dark:bg-blue-950/20",
@@ -248,8 +248,8 @@ const STANDARD_ADDED_SUBJECTS = [
     printText: "#581c87"
   },
   {
-    key: "Literature",
-    label: "LITERATURE",
+    key: "MAPEH",
+    label: "MAPEH",
     headerBg: "bg-[#dcfce7] text-[#14532d] border-[#bbf7d0] dark:bg-emerald-950/60 dark:text-emerald-200 dark:border-emerald-800",
     subHeaderBg: "bg-[#f0fdf4] text-[#15803d] dark:bg-emerald-950/40 dark:text-emerald-300",
     cellBg: "bg-[#f0fdf4]/40 dark:bg-emerald-950/20",
@@ -1578,29 +1578,30 @@ export default function AdminDashboard() {
     const k = slotKey.toLowerCase().trim();
     if (s === k) return true;
 
-    if (k === "mapeh" || k.includes("pe") || k.includes("physical education")) {
-      return (s.includes("mapeh") || s.includes("pe & health") || s.includes("pe and health") || s.includes("physical education") || s.includes("hope") || s.includes("music") || s.includes("arts") || s.includes("pe 1") || s.includes("pe 3") || s === "pe") && !s.includes("math");
+    if (k === "mapeh" || k === "pe" || k.includes("physical education")) {
+      return (s.includes("mapeh") || s.includes("pe & health") || s.includes("pe and health") || s.includes("physical education") || s.includes("hope") || s.includes("music") || s.includes("arts") || s.includes("pe 1") || s.includes("pe 3") || /\bpe\b/i.test(s)) && !s.includes("math");
     }
     if (k === "values" || k.includes("diss") || k.includes("diass") || k.includes("applied social")) {
-      return s.includes("values") || s.includes("esp") || s.includes("edukasyon sa pagpapakatao") || s.includes("discipline ideas in social") || s.includes("disciplines & ideas in the applied") || s.includes("applied social") || s.includes("diss") || s.includes("diass") || s.includes("character") || s.includes("ethics") || s.includes("moral") || s.includes("clve");
+      return s.includes("values") || /\besp\b/i.test(s) || s.includes("edukasyon sa pagpapakatao") || s.includes("discipline ideas in social") || s.includes("disciplines & ideas in the applied") || s.includes("applied social") || /\bdiss\b/i.test(s) || /\bdiass\b/i.test(s) || s.includes("character") || s.includes("ethics") || s.includes("moral") || /\bclve\b/i.test(s);
     }
     if (k === "tle" || k.includes("empowerment") || k.includes("media") || k.includes("mil")) {
-      return s.includes("tle") || s.includes("technology") || s.includes("livelihood") || s.includes("empowerment") || s.includes("media and information") || s.includes("media & information") || s.includes("mil") || s.includes("ict") || s.includes("computer") || s.includes("epp");
+      return /\btle\b/i.test(s) || s.includes("technology") || s.includes("livelihood") || s.includes("empowerment") || s.includes("media and information") || s.includes("media & information") || /\bmil\b/i.test(s) || /\bict\b/i.test(s) || s.includes("computer") || /\bepp\b/i.test(s);
     }
     if (k === "literature" || k.includes("politics") || k.includes("21st century") || k.includes("literacy")) {
-      return s.includes("literature") || s.includes("lit") || s.includes("philippine politics") || s.includes("politics and governance") || s.includes("politics") || s.includes("ppg") || s.includes("21st century") || s.includes("literacy from the philippines") || s.includes("contemporary arts") || s.includes("panitikan");
+      return s.includes("literature") || /\blit\b/i.test(s) || s.includes("philippine politics") || s.includes("politics and governance") || s.includes("politics") || /\bppg\b/i.test(s) || s.includes("21st century") || s.includes("literacy from the philippines") || s.includes("contemporary arts") || s.includes("panitikan");
     }
     if (k === "english") {
       return (s.includes("english") || s.includes("language arts")) && !s.includes("literature") && !s.includes("reading") && !s.includes("grammar") && !s.includes("speaking") && !s.includes("vocabulary") && !s.includes("21st century");
     }
     if (k === "social science") {
-      return (s.includes("social") || s.includes("history") || s.includes("araling panlipunan") || s.includes("ap") || s.includes("kasaysayan") || s.includes("civics") || s.includes("economics") || s.includes("ucsp")) && !s.includes("values") && !s.includes("discipline ideas in social") && !s.includes("applied social");
+      if (s.includes("mapeh") || s.includes("music") || s.includes("arts") || /\bpe\b/i.test(s) || s.includes("physical education")) return false;
+      return (s.includes("social") || s.includes("history") || s.includes("araling panlipunan") || /\bap\b/i.test(s) || s.includes("kasaysayan") || s.includes("civics") || s.includes("economics") || /\bucsp\b/i.test(s)) && !s.includes("values") && !s.includes("discipline ideas in social") && !s.includes("applied social");
     }
     if (k === "science") {
-      return (s.includes("science") || s.includes("biology") || s.includes("physics") || s.includes("chemistry") || s.includes("earth science")) && !s.includes("social") && !s.includes("tle") && !s.includes("ap") && !s.includes("history");
+      return (s.includes("science") || s.includes("biology") || s.includes("physics") || s.includes("chemistry") || s.includes("earth science")) && !s.includes("social") && !s.includes("tle") && !/\bap\b/i.test(s) && !s.includes("history");
     }
     if (k === "math") {
-      return (s.includes("math") || s.includes("algebra") || s.includes("geometry") || s.includes("calculus") || s.includes("statistics") || s.includes("trigonometry")) && !s.includes("mapeh") && !s.includes("pe");
+      return (s.includes("math") || s.includes("algebra") || s.includes("geometry") || s.includes("calculus") || s.includes("statistics") || s.includes("trigonometry")) && !s.includes("mapeh") && !/\bpe\b/i.test(s);
     }
     if (k === "reading") {
       return s.includes("reading") || s.includes("comprehension");
@@ -1633,17 +1634,20 @@ export default function AdminDashboard() {
 
     // Disambiguation Guard 1: Pure Science vs Social Science & TLE
     if (ts === "science" || ts === "sci") {
-      if (allContext.includes("social") || allContext.includes("ap") || allContext.includes("history") || allContext.includes("araling") || allContext.includes("tle") || allContext.includes("technology")) {
+      if (allContext.includes("social") || /\bap\b/i.test(allContext) || allContext.includes("history") || allContext.includes("araling") || allContext.includes("tle") || allContext.includes("technology")) {
         return false;
       }
     }
 
-    // Disambiguation Guard 2: Social Science vs Pure Science & Values
+    // Disambiguation Guard 2: Social Science vs Pure Science, Values & MAPEH
     if (ts === "social science" || ts === "social studies" || ts === "social") {
-      if (!allContext.includes("social") && !allContext.includes("history") && !allContext.includes("araling") && !allContext.includes("ap") && !allContext.includes("kasaysayan") && !allContext.includes("civics") && !allContext.includes("economics") && !allContext.includes("ucsp")) {
+      if (allContext.includes("mapeh") || allContext.includes("music") || allContext.includes("arts") || /\bpe\b/i.test(allContext) || allContext.includes("physical education")) {
         return false;
       }
-      if (allContext.includes("values") || allContext.includes("esp") || allContext.includes("edukasyon sa pagpapakatao") || allContext.includes("clve")) {
+      if (!allContext.includes("social") && !allContext.includes("history") && !allContext.includes("araling") && !/\bap\b/i.test(allContext) && !allContext.includes("kasaysayan") && !allContext.includes("civics") && !allContext.includes("economics") && !/\bucsp\b/i.test(allContext)) {
+        return false;
+      }
+      if (allContext.includes("values") || /\besp\b/i.test(allContext) || allContext.includes("edukasyon sa pagpapakatao") || /\bclve\b/i.test(allContext)) {
         return false;
       }
     }
@@ -1657,7 +1661,14 @@ export default function AdminDashboard() {
 
     // Disambiguation Guard 4: Math vs MAPEH
     if (ts === "math" || ts === "mathematics") {
-      if (allContext.includes("mapeh") || allContext.includes("music") || allContext.includes("arts") || allContext.includes("pe") || allContext.includes("health")) {
+      if (allContext.includes("mapeh") || allContext.includes("music") || allContext.includes("arts") || /\bpe\b/i.test(allContext) || allContext.includes("health")) {
+        return false;
+      }
+    }
+
+    // Disambiguation Guard 5: MAPEH vs Social Science / Math
+    if (ts === "mapeh" || ts === "pe" || ts.includes("physical education")) {
+      if (allContext.includes("social science") || allContext.includes("history") || allContext.includes("math")) {
         return false;
       }
     }
@@ -1729,18 +1740,18 @@ export default function AdminDashboard() {
       if (eGradeClean === sGradeClean) return true;
     }
     
-    if (exam.classId) {
-      const classIdClean = exam.classId.toLowerCase().replace(/[\s_]/g, "-");
-      if (classIdClean.includes(studentGrade.toLowerCase().replace(/\s+/g, "-")) || classIdClean.includes(sGradeClean)) {
+    const sNumMatch = studentGrade.match(/\d+/);
+    if (sNumMatch && studentGrade.toLowerCase().includes("grade")) {
+      const sNum = sNumMatch[0];
+      const examGrade = (exam.grade || "").toLowerCase();
+      const examClassId = (exam.classId || "").toLowerCase();
+      const examTitle = (exam.title || "").toLowerCase();
+
+      // Strict regex matching for grade number: e.g. "grade 1" must not match "grade 10" or "grade 11"
+      const strictGradeRegex = new RegExp(`(^|[^a-z0-9])grade[\\s_-]?${sNum}([^0-9]|$)`, 'i');
+      if (strictGradeRegex.test(examGrade) || strictGradeRegex.test(examClassId) || strictGradeRegex.test(examTitle)) {
         return true;
       }
-    }
-
-    const sNum = studentGrade.match(/\d+/)?.[0];
-    if (sNum && studentGrade.toLowerCase().includes("grade")) {
-      const examText = `${exam.title || ""} ${exam.classId || ""} ${exam.grade || ""}`.toLowerCase();
-      const gradePattern = new RegExp(`grade[\\s-]?${sNum}\\b`, 'i');
-      if (gradePattern.test(examText)) return true;
     }
 
     return false;
