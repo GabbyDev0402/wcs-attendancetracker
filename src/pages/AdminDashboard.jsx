@@ -1922,6 +1922,199 @@ export default function AdminDashboard() {
     };
   }, [filteredExams]);
 
+  // --- 1ST MONTHLY EXAM HISTORICAL ADAPTER (OPTION B) ---
+  const identify1stMonthlySubject = (examTitle, examSubj, examClassId) => {
+    const t = (examTitle || "").toLowerCase();
+    const s = (examSubj || "").toLowerCase();
+    const c = (examClassId || "").toLowerCase();
+
+    // 1. Added subjects first (to prevent parent host classroom collisions)
+    if (t.includes("mapeh") || t.includes("physical education") || t.includes("pe & health") || t.includes("pe and health") || t.includes("hope") || t.includes("health") || t.includes("music") || t.includes("arts") || /\bpe\b/i.test(t)) {
+      return "MAPEH";
+    }
+    if (t.includes("tle") || t.includes("empowerment") || t.includes("mil") || t.includes("media and information") || t.includes("technology") || t.includes("livelihood") || t.includes("ict") || t.includes("epp")) {
+      return "TLE";
+    }
+    if (t.includes("values") || t.includes("esp") || t.includes("diass") || t.includes("diss") || t.includes("edukasyon sa pagpapakatao") || t.includes("character") || t.includes("clve")) {
+      return "Values";
+    }
+    if (t.includes("literature") || t.includes("lit") || t.includes("politics") || t.includes("ppg") || t.includes("21st century") || t.includes("contemporary arts") || t.includes("panitikan")) {
+      return "Literature";
+    }
+
+    // 2. Core subjects
+    if (t.includes("english") || s === "english" || c.includes("english")) {
+      return "English";
+    }
+    if (t.includes("social science") || t.includes("social studies") || t.includes("history") || t.includes("araling") || t.includes("kasaysayan") || t.includes("civics") || t.includes("economics") || s.includes("social") || c.includes("social")) {
+      return "Social Science";
+    }
+    if (t.includes("science") || t.includes("biology") || t.includes("physics") || t.includes("chemistry") || s === "science" || c.includes("science")) {
+      return "Science";
+    }
+    if (t.includes("math") || t.includes("mathematic") || t.includes("algebra") || t.includes("geometry") || t.includes("calculus") || s === "math" || c.includes("math")) {
+      return "Math";
+    }
+
+    return null;
+  };
+
+  const identify1stMonthlyEslSubject = (examTitle, examSubj, examClassId) => {
+    const t = (examTitle || "").toLowerCase();
+    const s = (examSubj || "").toLowerCase();
+    const c = (examClassId || "").toLowerCase();
+
+    // 1. Added subjects first (to prevent parent class collision)
+    if (t.includes("mapeh") || t.includes("physical education") || /\bpe\b/i.test(t) || t.includes("health") || t.includes("music") || t.includes("arts")) {
+      return "MAPEH";
+    }
+    if (t.includes("tle") || t.includes("technology") || t.includes("livelihood") || t.includes("ict") || t.includes("computer")) {
+      return "TLE";
+    }
+    if (t.includes("values") || t.includes("esp") || t.includes("character") || t.includes("ethics") || t.includes("moral")) {
+      return "Values";
+    }
+    if (t.includes("literature") || t.includes("lit") || t.includes("world explorer") || t.includes("explorer")) {
+      return "Literature";
+    }
+
+    // 2. Core ESL subjects
+    if (t.includes("reading") || s.includes("reading") || c.includes("reading")) {
+      return "Reading";
+    }
+    if (t.includes("grammar") || s.includes("grammar") || c.includes("grammar")) {
+      return "Grammar";
+    }
+    if (t.includes("speaking") || s.includes("speaking") || c.includes("speaking")) {
+      return "Speaking";
+    }
+    if (t.includes("vocabulary") || t.includes("vocab") || s.includes("vocabulary") || c.includes("vocabulary")) {
+      return "Vocabulary";
+    }
+
+    return null;
+  };
+
+  const resolve1stMonthlyStandardScores = (student, examsMap, allSubs, gLevel) => {
+    const sId = student.id || student.uid || "";
+    const stSubs = (allSubs || []).filter(s => 
+      (s.studentId === sId || s.studentId === student.uid || s.studentId === student.id) &&
+      (s.category === "1st Monthly Exam" || (!s.category && examsMap[s.examId]?.category === "1st Monthly Exam"))
+    );
+
+    const subjectScores = {};
+    const percentages = [];
+
+    // Match direct submissions
+    stSubs.forEach(sub => {
+      const ex = examsMap[sub.examId];
+      const slot = identify1stMonthlySubject(sub.examTitle || ex?.title, sub.subject || ex?.subject, sub.classId || ex?.classId);
+      if (slot && !subjectScores[slot]) {
+        const objScore = sub.objScore !== undefined ? Number(sub.objScore) : (sub.score !== undefined ? Number(sub.score) : 0);
+        const subjScore = sub.subjScore !== undefined ? Number(sub.subjScore) : 0;
+        const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
+        const maxScore = Number(sub.maxScore || ex?.maxScore) > 0 ? Number(sub.maxScore || ex?.maxScore) : (earnedScore > 30 ? 40 : 30);
+        const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
+
+        subjectScores[slot] = {
+          hasScore: true,
+          earnedScore,
+          maxScore,
+          percentage,
+          objScore,
+          subjScore,
+          examTitle: sub.examTitle || ex?.title || slot,
+          effectiveLabel: getEffectiveAddedSubject(gLevel, slot)
+        };
+      }
+    });
+
+    // Pairing fallback: if Added subject has no separate exam, extract from parent Core's EV (subjScore)
+    const coreAddedPairs = [
+      { core: "English", added: "Literature" },
+      { core: "Social Science", added: "Values" },
+      { core: "Science", added: "TLE" },
+      { core: "Math", added: "MAPEH" }
+    ];
+
+    coreAddedPairs.forEach(p => {
+      if (!subjectScores[p.added] && subjectScores[p.core] && subjectScores[p.core].subjScore > 0) {
+        const coreSc = subjectScores[p.core];
+        const evScore = coreSc.subjScore;
+        const addedMax = Math.round(coreSc.maxScore / 2) || 20;
+        const addedPct = addedMax > 0 ? Math.round((evScore / addedMax) * 100) : 0;
+
+        subjectScores[p.added] = {
+          hasScore: true,
+          earnedScore: evScore,
+          maxScore: addedMax,
+          percentage: addedPct,
+          objScore: evScore,
+          subjScore: 0,
+          examTitle: `${coreSc.examTitle} (Integrated Added)`,
+          effectiveLabel: getEffectiveAddedSubject(gLevel, p.added)
+        };
+      }
+    });
+
+    // Fill empty slots with { hasScore: false, noExam: true }
+    const STANDARD_KEYS = ["English", "Social Science", "Science", "Math", "Literature", "Values", "TLE", "MAPEH"];
+    STANDARD_KEYS.forEach(k => {
+      if (subjectScores[k] && subjectScores[k].hasScore) {
+        percentages.push(subjectScores[k].percentage);
+      } else {
+        subjectScores[k] = { hasScore: false, noExam: true };
+      }
+    });
+
+    return { subjectScores, percentages };
+  };
+
+  const resolve1stMonthlyEslScores = (student, examsMap, allSubs, gLevel) => {
+    const sId = student.id || student.uid || "";
+    const stSubs = (allSubs || []).filter(s => 
+      (s.studentId === sId || s.studentId === student.uid || s.studentId === student.id) &&
+      (s.category === "1st Monthly Exam" || (!s.category && examsMap[s.examId]?.category === "1st Monthly Exam"))
+    );
+
+    const subjectScores = {};
+    const percentages = [];
+
+    stSubs.forEach(sub => {
+      const ex = examsMap[sub.examId];
+      const slot = identify1stMonthlyEslSubject(sub.examTitle || ex?.title, sub.subject || ex?.subject, sub.classId || ex?.classId);
+      if (slot && !subjectScores[slot]) {
+        const objScore = sub.objScore !== undefined ? Number(sub.objScore) : (sub.score !== undefined ? Number(sub.score) : 0);
+        const subjScore = sub.subjScore !== undefined ? Number(sub.subjScore) : 0;
+        const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
+        const maxScore = Number(sub.maxScore || ex?.maxScore) > 0 ? Number(sub.maxScore || ex?.maxScore) : (earnedScore > 30 ? 40 : 30);
+        const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
+
+        subjectScores[slot] = {
+          hasScore: true,
+          earnedScore,
+          maxScore,
+          percentage,
+          objScore,
+          subjScore,
+          examTitle: sub.examTitle || ex?.title || slot,
+          effectiveLabel: slot
+        };
+      }
+    });
+
+    const ESL_KEYS = ["Reading", "Grammar", "Speaking", "Vocabulary", "Values", "MAPEH", "Literature", "TLE"];
+    ESL_KEYS.forEach(k => {
+      if (subjectScores[k] && subjectScores[k].hasScore) {
+        percentages.push(subjectScores[k].percentage);
+      } else {
+        subjectScores[k] = { hasScore: false, noExam: true };
+      }
+    });
+
+    return { subjectScores, percentages };
+  };
+
   // 3. Processed and Segregated Student Pivot Data (Standard vs ESL)
   const { 
     standardStudents = [], 
@@ -1961,12 +2154,40 @@ export default function AdminDashboard() {
       }
     });
 
+    const is1stMonthly = reportFilterExamCategory === "1st Monthly Exam";
+    const examsMap = {};
+    if (is1stMonthly) {
+      (academicExams || []).forEach(e => {
+        if (e.id) examsMap[e.id] = e;
+        if (e.firestoreId) examsMap[e.firestoreId] = e;
+      });
+    }
+
     const buildStandardStudentRow = (st) => {
       const sId = st.id || st.uid || "";
       const sName = st.internationalName || st.fullName || st.name || formatStudentName(st) || "Student";
       const sCode = st.studentCode || "";
       const gLevel = st.grade || st.gradeLevel || "Grade 1";
       const comm = st.communityName || st.communityCenter || st.community || "Main";
+
+      if (is1stMonthly) {
+        const { subjectScores, percentages } = resolve1stMonthlyStandardScores(st, examsMap, academicExamSubs, gLevel);
+        const generalAverage = percentages.length > 0
+          ? Math.round(percentages.reduce((sum, p) => sum + p, 0) / percentages.length)
+          : 0;
+
+        return {
+          id: sId,
+          studentName: sName,
+          studentCode: sCode,
+          gradeLevel: gLevel,
+          community: comm,
+          subjectScores,
+          generalAverage,
+          completedCount: percentages.length,
+          totalSubjectsCount: 8
+        };
+      }
 
       const subjectScores = {};
       const percentages = [];
@@ -2013,6 +2234,25 @@ export default function AdminDashboard() {
       const sCode = st.studentCode || "";
       const gLevel = st.grade || st.gradeLevel || "E1";
       const comm = st.communityName || st.communityCenter || st.community || "Main";
+
+      if (is1stMonthly) {
+        const { subjectScores, percentages } = resolve1stMonthlyEslScores(st, examsMap, academicExamSubs, gLevel);
+        const generalAverage = percentages.length > 0
+          ? Math.round(percentages.reduce((sum, p) => sum + p, 0) / percentages.length)
+          : 0;
+
+        return {
+          id: sId,
+          studentName: sName,
+          studentCode: sCode,
+          gradeLevel: gLevel,
+          community: comm,
+          subjectScores,
+          generalAverage,
+          completedCount: percentages.length,
+          totalSubjectsCount: 8
+        };
+      }
 
       const subjectScores = {};
       const percentages = [];
@@ -2125,6 +2365,55 @@ export default function AdminDashboard() {
       const missingSubjects = [];
       const recordedSubjects = [];
 
+      if (is1stMonthly) {
+        const { subjectScores } = resolve1stMonthlyStandardScores(st, examsMap, academicExamSubs, gLevel);
+        STANDARD_PILLARS.forEach(pillar => {
+          const effectiveAdded = getEffectiveAddedSubject(gLevel, pillar);
+
+          // Core
+          const coreSc = subjectScores[pillar.core];
+          if (coreSc && coreSc.hasScore) {
+            recordedSubjects.push({ subject: pillar.core, pillar: pillar.core, type: "Core", score: coreSc });
+          } else {
+            missingSubjects.push({
+              subject: pillar.core,
+              pillar: pillar.core,
+              type: "Core",
+              teacherName: findTeacherForSubjectAndGrade(gLevel, pillar.core),
+              reason: "Score unrecorded / pending"
+            });
+          }
+
+          // Added
+          const addedSc = subjectScores[pillar.added];
+          if (addedSc && addedSc.hasScore) {
+            recordedSubjects.push({ subject: effectiveAdded, pillar: pillar.core, type: "Added", score: addedSc });
+          } else {
+            missingSubjects.push({
+              subject: effectiveAdded,
+              pillar: pillar.core,
+              type: "Added",
+              teacherName: findTeacherForSubjectAndGrade(gLevel, effectiveAdded, pillar.core),
+              reason: "Score unrecorded / pending"
+            });
+          }
+        });
+
+        return {
+          id: sId,
+          studentName: sName,
+          studentCode: sCode,
+          gradeLevel: gLevel,
+          community: comm,
+          completedCount: recordedSubjects.length,
+          missingCount: missingSubjects.length,
+          totalSubjectsCount: 8,
+          missingSubjects,
+          recordedSubjects,
+          isFullyUnrecorded: recordedSubjects.length === 0
+        };
+      }
+
       STANDARD_PILLARS.forEach(pillar => {
         const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
 
@@ -2181,6 +2470,53 @@ export default function AdminDashboard() {
 
       const missingSubjects = [];
       const recordedSubjects = [];
+
+      if (is1stMonthly) {
+        const { subjectScores } = resolve1stMonthlyEslScores(st, examsMap, academicExamSubs, gLevel);
+        ESL_PILLARS.forEach(pillar => {
+          // Core
+          const coreSc = subjectScores[pillar.core];
+          if (coreSc && coreSc.hasScore) {
+            recordedSubjects.push({ subject: pillar.core, pillar: pillar.core, type: "Core", score: coreSc });
+          } else {
+            missingSubjects.push({
+              subject: pillar.core,
+              pillar: pillar.core,
+              type: "Core",
+              teacherName: findTeacherForSubjectAndGrade(gLevel, pillar.core),
+              reason: "Score unrecorded / pending"
+            });
+          }
+
+          // Added
+          const addedSc = subjectScores[pillar.added];
+          if (addedSc && addedSc.hasScore) {
+            recordedSubjects.push({ subject: pillar.added, pillar: pillar.core, type: "Added", score: addedSc });
+          } else {
+            missingSubjects.push({
+              subject: pillar.added,
+              pillar: pillar.core,
+              type: "Added",
+              teacherName: findTeacherForSubjectAndGrade(gLevel, pillar.added, pillar.core),
+              reason: "Score unrecorded / pending"
+            });
+          }
+        });
+
+        return {
+          id: sId,
+          studentName: sName,
+          studentCode: sCode,
+          gradeLevel: gLevel,
+          community: comm,
+          completedCount: recordedSubjects.length,
+          missingCount: missingSubjects.length,
+          totalSubjectsCount: 8,
+          missingSubjects,
+          recordedSubjects,
+          isFullyUnrecorded: recordedSubjects.length === 0
+        };
+      }
 
       ESL_PILLARS.forEach(pillar => {
         const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
