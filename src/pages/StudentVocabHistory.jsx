@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { cachedQuery } from "../utils/firestoreCache";
 import { 
   ArrowLeft, 
   History, 
@@ -13,7 +14,8 @@ import {
   MessageSquare,
   Lightbulb,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  RefreshCw
 } from "lucide-react";
 
 export default function StudentVocabHistory() {
@@ -224,6 +226,7 @@ function HistoryCardItem({ session, submission, wordsList, sessionDate }) {
   const [vocabSubmissionsMap, setVocabSubmissionsMap] = useState({});
   const [vocabSubmissionsList, setVocabSubmissionsList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [historyRange, setHistoryRange] = useState("7days"); // "7days" | "30days" | "all"
 
   const norm = (s) => (s || "").toString().toLowerCase().trim();
@@ -259,82 +262,93 @@ function HistoryCardItem({ session, submission, wordsList, sessionDate }) {
     ? `${expectedGrade} ${expectedSubject.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}`
     : extractedClassId.split("-").map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 
+  const userRef = useRef(user);
+  userRef.current = user;
+  const studentUid = user?.id;
+
+  const loadHistoryData = useCallback(
+    async (forceRefresh = false) => {
+      const currentUser = userRef.current;
+      if (!currentUser || !targetClassTag) return;
+
+      if (!extractedTeacherId) {
+        console.warn("StudentVocabHistory: extractedTeacherId is missing, skipping sessions query.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (forceRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+
+      try {
+        const classIdVariants = Array.from(
+          new Set([targetClassTag, extractedClassId, decodeURIComponent(targetClassTag)].filter(Boolean))
+        );
+
+        const [allSessions, list] = await Promise.all([
+          cachedQuery(
+            `class_sessions_${targetClassTag}`,
+            async () => {
+              const snap = await getDocs(
+                query(collection(db, "sessions"), where("classId", "in", classIdVariants))
+              );
+              return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            },
+            { forceRefresh }
+          ),
+          cachedQuery(
+            `student_vocab_subs_${currentUser.id}`,
+            async () => {
+              const snap = await getDocs(
+                query(collection(db, "vocab_submissions"), where("studentId", "==", currentUser.id))
+              );
+              return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            },
+            { forceRefresh }
+          )
+        ]);
+
+        const relevantSessions = allSessions.filter((s) => {
+          const hasVocab =
+            s.vocabularyWords &&
+            (Array.isArray(s.vocabularyWords)
+              ? s.vocabularyWords.length > 0
+              : typeof s.vocabularyWords === "string" && s.vocabularyWords.trim().length > 0);
+          if (!hasVocab) return false;
+          const matchesTeacher = extractedTeacherId ? norm(s.teacherId || extractedTeacherId) === norm(extractedTeacherId) : true;
+          return matchesTeacher;
+        });
+
+        relevantSessions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        setVocabSessions(relevantSessions);
+
+        setVocabSubmissionsList(list);
+        const submissionsMap = {};
+        list.forEach((data) => {
+          const sessionDate = data.date || (data.createdAt ? data.createdAt.split("T")[0] : "");
+          if (sessionDate) {
+            if (data.sessionId) submissionsMap[`${data.sessionId}`] = data;
+            if (data.classId) submissionsMap[`${data.classId}-${sessionDate}`] = data;
+            if (data.rawClassId) submissionsMap[`${data.rawClassId}-${sessionDate}`] = data;
+          }
+        });
+        setVocabSubmissionsMap(submissionsMap);
+      } catch (e) {
+        console.error("Error fetching vocab history:", e);
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [studentUid, targetClassTag, extractedClassId, extractedTeacherId]
+  );
+
   useEffect(() => {
-    if (!user || !targetClassTag) return;
-    setIsLoading(true);
-
-    // Guard: Prevent unscoped reads if extractedTeacherId is missing
-    if (!extractedTeacherId) {
-      console.warn("StudentVocabHistory: extractedTeacherId is missing, skipping sessions listener.");
-      setIsLoading(false);
-      return;
-    }
-
-    // 1. Listen to class sessions with STRICT classroom filtering (Scoped by teacherId)
-    const sessionsQuery = query(
-      collection(db, "sessions"),
-      where("teacherId", "==", extractedTeacherId)
-    );
-    const unsubSessions = onSnapshot(sessionsQuery, (snap) => {
-      const allSessions = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-
-      const relevantSessions = allSessions.filter((s) => {
-        const hasVocab = s.vocabularyWords && (Array.isArray(s.vocabularyWords) ? s.vocabularyWords.length > 0 : typeof s.vocabularyWords === 'string' && s.vocabularyWords.trim().length > 0);
-        if (!hasVocab) return false;
-
-        const sessionClassTag = `${s.teacherId}_${s.classId}`;
-        const matchesTag = s.classId === targetClassTag || s.classId === extractedClassId || sessionClassTag === targetClassTag;
-
-        const sessionGrade = s.gradeLevel || s.grade;
-        const matchesGrade = expectedGrade ? norm(sessionGrade) === norm(expectedGrade) : true;
-        const matchesSubject = expectedSubject ? norm(s.subject) === norm(expectedSubject) : true;
-        const matchesTeacher = extractedTeacherId ? norm(s.teacherId) === norm(extractedTeacherId) : true;
-
-        const matchesGradeAndSubject = matchesGrade && matchesSubject && matchesTeacher;
-
-        // STRICT: Must match direct classId tag OR match ALL (grade + subject + teacher) together!
-        return matchesTag || matchesGradeAndSubject;
-      });
-
-      relevantSessions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-      setVocabSessions(relevantSessions);
-      setIsLoading(false);
-    }, (e) => {
-      console.error("Error fetching sessions in history:", e);
-      setIsLoading(false);
-    });
-
-    // 2. Listen to student vocab submissions for this student
-    const vocabSubQuery = query(
-      collection(db, "vocab_submissions"),
-      where("studentId", "==", user.id)
-    );
-
-    const unsubSubmissions = onSnapshot(vocabSubQuery, (subSnap) => {
-      const list = subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setVocabSubmissionsList(list);
-
-      const submissionsMap = {};
-      list.forEach((data) => {
-        const sessionDate = data.date || (data.createdAt ? data.createdAt.split("T")[0] : "");
-        if (sessionDate) {
-          if (data.sessionId) submissionsMap[`${data.sessionId}`] = data;
-          if (data.classId) submissionsMap[`${data.classId}-${sessionDate}`] = data;
-          if (data.rawClassId) submissionsMap[`${data.rawClassId}-${sessionDate}`] = data;
-        }
-      });
-      setVocabSubmissionsMap(submissionsMap);
-      setIsLoading(false);
-    }, (e) => {
-      console.error("Error fetching submissions in history:", e);
-      setIsLoading(false);
-    });
-
-    return () => {
-      unsubSessions();
-      unsubSubmissions();
-    };
-  }, [user?.id, targetClassTag, extractedClassId, expectedGrade, expectedSubject, extractedTeacherId]);
+    loadHistoryData(false);
+  }, [loadHistoryData]);
 
   // Filter for past assignments (date < todayStr)
   const pastSessions = vocabSessions.filter((s) => {
@@ -419,6 +433,14 @@ function HistoryCardItem({ session, submission, wordsList, sessionDate }) {
               <option value="30days">Last 30 Days</option>
               <option value="all">All History</option>
             </select>
+            <button
+              type="button"
+              onClick={() => loadHistoryData(true)}
+              disabled={isRefreshing}
+              className="inline-flex items-center space-x-1 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
           </div>
         </div>
 

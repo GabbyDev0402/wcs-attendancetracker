@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { toast, confirmDialog } from "../context/FeedbackContext";
 import { db } from "../firebase/config";
 import { doc, getDoc, collection, addDoc, query, where, getDocs } from "firebase/firestore";
+import { invalidateCache } from "../utils/firestoreCache";
 import { formatStudentName } from "../utils/helpers";
 import { ArrowLeft, Lock, ExternalLink, CheckCircle, Calendar } from "lucide-react";
 import TaskStudentView from "../components/TaskStudentView";
@@ -223,6 +224,7 @@ export default function StudentTaskSession() {
       };
 
       const docRef = await addDoc(collection(db, "task_submissions"), payload);
+      invalidateCache(`student_task_subs_${user.id}`);
       setSubmission({ id: docRef.id, ...payload });
       setAlreadySubmitted(true);
       toast.success("Assignment submitted successfully!");
@@ -260,6 +262,7 @@ export default function StudentTaskSession() {
       };
 
       const docRef = await addDoc(collection(db, "task_submissions"), payload);
+      invalidateCache(`student_task_subs_${user.id}`);
       setSubmission({ id: docRef.id, ...payload });
       setAlreadySubmitted(true);
       toast.success("Assignment marked as turned in!");

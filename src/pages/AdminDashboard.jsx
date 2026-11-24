@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { auth, db, provisionUserSecondary, generateStudentAccount } from "../firebase/config";
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove } from "firebase/firestore";
+import { collection, query, where, getDocs, getCountFromServer, doc, updateDoc, deleteDoc, onSnapshot, arrayUnion, arrayRemove } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { useAuth } from "../context/AuthContext";
 import { toast, confirmDialog } from "../context/FeedbackContext";
 import ProfileSettingsModal from "../components/ProfileSettingsModal";
+import AdminLessonPlansTab from "../components/AdminLessonPlansTab";
 import { formatStudentName, formatScheduleString } from "../utils/helpers";
 import { 
   Users, 
@@ -41,7 +42,8 @@ import {
   Send,
   Eye,
   Layers,
-  AlertTriangle
+  AlertTriangle,
+  FileSpreadsheet
 } from "lucide-react";
 
 // Categorized options for Grade levels (Standard & ESL)
@@ -375,12 +377,28 @@ const ESL_ADDED_SUBJECTS = [
 ];
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const [teachers, setTeachers] = useState([]);
   const [students, setStudents] = useState([]);
   const [stats, setStats] = useState({ totalTeachers: 0, totalClasses: 0, totalStudents: 0, unassignedStudents: 0 });
   
-  // Dashboard Tab State ("teachers" | "students" | "compliance" | "academic")
+  // Dashboard Tab State ("teachers" | "students" | "compliance" | "academic" | "lesson-plans")
   const [activeTab, setActiveTab] = useState("teachers");
+  const [pendingLessonPlansCount, setPendingLessonPlansCount] = useState(0);
+
+  useEffect(() => {
+    const fetchPendingLessonPlanBadge = async () => {
+      try {
+        const countSnap = await getCountFromServer(
+          query(collection(db, "lessonPlans"), where("status", "==", "submitted"))
+        );
+        setPendingLessonPlansCount(countSnap.data().count);
+      } catch (err) {
+        console.warn("Could not fetch pending lesson plan count:", err);
+      }
+    };
+    fetchPendingLessonPlanBadge();
+  }, []);
 
   // Compliance Real-time Listeners State
   const [pendingVocabList, setPendingVocabList] = useState([]);
@@ -2975,7 +2993,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 transition-colors print:hidden">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden transition-colors print:hidden">
         <button
           onClick={() => setActiveTab("teachers")}
           className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
@@ -3036,6 +3054,23 @@ export default function AdminDashboard() {
           {academicExamSubs.length > 0 && (
             <span className="text-xs bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-full font-extrabold">
               {academicExamSubs.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab("lesson-plans")}
+          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer shrink-0 ${
+            activeTab === "lesson-plans"
+              ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+              : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          }`}
+        >
+          <FileSpreadsheet className="h-4 w-4" />
+          <span>Lesson Plans</span>
+          {pendingLessonPlansCount > 0 && (
+            <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded-full font-black">
+              {pendingLessonPlansCount}
             </span>
           )}
         </button>
@@ -4426,6 +4461,15 @@ export default function AdminDashboard() {
             </div>
           )}
         </div>
+      )}
+
+      {/* TAB 5: IB WEEKLY LESSON PLANS */}
+      {activeTab === "lesson-plans" && (
+        <AdminLessonPlansTab
+          teachers={teachers}
+          currentUser={user}
+          onPendingCountChange={setPendingLessonPlansCount}
+        />
       )}
 
 

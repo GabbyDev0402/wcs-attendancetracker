@@ -25,12 +25,12 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
-  onSnapshot,
   arrayUnion,
   arrayRemove,
   addDoc,
   serverTimestamp
 } from "firebase/firestore";
+import { cachedQuery, invalidateCache } from "../utils/firestoreCache";
 import { useAuth } from "../context/AuthContext";
 import { toast, confirmDialog } from "../context/FeedbackContext";
 import { formatStudentName, formatTime12Hour } from "../utils/helpers";
@@ -72,11 +72,43 @@ import {
   Copy,
   GripHorizontal,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  RotateCcw,
+  RefreshCw
 } from "lucide-react";
 import TaskStudentView from "../components/TaskStudentView";
+import ClassLessonPlanTab from "../components/ClassLessonPlanTab";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
+
+const DEFAULT_CLASSROOM_TAB_ORDER = [
+  "attendance",
+  "vocabularies",
+  "exams",
+  "lesson-plans",
+  "tasks",
+  "record",
+  "roster"
+];
+
+function normalizeClassroomTabOrder(rawOrder) {
+  if (!Array.isArray(rawOrder) || rawOrder.length === 0) {
+    return [...DEFAULT_CLASSROOM_TAB_ORDER];
+  }
+  const validSet = new Set(DEFAULT_CLASSROOM_TAB_ORDER);
+  const seen = new Set();
+  const cleaned = [];
+  for (const id of rawOrder) {
+    if (validSet.has(id) && !seen.has(id)) {
+      seen.add(id);
+      cleaned.push(id);
+    }
+  }
+  for (const id of DEFAULT_CLASSROOM_TAB_ORDER) {
+    if (!seen.has(id)) cleaned.push(id);
+  }
+  return cleaned;
+}
 
 const questionTypeLabels = {
   multipleChoice: { label: "Multiple Choice", color: "brand" },
@@ -252,19 +284,129 @@ export default function ClassDashboard() {
 
   useEffect(() => {
     fetchedTabsRef.current = {};
+    setHasLoadedGradedVocab(false);
+    setRawGradedVocabSubmissions([]);
   }, [classId]);
 
-  // Tab State: 'attendance' | 'vocabularies' | 'exams' | 'tasks' | 'record' | 'roster'
+  // Tab State: 'attendance' | 'vocabularies' | 'exams' | 'lesson-plans' | 'tasks' | 'record' | 'roster'
   const currentTabParam = searchParams.get("tab") || "attendance";
   const [activeTab, setActiveTab] = useState(currentTabParam);
 
   // Sync activeTab when URL search query param changes
   useEffect(() => {
     const tabParam = searchParams.get("tab");
-    if (tabParam && ["attendance", "vocabularies", "exams", "tasks", "record", "roster"].includes(tabParam)) {
+    if (tabParam && DEFAULT_CLASSROOM_TAB_ORDER.includes(tabParam)) {
       setActiveTab(tabParam);
     }
   }, [searchParams]);
+
+  // Personalized Draggable Tab Order (localStorage + Firestore profile sync)
+  const tabOrderStorageKey = user?.id
+    ? `wsi_classroom_tab_order_${user.id}`
+    : "wsi_classroom_tab_order";
+  const userTabOrderJson = JSON.stringify(user?.classroomTabOrder || null);
+
+  const [tabOrder, setTabOrder] = useState(() => {
+    if (Array.isArray(user?.classroomTabOrder) && user.classroomTabOrder.length > 0) {
+      return normalizeClassroomTabOrder(user.classroomTabOrder);
+    }
+    try {
+      const saved = localStorage.getItem(tabOrderStorageKey);
+      if (saved) return normalizeClassroomTabOrder(JSON.parse(saved));
+    } catch {
+      // Ignore storage error
+    }
+    return [...DEFAULT_CLASSROOM_TAB_ORDER];
+  });
+  const [draggedTabId, setDraggedTabId] = useState(null);
+  const [dragOverTabId, setDragOverTabId] = useState(null);
+
+  useEffect(() => {
+    const remoteOrder = JSON.parse(userTabOrderJson);
+    if (Array.isArray(remoteOrder) && remoteOrder.length > 0) {
+      const normalized = normalizeClassroomTabOrder(remoteOrder);
+      setTabOrder(normalized);
+      try {
+        localStorage.setItem(tabOrderStorageKey, JSON.stringify(normalized));
+      } catch {
+        // Ignore storage error
+      }
+      return;
+    }
+    try {
+      const saved = localStorage.getItem(tabOrderStorageKey);
+      if (saved) {
+        setTabOrder(normalizeClassroomTabOrder(JSON.parse(saved)));
+      }
+    } catch {
+      // Ignore storage error
+    }
+  }, [tabOrderStorageKey, userTabOrderJson]);
+
+  const persistTabOrder = async (nextOrder) => {
+    setTabOrder(nextOrder);
+    try {
+      localStorage.setItem(tabOrderStorageKey, JSON.stringify(nextOrder));
+    } catch {
+      // Ignore storage error
+    }
+    if (user?.id) {
+      try {
+        await updateDoc(doc(db, "users", user.id), { classroomTabOrder: nextOrder });
+      } catch (err) {
+        console.warn("Could not sync classroom tab order to Firestore:", err);
+      }
+    }
+  };
+
+  const handleTabDragStart = (e, tabId) => {
+    setDraggedTabId(tabId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", tabId);
+  };
+
+  const handleTabDragOver = (e, tabId) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverTabId !== tabId) {
+      setDragOverTabId(tabId);
+    }
+  };
+
+  const handleTabDrop = async (e, targetTabId) => {
+    e.preventDefault();
+    const sourceId = draggedTabId || e.dataTransfer.getData("text/plain");
+    setDraggedTabId(null);
+    setDragOverTabId(null);
+
+    if (!sourceId || sourceId === targetTabId) return;
+
+    const current = normalizeClassroomTabOrder(tabOrder);
+    const fromIdx = current.indexOf(sourceId);
+    const toIdx = current.indexOf(targetTabId);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    const nextOrder = [...current];
+    const [moved] = nextOrder.splice(fromIdx, 1);
+    nextOrder.splice(toIdx, 0, moved);
+
+    await persistTabOrder(nextOrder);
+    toast.success("Tab order saved!");
+  };
+
+  const handleTabDragEnd = () => {
+    setDraggedTabId(null);
+    setDragOverTabId(null);
+  };
+
+  const isCustomTabOrder = tabOrder.some(
+    (id, idx) => id !== DEFAULT_CLASSROOM_TAB_ORDER[idx]
+  );
+
+  const handleResetTabOrder = async () => {
+    await persistTabOrder([...DEFAULT_CLASSROOM_TAB_ORDER]);
+    toast.info("Classroom tabs reset to default order.");
+  };
 
   // Class Info State
   const [classInfo, setClassInfo] = useState({ name: "Loading Class...", grade: "", subject: "" });
@@ -364,6 +506,7 @@ export default function ClassDashboard() {
   const [rawGradedVocabSubmissions, setRawGradedVocabSubmissions] = useState([]);
   const [gradedVocabDateFilter, setGradedVocabDateFilter] = useState(todayStr);
   const [isGradedVocabLoading, setIsGradedVocabLoading] = useState(false);
+  const [hasLoadedGradedVocab, setHasLoadedGradedVocab] = useState(false);
 
   // Exams State (Tab 3) - Exam Scope Architecture
   const [exams, setExams] = useState([]);
@@ -515,29 +658,52 @@ export default function ClassDashboard() {
     fetchedTabsRef.current["roster"] = true;
   }, [classId, user?.id]);
 
-  const loadClassRoster = async () => {
+  const loadClassRoster = async (forceRefresh = false) => {
     if (!classId || !user) return;
     setIsRosterLoading(true);
     try {
-      const q = query(
-        collection(db, "users"),
-        where("role", "==", "student")
-      );
-      const snap = await getDocs(q);
-      const allStuds = snap.docs.map(doc => doc.data());
       const classTag = `${user.id}_${classId}`;
+      const filtered = await cachedQuery(
+        `class_roster_${classTag}`,
+        async () => {
+          // 1. Primary scoped query by enrolledClasses (reads only students in this class)
+          const scopedSnap = await getDocs(
+            query(collection(db, "users"), where("enrolledClasses", "array-contains", classTag))
+          );
+          if (!scopedSnap.empty) {
+            return scopedSnap.docs.map((d) => d.data());
+          }
 
-      const filtered = allStuds.filter(s => {
-        const hasClassTag = Array.isArray(s.enrolledClasses) && s.enrolledClasses.includes(classTag);
+          // 2. Fallback to teacher-enrolled students if classTag array-contains returned 0
+          const teacherSnap = await getDocs(
+            query(collection(db, "users"), where("enrolledTeachers", "array-contains", user.id))
+          );
+          const teacherStudents = teacherSnap.docs.map((d) => d.data());
+          if (teacherStudents.length > 0) {
+            return teacherStudents.filter((s) => {
+              const hasClassTag = Array.isArray(s.enrolledClasses) && s.enrolledClasses.includes(classTag);
+              if (s.enrolledClasses !== undefined) return hasClassTag;
+              const matchesClass = s.classId === classId || (classInfo.grade && (s.gradeLevel === classInfo.grade || s.grade === classInfo.grade));
+              return matchesClass;
+            });
+          }
 
-        if (s.enrolledClasses !== undefined) {
-          return hasClassTag;
-        }
-
-        const isEnrolledByTeacher = (Array.isArray(s.enrolledTeachers) && s.enrolledTeachers.includes(user.id)) || s.teacherId === user.id;
-        const matchesClass = s.classId === classId || (classInfo.grade && (s.gradeLevel === classInfo.grade || s.grade === classInfo.grade));
-        return isEnrolledByTeacher && matchesClass;
-      });
+          // 3. Final legacy fallback only if neither array-contains query returned students
+          const legacySnap = await getDocs(
+            query(collection(db, "users"), where("role", "==", "student"))
+          );
+          return legacySnap.docs
+            .map((d) => d.data())
+            .filter((s) => {
+              const hasClassTag = Array.isArray(s.enrolledClasses) && s.enrolledClasses.includes(classTag);
+              if (s.enrolledClasses !== undefined) return hasClassTag;
+              const isEnrolledByTeacher = (Array.isArray(s.enrolledTeachers) && s.enrolledTeachers.includes(user.id)) || s.teacherId === user.id;
+              const matchesClass = s.classId === classId || (classInfo.grade && (s.gradeLevel === classInfo.grade || s.grade === classInfo.grade));
+              return isEnrolledByTeacher && matchesClass;
+            });
+        },
+        { forceRefresh }
+      );
 
       setClassStudents(filtered);
     } catch (e) {
@@ -552,9 +718,12 @@ export default function ClassDashboard() {
     setEnrollError("");
     setEnrollSuccessMessage("");
     try {
-      const q = query(collection(db, "users"), where("role", "==", "student"));
-      const snap = await getDocs(q);
-      const docs = snap.docs.map(d => d.data());
+      const docs = await cachedQuery("all_students_schoolwide", async () => {
+        const snap = await getDocs(
+          query(collection(db, "users"), where("role", "==", "student"))
+        );
+        return snap.docs.map((d) => d.data());
+      });
       setMasterStudents(docs);
       if (docs.length > 0) {
         setSelectedStudentId(docs[0].id);
@@ -583,13 +752,16 @@ export default function ClassDashboard() {
         enrolledClasses: arrayUnion(classTag),
         enrolledTeachers: arrayUnion(user.id)
       });
+      invalidateCache(`class_roster_${classTag}`);
+      invalidateCache(`teacher_students_${user.id}`);
+      invalidateCache("all_students_schoolwide");
       setEnrollSuccessMessage("Student enrolled in classroom successfully!");
 
       setTimeout(() => {
         setIsEnrollModalOpen(false);
         setEnrollSuccessMessage("");
         setIsEnrolling(false);
-        loadClassRoster();
+        loadClassRoster(true);
       }, 1200);
     } catch (err) {
       setIsEnrolling(false);
@@ -616,8 +788,11 @@ export default function ClassDashboard() {
         classId: "unassigned"
       });
 
+      invalidateCache(`class_roster_${classTag}`);
+      invalidateCache(`teacher_students_${user.id}`);
+      invalidateCache("all_students_schoolwide");
       setClassStudents(prev => prev.filter(s => (s.id !== studentId && s.uid !== studentId)));
-      loadClassRoster();
+      loadClassRoster(true);
       toast.success(`${studentName} unenrolled from class.`);
     } catch (err) {
       toast.error("Failed to unenroll student: " + err.message);
@@ -640,17 +815,35 @@ export default function ClassDashboard() {
     setIsAttendanceLoading(true);
     try {
       const targetClassTag = `${user?.id}_${classId}`;
-      const q = query(
-        collection(db, "sessions"),
-        where("date", "==", attendanceDate),
-        where("teacherId", "==", user.id)
-      );
-      const snap = await getDocs(q);
 
-      const foundDoc = snap.docs.find(d => {
-        const data = d.data();
-        return data.classId === classId || data.classId === targetClassTag || d.id === `${classId}-${attendanceDate}` || d.id === `${targetClassTag}-${attendanceDate}`;
-      });
+      // 1. Direct 1-read doc lookup first (avoids scanning all teacher sessions for this date)
+      let foundSnap = await getDoc(doc(db, "sessions", `${classId}-${attendanceDate}`));
+      if (!foundSnap.exists()) {
+        const tagSnap = await getDoc(doc(db, "sessions", `${targetClassTag}-${attendanceDate}`));
+        if (tagSnap.exists()) {
+          foundSnap = tagSnap;
+        }
+      }
+
+      // 2. Fallback to date + teacherId query only if neither direct doc ID exists
+      let foundDoc = foundSnap.exists() ? foundSnap : null;
+      if (!foundDoc) {
+        const q = query(
+          collection(db, "sessions"),
+          where("date", "==", attendanceDate),
+          where("teacherId", "==", user.id)
+        );
+        const snap = await getDocs(q);
+        foundDoc = snap.docs.find((d) => {
+          const data = d.data();
+          return (
+            data.classId === classId ||
+            data.classId === targetClassTag ||
+            d.id === `${classId}-${attendanceDate}` ||
+            d.id === `${targetClassTag}-${attendanceDate}`
+          );
+        });
+      }
 
       if (foundDoc) {
         setExistingSessionId(foundDoc.id);
@@ -677,40 +870,15 @@ export default function ClassDashboard() {
         setPages(data.pages || data.page || "");
         setVocabularyWords(parseVocabArray(data.vocabularyWords));
       } else {
-        // Direct document ID lookup fallback
-        const docId = `${classId}-${attendanceDate}`;
-        const docSnap = await getDoc(doc(db, "sessions", docId));
-        if (docSnap.exists()) {
-          setExistingSessionId(docSnap.id);
-          const data = docSnap.data();
-          const parsedRecords = {};
-          (data.records || []).forEach(r => {
-            if (r.status === "late") {
-              parsedRecords[r.studentId] = { status: "late", minutesLate: r.minutesLate || 15 };
-            } else {
-              parsedRecords[r.studentId] = r.status;
-            }
-          });
-          classStudents.forEach(s => {
-            if (parsedRecords[s.id] === undefined) {
-              parsedRecords[s.id] = "present";
-            }
-          });
-          setAttendance(parsedRecords);
-          setTopic(data.topic || "");
-          setPages(data.pages || data.page || "");
-          setVocabularyWords(parseVocabArray(data.vocabularyWords));
-        } else {
-          setExistingSessionId(null);
-          const defaultState = {};
-          classStudents.forEach(s => {
-            defaultState[s.id] = "present";
-          });
-          setAttendance(defaultState);
-          setTopic("");
-          setPages("");
-          setVocabularyWords([]);
-        }
+        setExistingSessionId(null);
+        const defaultState = {};
+        classStudents.forEach(s => {
+          defaultState[s.id] = "present";
+        });
+        setAttendance(defaultState);
+        setTopic("");
+        setPages("");
+        setVocabularyWords([]);
       }
     } catch (err) {
       console.error("Error loading session attendance:", err);
@@ -811,7 +979,10 @@ export default function ClassDashboard() {
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
-      if (activeTab === "vocabularies") loadClassHistory();
+      invalidateCache(`class_sessions_${user.id}_${classId}`);
+      invalidateCache(`teacher_sessions_${user.id}`);
+      invalidateCache(`class_sessions_slug_${classId}`);
+      if (activeTab === "vocabularies") loadVocabulariesData(true);
     } catch (err) {
       toast.error("Failed to save attendance: " + err.message);
     } finally {
@@ -866,9 +1037,13 @@ export default function ClassDashboard() {
         await deleteDoc(doc(db, "sessions", fallbackTagDocId)).catch(() => { });
       });
 
-      // UI State Sync: Instantly remove deleted session from local state
-      setClassSessionsHistory(prev => prev.filter(s => s.date !== sessionDate || s.classId !== sessionToDelete.classId));
-      loadPendingVocabSubmissions();
+      // UI State Sync: Instantly remove deleted session from local state & invalidate caches
+      setRawClassSessionsHistory(prev => prev.filter(s => s.date !== sessionDate || s.classId !== sessionToDelete.classId));
+      invalidateCache(`class_sessions_${user.id}_${classId}`);
+      invalidateCache(`teacher_sessions_${user.id}`);
+      invalidateCache(`class_sessions_slug_${classId}`);
+      invalidateCache(`class_pending_vocab_${user.id}_${classId}`);
+      loadVocabulariesData(true);
       toast.success("Lesson log deleted successfully.");
     } catch (err) {
       toast.error("Failed to delete lesson log: " + err.message);
@@ -876,88 +1051,88 @@ export default function ClassDashboard() {
   };
 
   // -------------------------------------------------------------
-  // TAB 3: VOCABULARIES & SUBMISSIONS LOGIC (REAL-TIME SNAPSHOTS)
+  // TAB 3: VOCABULARIES & SUBMISSIONS LOGIC (CACHED ON-DEMAND)
   // -------------------------------------------------------------
-  useEffect(() => {
-    if (activeTab !== "vocabularies" || !classId || !user) return;
-
+  const loadVocabulariesData = async (forceRefresh = false) => {
+    if (!classId || !user?.id) return;
     setIsHistoryLoading(true);
     setIsPendingVocabLoading(true);
+    try {
+      const tag = `${user.id}_${classId}`;
+      const classIdVariants = Array.from(new Set([tag, classId, decodeURIComponent(classId)]));
 
-    const targetTag = `${user.id}_${classId}`.toLowerCase();
-    const targetSlug = classId.toLowerCase();
-    const targetGrade = (classInfo.grade || "").toLowerCase().trim();
-    const targetSubj = (classInfo.subject || "").toLowerCase().trim();
+      const [rawSessions, pendingItems] = await Promise.all([
+        cachedQuery(
+          `class_sessions_${tag}`,
+          async () => {
+            const snap = await getDocs(
+              query(collection(db, "sessions"), where("classId", "in", classIdVariants))
+            );
+            return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        ),
+        cachedQuery(
+          `class_pending_vocab_${tag}`,
+          async () => {
+            const snap = await getDocs(
+              query(
+                collection(db, "vocab_submissions"),
+                where("status", "==", "pending"),
+                where("classId", "in", classIdVariants)
+              )
+            );
+            return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        )
+      ]);
 
-    // 1. Real-time Sessions Listener (Class History)
-    const sessionsQuery = query(
-      collection(db, "sessions"),
-      where("teacherId", "==", user.id)
-    );
-
-    const unsubHistory = onSnapshot(sessionsQuery, (snap) => {
-      let historyDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-      // Filter strictly for THIS classroom in V2 (case-insensitive)
-      historyDocs = historyDocs.filter(d => {
-        const docClassId = (d.classId || "").toLowerCase();
-        const docGrade = (d.gradeLevel || d.grade || "").toLowerCase().trim();
-        const docSubject = (d.subject || "").toLowerCase().trim();
-
-        const matchesTag = docClassId === targetTag || docClassId === targetSlug || docClassId.endsWith(`_${targetSlug}`);
-        const matchesGradeSubject = targetGrade && targetSubj && docGrade === targetGrade && docSubject === targetSubj;
-
-        return matchesTag || matchesGradeSubject;
-      });
-
-      setRawClassSessionsHistory(historyDocs);
+      setRawClassSessionsHistory(rawSessions);
+      setPendingVocabSubmissions(pendingItems);
+    } catch (e) {
+      console.error("Error loading vocabularies & sessions:", e);
+    } finally {
       setIsHistoryLoading(false);
-    }, (e) => {
-      console.error("Error listening to class session history:", e);
-      setIsHistoryLoading(false);
-    });
-
-    // 2. Real-time Pending Student Vocab Submissions Listener
-    const classTag = `${user.id}_${classId}`;
-    const classIdVariants = Array.from(new Set([classTag, classId, decodeURIComponent(classId)]));
-    const pendingVocabQuery = query(
-      collection(db, "vocab_submissions"),
-      where("status", "==", "pending"),
-      where("classId", "in", classIdVariants)
-    );
-
-    const unsubPendingVocab = onSnapshot(pendingVocabQuery, (snap) => {
-      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setPendingVocabSubmissions(items);
       setIsPendingVocabLoading(false);
-    }, (e) => {
-      console.error("Error listening to pending vocab submissions:", e);
-      setIsPendingVocabLoading(false);
-    });
+    }
+  };
 
-    // 3. Real-time Graded Student Vocab Submissions Archive Listener
+  const loadGradedVocabArchive = async (forceRefresh = false) => {
+    if (!classId || !user?.id) return;
     setIsGradedVocabLoading(true);
-    const gradedVocabQuery = query(
-      collection(db, "vocab_submissions"),
-      where("status", "==", "graded"),
-      where("classId", "in", classIdVariants)
-    );
-
-    const unsubGradedVocab = onSnapshot(gradedVocabQuery, (snap) => {
-      const items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    try {
+      const tag = `${user.id}_${classId}`;
+      const classIdVariants = Array.from(new Set([tag, classId, decodeURIComponent(classId)]));
+      const items = await cachedQuery(
+        `class_graded_vocab_${tag}`,
+        async () => {
+          const snap = await getDocs(
+            query(
+              collection(db, "vocab_submissions"),
+              where("status", "==", "graded"),
+              where("classId", "in", classIdVariants)
+            )
+          );
+          return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        },
+        { forceRefresh }
+      );
       setRawGradedVocabSubmissions(items);
+      setHasLoadedGradedVocab(true);
+    } catch (e) {
+      console.error("Error loading graded vocab submissions archive:", e);
+    } finally {
       setIsGradedVocabLoading(false);
-    }, (e) => {
-      console.error("Error listening to graded vocab submissions archive:", e);
-      setIsGradedVocabLoading(false);
-    });
+    }
+  };
 
-    return () => {
-      unsubHistory();
-      unsubPendingVocab();
-      unsubGradedVocab();
-    };
-  }, [activeTab, classId, classInfo?.grade, classInfo?.subject, user?.id]);
+  useEffect(() => {
+    if (activeTab === "vocabularies" && classId && user?.id && !fetchedTabsRef.current["vocabularies"]) {
+      loadVocabulariesData(false);
+      fetchedTabsRef.current["vocabularies"] = true;
+    }
+  }, [activeTab, classId, user?.id]);
 
   // Derived In-Memory Filtered Class Lesson History
   const classSessionsHistory = useMemo(() => {
@@ -1009,9 +1184,6 @@ export default function ClassDashboard() {
     return items;
   }, [rawGradedVocabSubmissions, gradedVocabDateFilter]);
 
-  const loadClassHistory = () => { };
-  const loadPendingVocabSubmissions = () => { };
-
   const handleOpenVocabModal = (sub) => {
     setSelectedVocabSub(sub);
     setVocabFeedbackInput(sub.feedback || "");
@@ -1060,6 +1232,26 @@ export default function ClassDashboard() {
         gradedBy: user.id
       });
 
+      const tag = `${user.id}_${classId}`;
+      invalidateCache(`class_pending_vocab_${tag}`);
+      invalidateCache(`class_graded_vocab_${tag}`);
+      invalidateCache(`class_all_vocab_subs_${tag}`);
+
+      const updatedSub = {
+        ...selectedVocabSub,
+        id: docId,
+        status: "graded",
+        sentences: modalSentences,
+        feedback: vocabFeedbackInput.trim(),
+        gradedAt: new Date().toISOString(),
+        gradedBy: user.id
+      };
+      setPendingVocabSubmissions((prev) => prev.filter((item) => item.id !== docId));
+      setRawGradedVocabSubmissions((prev) => [
+        updatedSub,
+        ...prev.filter((item) => item.id !== docId)
+      ]);
+
       toast.success("Feedback & Micro-grades Updated!");
       setIsVocabModalOpen(false);
       setSelectedVocabSub(null);
@@ -1078,59 +1270,51 @@ export default function ClassDashboard() {
   const classTag = `${user?.id}_${classId}`;
 
   useEffect(() => {
-    if (activeTab === "exams" && classId && user?.id) {
-      loadExams();
-
-      // Real-time listener for student acknowledgments & submissions
-      const tag = `${user.id}_${classId}`;
-      const classIdVariants = Array.from(new Set([tag, classId, decodeURIComponent(classId)]));
-      const subQ = query(collection(db, "exam_submissions"), where("classId", "in", classIdVariants));
-      const unsub = onSnapshot(subQ, (subSnap) => {
-        const classSubs = subSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
-        setExamSubmissions(classSubs);
-      }, (e) => {
-        console.error("Error listening to exam submissions:", e);
-      });
-
-      return () => unsub();
+    if (activeTab === "exams" && classId && user?.id && !fetchedTabsRef.current["exams"]) {
+      loadExams(false);
+      fetchedTabsRef.current["exams"] = true;
     }
   }, [activeTab, classId, user?.id]);
 
-  const loadExams = async () => {
+  const loadExams = async (forceRefresh = false) => {
     if (!classId || !user) return;
     setIsExamsLoading(true);
     setIsExamSubmissionsLoading(true);
     try {
       const tag = `${user.id}_${classId}`;
-      const q = query(
-        collection(db, "exams"),
-        where("classId", "==", tag)
-      );
-      const snap = await getDocs(q);
-      const fetchedExams = snap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
-
-      // Sort exams by createdAt descending
-      fetchedExams.sort((a, b) => {
-        const timeA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-        const timeB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-        return timeB - timeA;
-      });
-      setExams(fetchedExams);
-
-      // Fetch exam submissions for this class (CONSTRAINED BY classIdVariants)
       const classIdVariants = Array.from(new Set([tag, classId, decodeURIComponent(classId)]));
-      const subQ = query(collection(db, "exam_submissions"), where("classId", "in", classIdVariants));
-      const subSnap = await getDocs(subQ);
-      const classSubs = subSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() }));
-      setExamSubmissions(classSubs);
 
-      // Backfill teacherId on any legacy submissions missing it
-      subSnap.docs.forEach(d => {
-        const data = d.data();
-        if (!data.teacherId && user?.id) {
-          updateDoc(doc(db, "exam_submissions", d.id), { teacherId: user.id }).catch(() => {});
-        }
-      });
+      const [fetchedExams, classSubs] = await Promise.all([
+        cachedQuery(
+          `class_exams_teacher_${tag}`,
+          async () => {
+            const snap = await getDocs(
+              query(collection(db, "exams"), where("classId", "==", tag))
+            );
+            const items = snap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
+            items.sort((a, b) => {
+              const timeA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+              const timeB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+              return timeB - timeA;
+            });
+            return items;
+          },
+          { forceRefresh }
+        ),
+        cachedQuery(
+          `class_exam_subs_${tag}`,
+          async () => {
+            const subSnap = await getDocs(
+              query(collection(db, "exam_submissions"), where("classId", "in", classIdVariants))
+            );
+            return subSnap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        )
+      ]);
+
+      setExams(fetchedExams);
+      setExamSubmissions(classSubs);
     } catch (e) {
       console.error("Error loading exams & submissions:", e);
     } finally {
@@ -1201,8 +1385,11 @@ export default function ClassDashboard() {
 
       // 2. Delete the exam document
       await deleteDoc(doc(db, "exams", examDocId));
+      const tag = `${user.id}_${classId}`;
+      invalidateCache(`class_exams_teacher_${tag}`);
+      invalidateCache(`class_exam_subs_${tag}`);
       toast.success("Exam deleted successfully.");
-      loadExams();
+      loadExams(true);
     } catch (e) {
       toast.error("Failed to delete exam: " + e.message);
     }
@@ -1277,7 +1464,9 @@ export default function ClassDashboard() {
       setEditingExam(null);
       setExamPublishSuccess(true);
       setTimeout(() => setExamPublishSuccess(false), 3000);
-      await loadExams();
+      invalidateCache(`class_exams_teacher_${tag}`);
+      invalidateCache(`class_exam_subs_${tag}`);
+      await loadExams(true);
 
       // One-click: immediately launch Input Scores spreadsheet modal!
       if (openScoresImmediately && savedDoc && !editingExam) {
@@ -1399,8 +1588,9 @@ export default function ClassDashboard() {
       setSubjScoreInputs({});
       setExamGradeSuccessToast(true);
       setTimeout(() => setExamGradeSuccessToast(false), 3000);
+      invalidateCache(`class_exam_subs_${tag}`);
       toast.success("Exam scores saved successfully!");
-      loadExams();
+      loadExams(true);
     } catch (e) {
       toast.error("Failed to save exam scores: " + e.message);
     } finally {
@@ -1560,18 +1750,23 @@ export default function ClassDashboard() {
     }
   }, [activeTab, classId, user?.id]);
 
-  const loadTasks = async () => {
+  const loadTasks = async (forceRefresh = false) => {
     if (!classId || !user) return;
     setIsTasksLoading(true);
     try {
       const tag = `${user.id}_${classId}`;
-      const q = query(
-        collection(db, "tasks"),
-        where("classId", "==", tag)
+      const items = await cachedQuery(
+        `class_tasks_teacher_${tag}`,
+        async () => {
+          const snap = await getDocs(
+            query(collection(db, "tasks"), where("classId", "==", tag))
+          );
+          const list = snap.docs.map((d) => ({ id: d.id, firestoreId: d.id, ...d.data() }));
+          list.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+          return list;
+        },
+        { forceRefresh }
       );
-      const snap = await getDocs(q);
-      const items = snap.docs.map(d => ({ id: d.id, firestoreId: d.id, ...d.data() }));
-      items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       setTasks(items);
     } catch (e) {
       console.error("Error loading tasks:", e);
@@ -1580,27 +1775,24 @@ export default function ClassDashboard() {
     }
   };
 
-  const loadTaskSubmissions = async () => {
+  const loadTaskSubmissions = async (forceRefresh = false) => {
     if (!classId || !user) return;
     setIsTaskSubmissionsLoading(true);
     try {
       const tag = `${user.id}_${classId}`;
-      const q = query(
-        collection(db, "task_submissions"),
-        where("classId", "==", tag)
+      const items = await cachedQuery(
+        `class_task_subs_teacher_${tag}`,
+        async () => {
+          const snap = await getDocs(
+            query(collection(db, "task_submissions"), where("classId", "==", tag))
+          );
+          const list = snap.docs.map((d) => ({ id: d.id, firestoreId: d.id, ...d.data() }));
+          list.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+          return list;
+        },
+        { forceRefresh }
       );
-      const snap = await getDocs(q);
-      const items = snap.docs.map(d => ({ id: d.id, firestoreId: d.id, ...d.data() }));
-      items.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
       setTaskSubmissions(items);
-
-      // Backfill teacherId on any legacy submissions missing it
-      snap.docs.forEach(d => {
-        const data = d.data();
-        if (!data.teacherId && user?.id) {
-          updateDoc(doc(db, "task_submissions", d.id), { teacherId: user.id }).catch(() => {});
-        }
-      });
     } catch (e) {
       console.error("Error loading task submissions:", e);
     } finally {
@@ -1631,9 +1823,12 @@ export default function ClassDashboard() {
       // Step B: Delete main task doc
       await deleteDoc(doc(db, "tasks", taskId));
 
+      const tag = `${user.id}_${classId}`;
+      invalidateCache(`class_tasks_teacher_${tag}`);
+      invalidateCache(`class_task_subs_teacher_${tag}`);
       toast.success("Task and associated submissions deleted successfully.");
-      loadTasks();
-      loadTaskSubmissions();
+      loadTasks(true);
+      loadTaskSubmissions(true);
     } catch (e) {
       console.error("Error deleting task:", e);
       toast.error("Failed to delete task: " + e.message);
@@ -1668,7 +1863,8 @@ export default function ClassDashboard() {
       setIsGradingExternalTaskModalOpen(false);
       setSelectedExternalTaskSub(null);
       setExternalTaskScoreInput("");
-      loadTaskSubmissions();
+      invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
+      loadTaskSubmissions(true);
       toast.success("Grade saved successfully!");
     } catch (err) {
       toast.error("Failed to save grade: " + err.message);
@@ -1753,7 +1949,8 @@ export default function ClassDashboard() {
       setSelectedQuizSub(null);
       setManualQuizObjScores({});
       setManualQuizSubjScores({});
-      loadTaskSubmissions();
+      invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
+      loadTaskSubmissions(true);
       toast.success("Quiz grade saved successfully!");
     } catch (err) {
       toast.error("Failed to save quiz grade: " + err.message);
@@ -1768,7 +1965,8 @@ export default function ClassDashboard() {
       await updateDoc(doc(db, "task_submissions", subDocId), {
         status: "pending_review"
       });
-      loadTaskSubmissions();
+      invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
+      loadTaskSubmissions(true);
       toast.success("Submission moved to pending review.");
     } catch (err) {
       toast.error("Failed to move submission to pending: " + err.message);
@@ -1795,7 +1993,8 @@ export default function ClassDashboard() {
           });
         })
       );
-      loadTaskSubmissions();
+      invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
+      loadTaskSubmissions(true);
       toast.success(`Moved ${subsToMove.length} submission(s) to pending.`);
     } catch (err) {
       toast.error("Failed to move submissions to pending: " + err.message);
@@ -1816,42 +2015,110 @@ export default function ClassDashboard() {
     }
   }, [activeTab, classId, user?.id]);
 
-  const loadEClassRecordData = async () => {
+  const loadEClassRecordData = async (forceRefresh = false) => {
     if (!classId || !user) return;
     setRecordDataLoading(true);
     try {
       const tag = `${user.id}_${classId}`;
       const classIdVariants = Array.from(new Set([tag, classId, decodeURIComponent(classId)]));
+      const isMath =
+        (classId || "").toLowerCase().includes("math") ||
+        (classInfo?.subject || "").toLowerCase().includes("math") ||
+        (classInfo?.name || "").toLowerCase().includes("math");
 
-      const examsQ = query(collection(db, "exams"), where("classId", "==", tag));
-      const examsSnap = await getDocs(examsQ);
-      setAllClassExams(examsSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
+      const [examsList, tasksList, examSubsList, taskSubsList, vocabSubsList, diariesList, sessionsList] =
+        await Promise.all([
+          cachedQuery(
+            `class_exams_teacher_${tag}`,
+            async () => {
+              const snap = await getDocs(
+                query(collection(db, "exams"), where("classId", "==", tag))
+              );
+              const items = snap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
+              items.sort((a, b) => {
+                const timeA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+                const timeB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+                return timeB - timeA;
+              });
+              return items;
+            },
+            { forceRefresh }
+          ),
+          cachedQuery(
+            `class_tasks_teacher_${tag}`,
+            async () => {
+              const snap = await getDocs(
+                query(collection(db, "tasks"), where("classId", "==", tag))
+              );
+              const items = snap.docs.map((d) => ({ id: d.id, firestoreId: d.id, ...d.data() }));
+              items.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+              return items;
+            },
+            { forceRefresh }
+          ),
+          cachedQuery(
+            `class_exam_subs_${tag}`,
+            async () => {
+              const snap = await getDocs(
+                query(collection(db, "exam_submissions"), where("classId", "in", classIdVariants))
+              );
+              return snap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
+            },
+            { forceRefresh }
+          ),
+          cachedQuery(
+            `class_task_subs_teacher_${tag}`,
+            async () => {
+              const snap = await getDocs(
+                query(collection(db, "task_submissions"), where("classId", "==", tag))
+              );
+              const items = snap.docs.map((d) => ({ id: d.id, firestoreId: d.id, ...d.data() }));
+              items.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+              return items;
+            },
+            { forceRefresh }
+          ),
+          cachedQuery(
+            `class_all_vocab_subs_${tag}`,
+            async () => {
+              const snap = await getDocs(
+                query(collection(db, "vocab_submissions"), where("classId", "in", classIdVariants))
+              );
+              return snap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
+            },
+            { forceRefresh }
+          ),
+          isMath
+            ? cachedQuery(
+                `teacher_diaries_${user.id}`,
+                async () => {
+                  const snap = await getDocs(
+                    query(collection(db, "diaries"), where("mathTeacherId", "==", user.id))
+                  );
+                  return snap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
+                },
+                { forceRefresh }
+              )
+            : Promise.resolve([]),
+          cachedQuery(
+            `class_sessions_${tag}`,
+            async () => {
+              const snap = await getDocs(
+                query(collection(db, "sessions"), where("classId", "in", classIdVariants))
+              );
+              return snap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
+            },
+            { forceRefresh }
+          )
+        ]);
 
-      const tasksQ = query(collection(db, "tasks"), where("classId", "==", tag));
-      const tasksSnap = await getDocs(tasksQ);
-      setAllClassTasks(tasksSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
-
-      const examSubsQ = query(collection(db, "exam_submissions"), where("classId", "in", classIdVariants));
-      const examSubsSnap = await getDocs(examSubsQ);
-      setAllClassExamSubs(examSubsSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
-
-      const taskSubsQ = query(collection(db, "task_submissions"), where("classId", "==", tag));
-      const taskSubsSnap = await getDocs(taskSubsQ);
-      setAllClassTaskSubs(taskSubsSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
-
-      const vocabSubsQ = query(collection(db, "vocab_submissions"), where("classId", "in", classIdVariants));
-      const vocabSubsSnap = await getDocs(vocabSubsQ);
-      setAllClassVocabSubs(vocabSubsSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
-
-      const diariesQ = query(collection(db, "diaries"), where("mathTeacherId", "==", user.id));
-      const diariesSnap = await getDocs(diariesQ);
-      setAllClassDiaries(diariesSnap.docs.map(d => ({ firestoreId: d.id, ...d.data() })));
-
-      const sessionsQ = query(collection(db, "sessions"), where("teacherId", "==", user.id));
-      const sessionsSnap = await getDocs(sessionsQ);
-      const rawSessions = sessionsSnap.docs.map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }));
-      const filteredSessions = rawSessions.filter(s => s.classId === classId || `${s.teacherId}_${s.classId}` === tag);
-      setAllClassSessions(filteredSessions);
+      setAllClassExams(examsList);
+      setAllClassTasks(tasksList);
+      setAllClassExamSubs(examSubsList);
+      setAllClassTaskSubs(taskSubsList);
+      setAllClassVocabSubs(vocabSubsList);
+      setAllClassDiaries(diariesList);
+      setAllClassSessions(sessionsList);
     } catch (e) {
       console.error("Error loading E-Class Record data:", e);
     } finally {
@@ -2505,8 +2772,9 @@ export default function ClassDashboard() {
         setTaskPublishSuccess(false);
         setCopiedPublishLink(false);
       }, 5000);
+      invalidateCache(`class_tasks_teacher_${user.id}_${classId}`);
       toast.success("Task published successfully!");
-      loadTasks();
+      loadTasks(true);
     } catch (e) {
       toast.error("Failed to save task: " + e.message);
     }
@@ -2635,98 +2903,130 @@ export default function ClassDashboard() {
         </div>
       </div>
 
-      {/* Classroom Navigation Tabs */}
-      <div className="border-b border-slate-200 dark:border-slate-800">
-        <nav className="flex space-x-4 sm:space-x-8" aria-label="Classroom Tabs">
-          <button
-            onClick={() => handleTabChange("attendance")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "attendance"
-                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
-                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <ClipboardCheck className="h-4.5 w-4.5" />
-            <span>Attendance & Log</span>
-          </button>
+      {/* Classroom Navigation Tabs (Draggable & Personalized) */}
+      <div className="border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+        <nav
+          className="flex items-center gap-x-3 sm:gap-x-5 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden min-w-0 flex-1"
+          aria-label="Classroom Tabs"
+        >
+          {(() => {
+            const ungradedTasksCount = taskSubmissions.filter((s) => s.status !== "graded").length;
+            const tabDefs = {
+              attendance: {
+                label: "Attendance & Log",
+                icon: ClipboardCheck
+              },
+              vocabularies: {
+                label: "Vocabularies & Submissions",
+                icon: BookOpen,
+                badge: pendingVocabSubmissions.length > 0 ? (
+                  <span className="ml-1 px-1.5 py-0.5 text-[11px] rounded-full bg-amber-500 text-white font-black">
+                    {pendingVocabSubmissions.length}
+                  </span>
+                ) : null
+              },
+              exams: {
+                label: "Exams",
+                icon: ListChecks,
+                badge: exams.length > 0 ? (
+                  <span className="ml-1 px-1.5 py-0.5 text-[11px] rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                    {exams.length}
+                  </span>
+                ) : null
+              },
+              "lesson-plans": {
+                label: "Lesson Plans",
+                icon: FileSpreadsheet
+              },
+              tasks: {
+                label: "Assignments & Tasks",
+                icon: FolderKanban,
+                badge: (
+                  <>
+                    {tasks.length > 0 && (
+                      <span className="ml-1 px-1.5 py-0.5 text-[11px] rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                        {tasks.length}
+                      </span>
+                    )}
+                    {ungradedTasksCount > 0 && (
+                      <span
+                        className="ml-0.5 px-1.5 py-0.5 text-[10px] rounded-full bg-blue-600 text-white font-black animate-pulse"
+                        title="Pending task submissions awaiting scoring"
+                      >
+                        {ungradedTasksCount}
+                      </span>
+                    )}
+                  </>
+                )
+              },
+              record: {
+                label: "E-Class Record",
+                icon: Table
+              },
+              roster: {
+                label: "Class Roster",
+                icon: Users,
+                badge: (
+                  <span className="ml-1 px-1.5 py-0.5 text-[11px] rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                    {classStudents.length}
+                  </span>
+                )
+              }
+            };
 
-          <button
-            onClick={() => handleTabChange("vocabularies")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "vocabularies"
-                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
-                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <BookOpen className="h-4.5 w-4.5" />
-            <span>Vocabularies & Submissions</span>
-            {pendingVocabSubmissions.length > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-amber-500 text-white font-black">
-                {pendingVocabSubmissions.length}
-              </span>
-            )}
-          </button>
+            return tabOrder.map((tabId) => {
+              const def = tabDefs[tabId];
+              if (!def) return null;
+              const Icon = def.icon;
+              const isActive = activeTab === tabId;
+              const isDragging = draggedTabId === tabId;
+              const isDragOver = dragOverTabId === tabId && draggedTabId !== tabId;
 
-          <button
-            onClick={() => handleTabChange("exams")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "exams"
-                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
-                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <ListChecks className="h-4.5 w-4.5" />
-            <span>Exams</span>
-            {exams.length > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                {exams.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => handleTabChange("tasks")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "tasks"
-                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
-                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <FolderKanban className="h-4.5 w-4.5" />
-            <span>Assignments & Tasks</span>
-            {tasks.length > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                {tasks.length}
-              </span>
-            )}
-            {taskSubmissions.filter(s => s.status !== "graded").length > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-blue-600 text-white font-black animate-pulse" title="Pending task submissions awaiting scoring">
-                {taskSubmissions.filter(s => s.status !== "graded").length}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => handleTabChange("record")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "record"
-                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
-                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <Table className="h-4.5 w-4.5" />
-            <span>E-Class Record</span>
-          </button>
-
-          <button
-            onClick={() => handleTabChange("roster")}
-            className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-bold text-sm transition-all cursor-pointer ${activeTab === "roster"
-                ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
-                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
-            }`}
-          >
-            <Users className="h-4.5 w-4.5" />
-            <span>Class Roster</span>
-            <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-              {classStudents.length}
-            </span>
-          </button>
+              return (
+                <button
+                  key={tabId}
+                  type="button"
+                  draggable
+                  onDragStart={(e) => handleTabDragStart(e, tabId)}
+                  onDragOver={(e) => handleTabDragOver(e, tabId)}
+                  onDragLeave={() => {
+                    if (dragOverTabId === tabId) setDragOverTabId(null);
+                  }}
+                  onDrop={(e) => handleTabDrop(e, tabId)}
+                  onDragEnd={handleTabDragEnd}
+                  onClick={() => handleTabChange(tabId)}
+                  title="Click to open • Drag to reorder tabs"
+                  className={`group flex items-center space-x-1.5 py-3.5 px-1 border-b-2 font-bold text-xs sm:text-[13px] transition-all cursor-pointer shrink-0 select-none ${
+                    isActive
+                      ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
+                      : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                  } ${isDragging ? "opacity-45" : ""} ${
+                    isDragOver
+                      ? "bg-brand-50/70 dark:bg-brand-950/40 ring-1 ring-brand-500/60 rounded-t-xl"
+                      : ""
+                  }`}
+                >
+                  <GripHorizontal className="h-3 w-3 opacity-0 group-hover:opacity-50 transition-opacity cursor-grab shrink-0 -ml-0.5" />
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span>{def.label}</span>
+                  {def.badge}
+                </button>
+              );
+            });
+          })()}
         </nav>
+
+        {isCustomTabOrder && (
+          <button
+            type="button"
+            onClick={handleResetTabOrder}
+            title="Reset classroom tabs to default order"
+            className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-slate-400 hover:text-brand-600 dark:text-slate-500 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+          >
+            <RotateCcw className="h-3 w-3" />
+            <span className="hidden sm:inline">Reset</span>
+          </button>
+        )}
       </div>
 
       {/* TAB 1: ROSTER VIEW */}
@@ -3108,6 +3408,16 @@ export default function ClassDashboard() {
         </div>
       )}
 
+      {/* IB WEEKLY LESSON PLANS VIEW */}
+      {activeTab === "lesson-plans" && (
+        <ClassLessonPlanTab
+          classId={classId}
+          classInfo={classInfo}
+          user={user}
+          initialWeek={searchParams.get("week")}
+        />
+      )}
+
       {/* TAB 3: VOCABULARIES & SUBMISSIONS VIEW */}
       {activeTab === "vocabularies" && (
         <div className="max-w-5xl mx-auto w-full space-y-8">
@@ -3127,9 +3437,20 @@ export default function ClassDashboard() {
                   </p>
                 </div>
               </div>
-              <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3 py-1 rounded-xl border border-amber-200 dark:border-amber-800">
-                {pendingVocabSubmissions?.length || 0} Pending Review
-              </span>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3 py-1 rounded-xl border border-amber-200 dark:border-amber-800">
+                  {pendingVocabSubmissions?.length || 0} Pending Review
+                </span>
+                <button
+                  type="button"
+                  onClick={() => loadVocabulariesData(true)}
+                  disabled={isPendingVocabLoading || isHistoryLoading}
+                  title="Refresh submissions & lesson history"
+                  className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${(isPendingVocabLoading || isHistoryLoading) ? "animate-spin" : ""}`} />
+                </button>
+              </div>
             </div>
 
             {isPendingVocabLoading ? (
@@ -3181,30 +3502,57 @@ export default function ClassDashboard() {
               </div>
 
               <div className="flex items-center space-x-2 shrink-0">
-                <input
-                  type="date"
-                  value={gradedVocabDateFilter}
-                  onChange={(e) => setGradedVocabDateFilter(e.target.value)}
-                  className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-                {gradedVocabDateFilter ? (
+                {!hasLoadedGradedVocab ? (
                   <button
                     type="button"
-                    onClick={() => setGradedVocabDateFilter("")}
-                    className="text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline cursor-pointer"
+                    onClick={() => loadGradedVocabArchive(false)}
+                    disabled={isGradedVocabLoading}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 rounded-xl bg-brand-50 hover:bg-brand-100 dark:bg-brand-950/40 dark:hover:bg-brand-900/50 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800/60 text-xs font-bold transition-all cursor-pointer disabled:opacity-60"
                   >
-                    Clear Filter (Last 7 Days)
+                    <Eye className="h-3.5 w-3.5" />
+                    <span>{isGradedVocabLoading ? "Loading..." : "Load Graded Archive"}</span>
                   </button>
                 ) : (
-                  <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
-                    Showing Last 7 Days
-                  </span>
+                  <>
+                    <input
+                      type="date"
+                      value={gradedVocabDateFilter}
+                      onChange={(e) => setGradedVocabDateFilter(e.target.value)}
+                      className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    />
+                    {gradedVocabDateFilter ? (
+                      <button
+                        type="button"
+                        onClick={() => setGradedVocabDateFilter("")}
+                        className="text-xs text-brand-600 dark:text-brand-400 font-bold hover:underline cursor-pointer"
+                      >
+                        Clear Filter (Last 7 Days)
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg">
+                        Showing Last 7 Days
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => loadGradedVocabArchive(true)}
+                      disabled={isGradedVocabLoading}
+                      title="Refresh graded archive"
+                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 cursor-pointer disabled:opacity-60"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${isGradedVocabLoading ? "animate-spin" : ""}`} />
+                    </button>
+                  </>
                 )}
               </div>
             </div>
 
             {isGradedVocabLoading ? (
               <div className="py-8 text-center text-xs text-slate-400">Loading graded submissions archive...</div>
+            ) : !hasLoadedGradedVocab ? (
+              <div className="py-6 text-center text-xs text-slate-400 dark:text-slate-500">
+                Archive loads on demand to save daily Firestore reads. Click <span className="font-bold text-brand-600 dark:text-brand-400">Load Graded Archive</span> above to view or edit past feedback.
+              </div>
             ) : (gradedVocabSubmissions?.length || 0) > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {gradedVocabSubmissions?.map((item) => (
@@ -3562,13 +3910,24 @@ export default function ClassDashboard() {
               </p>
             </div>
 
-            <button
-              onClick={handleOpenAddExamModal}
-              className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add Exam</span>
-            </button>
+            <div className="flex items-center space-x-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => loadExams(true)}
+                disabled={isExamsLoading || isExamSubmissionsLoading}
+                className="inline-flex items-center space-x-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 px-3 py-2.5 text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${(isExamsLoading || isExamSubmissionsLoading) ? "animate-spin" : ""}`} />
+                <span>Refresh</span>
+              </button>
+              <button
+                onClick={handleOpenAddExamModal}
+                className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Exam</span>
+              </button>
+            </div>
           </div>
 
           {/* Exam Cards Grid */}
@@ -4919,6 +5278,16 @@ export default function ClassDashboard() {
                       <option value="4th Quarter">4th Quarter</option>
                     </select>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => loadEClassRecordData(true)}
+                    disabled={recordDataLoading}
+                    className="inline-flex items-center space-x-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-3 py-2.5 text-xs font-bold shadow-xs transition-all cursor-pointer mt-4 sm:mt-0 disabled:opacity-60"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${recordDataLoading ? "animate-spin" : ""}`} />
+                    <span>Refresh</span>
+                  </button>
 
                   <button
                     onClick={handleExportCSV}

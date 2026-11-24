@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useLocation, Link } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs } from "firebase/firestore";
+import { cachedQuery } from "../utils/firestoreCache";
 import { useAuth } from "../context/AuthContext";
 import { formatStudentName } from "../utils/helpers";
 import { 
@@ -14,7 +15,8 @@ import {
   AlertTriangle,
   FileSpreadsheet,
   Clock,
-  Building2
+  Building2,
+  RefreshCw
 } from "lucide-react";
 
 export default function MonthlyReports() {
@@ -43,6 +45,9 @@ export default function MonthlyReports() {
 
   const [classList, setClassList] = useState([]);
   const [activeClass, setActiveClass] = useState(null);
+  const [rawStudents, setRawStudents] = useState([]);
+  const [rawSessions, setRawSessions] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Parse classes from teacher's assignments using V2 classTag schema
   useEffect(() => {
@@ -223,67 +228,103 @@ export default function MonthlyReports() {
     };
   };
 
-  // Fetch sessions, enrolled students, and build Monthly Reports
-  useEffect(() => {
-    const buildReport = async () => {
-      if (!user) return;
-      if (selectedClassId !== "ALL" && !activeClass) return;
-      
-      setIsDataLoading(true);
+  const userRef = useRef(user);
+  userRef.current = user;
+  const teacherUid = user?.id;
+
+  // Fetch base students & sessions ONCE per teacher (shared cache with TeacherDashboard)
+  const loadBaseReportData = useCallback(
+    async (forceRefresh = false) => {
+      const currentUser = userRef.current;
+      if (!currentUser?.id) return;
+
+      if (forceRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsDataLoading(true);
+      }
+
       try {
-        // 1. Fetch Students
-        const qStudents = query(
-          collection(db, "users"),
-          where("role", "==", "student")
-        );
-        const snapStudents = await getDocs(qStudents);
-        const allStudents = snapStudents.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const uid = currentUser.id;
+        const [allStudents, allSessions] = await Promise.all([
+          cachedQuery(
+            `teacher_students_${uid}`,
+            async () => {
+              const scopedSnap = await getDocs(
+                query(collection(db, "users"), where("enrolledTeachers", "array-contains", uid))
+              );
+              if (!scopedSnap.empty) {
+                return scopedSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+              }
+              const legacySnap = await getDocs(
+                query(collection(db, "users"), where("role", "==", "student"))
+              );
+              return legacySnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            },
+            { forceRefresh }
+          ),
+          cachedQuery(
+            `teacher_sessions_${uid}`,
+            async () => {
+              const snapSessions = await getDocs(
+                query(collection(db, "sessions"), where("teacherId", "==", uid))
+              );
+              return snapSessions.docs.map((d) => ({ id: d.id, ...d.data() }));
+            },
+            { forceRefresh }
+          )
+        ]);
 
-        // 2. Fetch Sessions for this teacher
-        const qSessions = query(
-          collection(db, "sessions"),
-          where("teacherId", "==", user.id)
-        );
-        const snapSessions = await getDocs(qSessions);
-        const allSessions = snapSessions.docs.map(d => ({ id: d.id, ...d.data() }));
-
-        if (selectedClassId === "ALL") {
-          const reports = classList.map(cls => 
-            computeSingleClassReport(cls, allStudents, allSessions, selectedYear, selectedMonth)
-          );
-          setMultiClassReports(reports);
-
-          const allClassesStudents = reports.flatMap(r => r.students);
-          const totalRates = allClassesStudents.reduce((acc, curr) => acc + curr.rate, 0);
-          const avgRate = allClassesStudents.length > 0 ? Math.round(totalRates / allClassesStudents.length) : 0;
-          const perfectCount = allClassesStudents.filter(s => s.absent === 0 && s.total > 0).length;
-          const atRiskCount = allClassesStudents.filter(s => s.rate < 85 && s.total > 0).length;
-          
-          const prefix = `${selectedYear}-${selectedMonth}`;
-          const teacherMonthSessions = allSessions.filter(s => s.date && s.date.startsWith(prefix));
-
-          setReportData(allClassesStudents);
-          setClassStats({
-            avgRate,
-            perfectCount,
-            atRiskCount,
-            totalLogsCount: teacherMonthSessions.length
-          });
-        } else if (activeClass) {
-          const singleReport = computeSingleClassReport(activeClass, allStudents, allSessions, selectedYear, selectedMonth);
-          setMultiClassReports([singleReport]);
-          setReportData(singleReport.students);
-          setClassStats(singleReport.stats);
-        }
+        setRawStudents(allStudents);
+        setRawSessions(allSessions);
       } catch (err) {
         console.error("Error loading monthly report data:", err);
       } finally {
         setIsDataLoading(false);
+        setIsRefreshing(false);
       }
-    };
+    },
+    [teacherUid]
+  );
 
-    buildReport();
-  }, [user, selectedClassId, selectedMonth, selectedYear, activeClass, classList]);
+  useEffect(() => {
+    loadBaseReportData(false);
+  }, [loadBaseReportData]);
+
+  // Recompute filtered report purely in memory when class/month/year filters change (0 reads)
+  useEffect(() => {
+    if (!user) return;
+    if (selectedClassId !== "ALL" && !activeClass) return;
+
+    if (selectedClassId === "ALL") {
+      const reports = classList.map(cls =>
+        computeSingleClassReport(cls, rawStudents, rawSessions, selectedYear, selectedMonth)
+      );
+      setMultiClassReports(reports);
+
+      const allClassesStudents = reports.flatMap(r => r.students);
+      const totalRates = allClassesStudents.reduce((acc, curr) => acc + curr.rate, 0);
+      const avgRate = allClassesStudents.length > 0 ? Math.round(totalRates / allClassesStudents.length) : 0;
+      const perfectCount = allClassesStudents.filter(s => s.absent === 0 && s.total > 0).length;
+      const atRiskCount = allClassesStudents.filter(s => s.rate < 85 && s.total > 0).length;
+
+      const prefix = `${selectedYear}-${selectedMonth}`;
+      const teacherMonthSessions = rawSessions.filter(s => s.date && s.date.startsWith(prefix));
+
+      setReportData(allClassesStudents);
+      setClassStats({
+        avgRate,
+        perfectCount,
+        atRiskCount,
+        totalLogsCount: teacherMonthSessions.length
+      });
+    } else if (activeClass) {
+      const singleReport = computeSingleClassReport(activeClass, rawStudents, rawSessions, selectedYear, selectedMonth);
+      setMultiClassReports([singleReport]);
+      setReportData(singleReport.students);
+      setClassStats(singleReport.stats);
+    }
+  }, [user, rawStudents, rawSessions, selectedClassId, selectedMonth, selectedYear, activeClass, classList]);
 
   // Export CSV Action
   const handleExportCSV = () => {
@@ -435,6 +476,15 @@ export default function MonthlyReports() {
 
         {/* Action Panel */}
         <div className="flex items-center space-x-2.5">
+          <button
+            type="button"
+            onClick={() => loadBaseReportData(true)}
+            disabled={isRefreshing || isDataLoading}
+            className="inline-flex items-center space-x-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            <span>Refresh</span>
+          </button>
           <button
             onClick={handleExportCSV}
             disabled={!hasAnyData || isDataLoading}

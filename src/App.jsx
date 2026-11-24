@@ -10,6 +10,7 @@ import MonthlyReports from './pages/MonthlyReports';
 import AdminDashboard from './pages/AdminDashboard';
 import TeacherRoster from './pages/TeacherRoster';
 import WeeklyLessonReport from './pages/WeeklyLessonReport';
+import TeacherLessonPlansHub from './pages/TeacherLessonPlansHub';
 import StudentDashboard from './pages/StudentDashboard';
 import StudentClassDashboard from './pages/StudentClassDashboard';
 import StudentVocabHistory from './pages/StudentVocabHistory';
@@ -153,6 +154,9 @@ export default function App() {
               <Route path="lesson-reports" element={<WeeklyLessonReport />} />
               <Route path="lessons" element={<WeeklyLessonReport />} />
               <Route path="lesson-report" element={<WeeklyLessonReport />} />
+
+              {/* IB Weekly Lesson Plans Hub shortcut */}
+              <Route path="lesson-plans" element={<TeacherLessonPlansHub />} />
               
               {/* Monthly reports */}
               <Route path="reports" element={<MonthlyReports />} />

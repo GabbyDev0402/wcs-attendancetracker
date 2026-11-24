@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs } from "firebase/firestore";
+import { cachedQuery } from "../utils/firestoreCache";
 import { useAuth } from "../context/AuthContext";
 import { 
   BookOpen, 
@@ -10,7 +11,8 @@ import {
   Filter, 
   Sparkles,
   ArrowLeft,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -46,90 +48,87 @@ export default function WeeklyLessonReport() {
   
   const [startDate, setStartDate] = useState(defaultBounds.start);
   const [endDate, setEndDate] = useState(defaultBounds.end);
-  const [sessions, setSessions] = useState([]);
+  const [allTeacherSessions, setAllTeacherSessions] = useState([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  useEffect(() => {
-    const fetchLessonSessions = async () => {
-      if (!user) return;
-      setIsDataLoading(true);
+  const userRef = useRef(user);
+  userRef.current = user;
+  const teacherUid = user?.id;
+
+  const fetchLessonSessions = useCallback(
+    async (forceRefresh = false) => {
+      const currentUser = userRef.current;
+      if (!currentUser?.id) return;
+
+      if (forceRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsDataLoading(true);
+      }
       setErrorMsg(null);
 
       try {
-        const sessionMap = new Map();
-
-        // 1. Fetch sessions matching teacherId if available
-        if (user.id) {
-          try {
-            const qTeacher = query(
-              collection(db, "sessions"),
-              where("teacherId", "==", user.id)
+        const uid = currentUser.id;
+        const loadedSessions = await cachedQuery(
+          `teacher_sessions_${uid}`,
+          async () => {
+            const snapTeacher = await getDocs(
+              query(collection(db, "sessions"), where("teacherId", "==", uid))
             );
-            const snapTeacher = await getDocs(qTeacher);
-            snapTeacher.docs.forEach(d => {
-              const data = d.data();
-              const key = `${data.classId || 'class'}-${data.date}`;
-              sessionMap.set(key, data);
-            });
-          } catch (err) {
-            console.warn("Error fetching sessions by teacherId:", err);
-          }
-        }
-
-        // 2. Fetch sessions matching assigned class IDs (derived from user assignments)
-        const classIds = (user.assignments || []).map(asg => {
-          const gradeVal = asg.grade || asg.gradeLevel || "Grade 1";
-          return `${gradeVal.replace(/\s+/g, '-').toLowerCase()}-${asg.subject.replace(/\s+/g, '-').toLowerCase()}`;
-        });
-
-        if (classIds.length > 0) {
-          try {
-            // Batch classIds in chunks of 10 for Firestore 'in' query safety
-            const chunks = [];
-            for (let i = 0; i < classIds.length; i += 10) {
-              chunks.push(classIds.slice(i, i + 10));
+            if (!snapTeacher.empty) {
+              return snapTeacher.docs.map((d) => ({ id: d.id, ...d.data() }));
             }
 
-            for (const chunk of chunks) {
-              const qClass = query(
-                collection(db, "sessions"),
-                where("classId", "in", chunk)
+            // Legacy fallback by classId only if teacherId returned nothing
+            const classIds = (currentUser.assignments || []).map((asg) => {
+              const gradeVal = asg.grade || asg.gradeLevel || "Grade 1";
+              return `${gradeVal.replace(/\s+/g, "-").toLowerCase()}-${asg.subject
+                .replace(/\s+/g, "-")
+                .toLowerCase()}`;
+            });
+            const sessionMap = new Map();
+            for (let i = 0; i < classIds.length; i += 10) {
+              const chunk = classIds.slice(i, i + 10);
+              const snapClass = await getDocs(
+                query(collection(db, "sessions"), where("classId", "in", chunk))
               );
-              const snapClass = await getDocs(qClass);
-              snapClass.docs.forEach(d => {
-                const data = d.data();
-                const key = `${data.classId || 'class'}-${data.date}`;
-                sessionMap.set(key, data);
+              snapClass.docs.forEach((d) => {
+                sessionMap.set(d.id, { id: d.id, ...d.data() });
               });
             }
-          } catch (err) {
-            console.warn("Error fetching sessions by classId:", err);
-          }
-        }
+            return Array.from(sessionMap.values());
+          },
+          { forceRefresh }
+        );
 
-        const allTeacherSessions = Array.from(sessionMap.values());
-
-        // Filter sessions within date range and sort chronologically
-        const inRange = allTeacherSessions.filter(s => s.date && s.date >= startDate && s.date <= endDate);
-        inRange.sort((a, b) => {
-          if (a.date !== b.date) {
-            return a.date.localeCompare(b.date);
-          }
-          return (a.gradeLevel || "").localeCompare(b.gradeLevel || "");
-        });
-
-        setSessions(inRange);
+        setAllTeacherSessions(loadedSessions);
       } catch (err) {
         console.error("Error fetching lesson report sessions:", err);
         setErrorMsg("Failed to load lesson report data. Please check your connection.");
       } finally {
         setIsDataLoading(false);
+        setIsRefreshing(false);
       }
-    };
+    },
+    [teacherUid]
+  );
 
-    fetchLessonSessions();
-  }, [user, startDate, endDate]);
+  useEffect(() => {
+    fetchLessonSessions(false);
+  }, [fetchLessonSessions]);
+
+  // Filter sessions in memory when date range changes (0 Firestore reads)
+  const sessions = useMemo(() => {
+    const inRange = allTeacherSessions.filter(
+      (s) => s.date && s.date >= startDate && s.date <= endDate
+    );
+    return [...inRange].sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return (a.gradeLevel || "").localeCompare(b.gradeLevel || "");
+    });
+  }, [allTeacherSessions, startDate, endDate]);
 
   // Group sessions by date for Excel pivot format
   const groupedByDate = {};
@@ -167,13 +166,24 @@ export default function WeeklyLessonReport() {
           </div>
         </div>
 
-        <button
-          onClick={handlePrint}
-          className="inline-flex items-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 px-4 py-2.5 text-xs font-bold text-white shadow-md dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-slate-800 dark:hover:bg-brand-500 transition-all cursor-pointer"
-        >
-          <Printer className="h-4 w-4 text-white" />
-          <span>Print Report</span>
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={() => fetchLessonSessions(true)}
+            disabled={isRefreshing || isDataLoading}
+            className="inline-flex items-center space-x-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            <span>Refresh</span>
+          </button>
+          <button
+            onClick={handlePrint}
+            className="inline-flex items-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 px-4 py-2.5 text-xs font-bold text-white shadow-md dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-slate-800 dark:hover:bg-brand-500 transition-all cursor-pointer"
+          >
+            <Printer className="h-4 w-4 text-white" />
+            <span>Print Report</span>
+          </button>
+        </div>
       </div>
 
       {/* Error message alert */}

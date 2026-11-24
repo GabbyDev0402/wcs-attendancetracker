@@ -1,6 +1,13 @@
 import { initializeApp, getApp, getApps, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword, signOut } from "firebase/auth";
-import { getFirestore, doc, setDoc } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  getFirestore,
+  doc,
+  setDoc
+} from "firebase/firestore";
 
 // Firebase configuration using Vite environment variables
 const firebaseConfig = {
@@ -15,7 +22,18 @@ const firebaseConfig = {
 // Initialize main App instance
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  });
+} catch {
+  db = getFirestore(app);
+}
+export { db };
 
 /**
  * Provision a user account in Firebase Auth and Firestore using a temporary 

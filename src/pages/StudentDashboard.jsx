@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { toast, confirmDialog } from "../context/FeedbackContext";
 import { db } from "../firebase/config";
-import { collection, query, where, getDocs, doc, getDoc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
+import { cachedQuery, invalidateCache } from "../utils/firestoreCache";
 import { formatStudentName } from "../utils/helpers";
 import { 
   GraduationCap, 
@@ -20,7 +21,8 @@ import {
   AlertCircle, 
   FileText, 
   Bell, 
-  FolderKanban 
+  FolderKanban,
+  RefreshCw
 } from "lucide-react";
 
 export default function StudentDashboard() {
@@ -53,6 +55,7 @@ export default function StudentDashboard() {
     averageScore: 100
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Daily Diary State
   const [todayDiary, setTodayDiary] = useState(null);
@@ -60,65 +63,178 @@ export default function StudentDashboard() {
   const [isSubmittingDiary, setIsSubmittingDiary] = useState(false);
   const [diarySuccessMsg, setDiarySuccessMsg] = useState("");
 
-  // Real-time Listeners for Daily Diary & Attendance Metrics
-  useEffect(() => {
-    if (!user) return;
-    setIsLoading(true);
+  const userRef = useRef(user);
+  userRef.current = user;
+  const studentUid = user?.id;
 
-    // 1. Real-time Daily Diary Listener (Strict Today's Date Filter)
-    const diaryQuery = query(
-      collection(db, "diaries"),
-      where("studentId", "==", user.id)
-    );
-    const unsubDiary = onSnapshot(diaryQuery, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const foundToday = docs.find(d => d.date === todayStr);
+  const loadStudentDashboard = useCallback(
+    async (forceRefresh = false) => {
+      const currentUser = userRef.current;
+      if (!currentUser?.id) return;
 
-      if (foundToday && foundToday.date === todayStr) {
-        setTodayDiary(foundToday);
+      if (forceRefresh) {
+        setIsRefreshing(true);
       } else {
-        setTodayDiary(null);
+        setIsLoading(true);
       }
-    }, (err) => {
-      console.error("Error listening to diary:", err);
-    });
 
-    // 2. Real-time Sessions / Attendance Listener
-    const teacherIds = [...new Set((user?.enrolledClasses || []).map(tag => tag.split('_')[0]))];
-    if (Array.isArray(user?.enrolledTeachers)) {
-      user.enrolledTeachers.forEach(id => { if (id) teacherIds.push(id); });
-    }
-    if (user?.teacherId && user.teacherId !== "unassigned") {
-      teacherIds.push(user.teacherId);
-    }
-    const uniqueTeacherIds = [...new Set(teacherIds)].filter(Boolean);
+      try {
+        const uid = currentUser.id;
+        const enrolledClasses = Array.isArray(currentUser.enrolledClasses)
+          ? currentUser.enrolledClasses
+          : [];
 
-    let sessionsQuery = null;
-    let unsubSessions = () => {};
-    if (uniqueTeacherIds.length > 0) {
-      sessionsQuery = query(
-        collection(db, "sessions"),
-        where("teacherId", "in", uniqueTeacherIds.slice(0, 10))
-      );
-      unsubSessions = onSnapshot(sessionsQuery, (snap) => {
-        const fetchedSessions = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const classIdVariants = Array.from(
+          new Set(
+            enrolledClasses
+              .flatMap((tag) => {
+                const slug = tag.includes("_") ? tag.split("_").slice(1).join("_") : tag;
+                return [tag, slug];
+              })
+              .filter(Boolean)
+          )
+        );
+
+        const teacherIds = [
+          ...new Set(
+            enrolledClasses
+              .filter((tag) => tag.includes("_"))
+              .map((tag) => tag.split("_")[0])
+          )
+        ];
+        if (Array.isArray(currentUser.enrolledTeachers)) {
+          currentUser.enrolledTeachers.forEach((id) => {
+            if (id) teacherIds.push(id);
+          });
+        }
+        if (currentUser.teacherId && currentUser.teacherId !== "unassigned") {
+          teacherIds.push(currentUser.teacherId);
+        }
+        const uniqueTeacherIds = [...new Set(teacherIds)].filter(Boolean);
+
+        // 1. Direct 1-read lookup for Today's Diary
+        const diaryPromise = cachedQuery(
+          `student_diary_${uid}_${todayStr}`,
+          async () => {
+            const snap = await getDoc(doc(db, "diaries", `${uid}-${todayStr}`));
+            return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+          },
+          { forceRefresh }
+        );
+
+        // 2. Sessions scoped strictly to enrolled classId variants (fallback only if no classIdVariants)
+        const sessionsPromise = cachedQuery(
+          `student_sessions_${uid}`,
+          async () => {
+            const sessionDocMap = new Map();
+            if (classIdVariants.length > 0) {
+              for (let i = 0; i < classIdVariants.length; i += 10) {
+                const chunk = classIdVariants.slice(i, i + 10);
+                const snap = await getDocs(
+                  query(collection(db, "sessions"), where("classId", "in", chunk))
+                );
+                snap.docs.forEach((d) => {
+                  const data = { id: d.id, ...d.data() };
+                  if (
+                    uniqueTeacherIds.length === 0 ||
+                    !data.teacherId ||
+                    uniqueTeacherIds.includes(data.teacherId)
+                  ) {
+                    sessionDocMap.set(d.id, data);
+                  }
+                });
+              }
+            } else if (uniqueTeacherIds.length > 0) {
+              const snap = await getDocs(
+                query(
+                  collection(db, "sessions"),
+                  where("teacherId", "in", uniqueTeacherIds.slice(0, 10))
+                )
+              );
+              snap.docs.forEach((d) => {
+                sessionDocMap.set(d.id, { id: d.id, ...d.data() });
+              });
+            }
+            return Array.from(sessionDocMap.values());
+          },
+          { forceRefresh }
+        );
+
+        // 3. Student Vocab Submissions (shared key across Student pages)
+        const vocabSubsPromise = cachedQuery(
+          `student_vocab_subs_${uid}`,
+          async () => {
+            const snap = await getDocs(
+              query(collection(db, "vocab_submissions"), where("studentId", "==", uid))
+            );
+            return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        );
+
+        // 4. Published Tasks scoped to enrolled classes (chunked in 10s)
+        const tasksPromise = cachedQuery(
+          `student_tasks_${uid}`,
+          async () => {
+            if (enrolledClasses.length === 0) return [];
+            const taskMap = new Map();
+            for (let i = 0; i < enrolledClasses.length; i += 10) {
+              const chunk = enrolledClasses.slice(i, i + 10);
+              const snap = await getDocs(
+                query(
+                  collection(db, "tasks"),
+                  where("status", "==", "published"),
+                  where("classId", "in", chunk)
+                )
+              );
+              snap.docs.forEach((d) => {
+                taskMap.set(d.id, { id: d.id, firestoreId: d.id, ...d.data() });
+              });
+            }
+            return Array.from(taskMap.values());
+          },
+          { forceRefresh }
+        );
+
+        // 5. Student Task Submissions (shared key across Student pages)
+        const taskSubsPromise = cachedQuery(
+          `student_task_subs_${uid}`,
+          async () => {
+            const snap = await getDocs(
+              query(collection(db, "task_submissions"), where("studentId", "==", uid))
+            );
+            return snap.docs.map((d) => ({ id: d.id, firestoreId: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        );
+
+        const [diaryDoc, fetchedSessions, vocabSubs, tasksListData, taskSubsData] =
+          await Promise.all([
+            diaryPromise,
+            sessionsPromise,
+            vocabSubsPromise,
+            tasksPromise,
+            taskSubsPromise
+          ]);
+
+        setTodayDiary(diaryDoc && diaryDoc.date === todayStr ? diaryDoc : null);
         setAllSessionsList(fetchedSessions);
+        setTodayVocabSubmissions(vocabSubs);
+        setAllTasks(tasksListData);
+        setMyTaskSubmissions(taskSubsData);
 
-        // Map to deduplicate session logs by unique key: (classSlug + date)
+        // Compute deduplicated Attendance stats
         const sessionMap = new Map();
-
-        fetchedSessions.forEach(session => {
+        fetchedSessions.forEach((session) => {
           if (!session.records || !Array.isArray(session.records)) return;
-          const myRecord = session.records.find(r => r.studentId === user.id);
+          const myRecord = session.records.find((r) => r.studentId === uid);
           if (!myRecord) return;
 
           const rawClassId = session.classId || "";
           const classSlug = rawClassId.includes("_") ? rawClassId.split("_")[1] : rawClassId;
           const subjectName = session.subject || classSlug || "Classroom";
-          const gradeName = session.gradeLevel || session.grade || user.gradeLevel || "";
+          const gradeName = session.gradeLevel || session.grade || currentUser.gradeLevel || "";
           const sessionDate = session.date || "Unknown Date";
-
-          // Unique session key per subject & date
           const sessionKey = `${(classSlug || subjectName).toLowerCase()}_${sessionDate}`;
 
           const existing = sessionMap.get(sessionKey);
@@ -141,17 +257,19 @@ export default function StudentDashboard() {
           }
         });
 
-        const deduplicatedLogs = Array.from(sessionMap.values());
+        let present = 0;
+        let late = 0;
+        let absent = 0;
+        let excused = 0;
+        let totalLateMinutes = 0;
 
-        let present = 0, late = 0, absent = 0, excused = 0, totalLateMinutes = 0;
-
-        deduplicatedLogs.forEach(log => {
+        sessionMap.forEach((log) => {
           const st = (log.status || "").toLowerCase();
           if (st === "present") {
             present++;
           } else if (st === "late") {
             late++;
-            totalLateMinutes += (Number(log.minutesLate) || 0);
+            totalLateMinutes += Number(log.minutesLate) || 0;
           } else if (st === "absent") {
             absent++;
           } else if (st === "excused") {
@@ -160,7 +278,8 @@ export default function StudentDashboard() {
         });
 
         const totalSessions = present + late + absent + excused;
-        const averageScore = totalSessions > 0 ? Math.round(((present + late + excused) / totalSessions) * 100) : 100;
+        const averageScore =
+          totalSessions > 0 ? Math.round(((present + late + excused) / totalSessions) * 100) : 100;
 
         setAttendanceStats({
           present,
@@ -171,74 +290,19 @@ export default function StudentDashboard() {
           totalSessions,
           averageScore
         });
-
+      } catch (err) {
+        console.warn("Error loading student dashboard:", err);
+      } finally {
         setIsLoading(false);
-      }, (err) => {
-        console.warn("Error listening to sessions:", err);
-        setIsLoading(false);
-      });
-    } else {
-      setIsLoading(false);
-    }
+        setIsRefreshing(false);
+      }
+    },
+    [studentUid, todayStr]
+  );
 
-    // 3. Real-time Student Vocab Submissions Listener (For Card Notification Badges)
-    const vocabSubQuery = query(
-      collection(db, "vocab_submissions"),
-      where("studentId", "==", user.id)
-    );
-    const unsubSubmissions = onSnapshot(vocabSubQuery, (subSnap) => {
-      const list = subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setTodayVocabSubmissions(list);
-    }, (err) => {
-      console.warn("Error listening to student vocab submissions:", err);
-    });
-
-    // 4. Real-time Tasks Listener (Scoped to student's enrolled classes)
-    const enrolledClasses = user?.enrolledClasses || [];
-    let unsubTasks = () => {};
-    if (enrolledClasses.length > 0 && enrolledClasses.length <= 30) {
-      const tasksQuery = query(
-        collection(db, "tasks"),
-        where("status", "==", "published"),
-        where("classId", "in", enrolledClasses)
-      );
-      unsubTasks = onSnapshot(tasksQuery, (tasksSnap) => {
-        const list = tasksSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
-        setAllTasks(list);
-      }, (err) => {
-        console.warn("Error listening to tasks:", err);
-      });
-    } else if (enrolledClasses.length > 30) {
-      // Firestore "in" supports max 30; fallback to unscoped + client filter
-      const tasksQuery = query(collection(db, "tasks"), where("status", "==", "published"));
-      unsubTasks = onSnapshot(tasksQuery, (tasksSnap) => {
-        const list = tasksSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
-        setAllTasks(list.filter(t => enrolledClasses.includes(t.classId)));
-      }, (err) => {
-        console.warn("Error listening to tasks:", err);
-      });
-    }
-
-    // 5. Real-time Student Task Submissions Listener
-    const taskSubQuery = query(
-      collection(db, "task_submissions"),
-      where("studentId", "==", user.id)
-    );
-    const unsubTaskSubs = onSnapshot(taskSubQuery, (subSnap) => {
-      const list = subSnap.docs.map(doc => ({ id: doc.id, firestoreId: doc.id, ...doc.data() }));
-      setMyTaskSubmissions(list);
-    }, (err) => {
-      console.warn("Error listening to student task submissions:", err);
-    });
-
-    return () => {
-      unsubDiary();
-      unsubSessions();
-      unsubSubmissions();
-      unsubTasks();
-      unsubTaskSubs();
-    };
-  }, [user?.id]);
+  useEffect(() => {
+    loadStudentDashboard(false);
+  }, [loadStudentDashboard]);
 
   // Handle Submit Daily Diary
   const handleSubmitDiary = async (e) => {
@@ -276,6 +340,7 @@ export default function StudentDashboard() {
       };
 
       await setDoc(doc(db, "diaries", docId), payload);
+      invalidateCache(`student_diary_${user.id}`);
       setTodayDiary(payload);
       setDiarySuccessMsg("Diary submitted successfully!");
       setTimeout(() => setDiarySuccessMsg(""), 3000);
@@ -300,6 +365,7 @@ export default function StudentDashboard() {
     try {
       const docId = `${user.id}-${todayStr}`;
       await deleteDoc(doc(db, "diaries", docId));
+      invalidateCache(`student_diary_${user.id}`);
       setTodayDiary(null);
       toast.success("Diary unsubmitted. You can now edit and resubmit.");
     } catch (e) {
@@ -334,11 +400,24 @@ export default function StudentDashboard() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-3 bg-slate-50/90 dark:bg-white/10 dark:backdrop-blur-md border border-slate-200/80 dark:border-white/15 px-4 py-3 rounded-2xl shrink-0 shadow-2xs">
-            <div className="text-right">
-              <div className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-400 font-extrabold">Student Code</div>
-              <div className="font-mono font-extrabold text-brand-600 dark:text-brand-300 text-lg tracking-wider">
-                {user?.studentCode || "WCS-STD"}
+          <div className="flex items-center space-x-3 shrink-0">
+            <button
+              type="button"
+              onClick={() => loadStudentDashboard(true)}
+              disabled={isRefreshing}
+              title="Refresh classes & updates"
+              className="inline-flex items-center space-x-1.5 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-white/15 text-xs font-bold transition-all cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+
+            <div className="flex items-center space-x-3 bg-slate-50/90 dark:bg-white/10 dark:backdrop-blur-md border border-slate-200/80 dark:border-white/15 px-4 py-3 rounded-2xl shrink-0 shadow-2xs">
+              <div className="text-right">
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-400 font-extrabold">Student Code</div>
+                <div className="font-mono font-extrabold text-brand-600 dark:text-brand-300 text-lg tracking-wider">
+                  {user?.studentCode || "WCS-STD"}
+                </div>
               </div>
             </div>
           </div>

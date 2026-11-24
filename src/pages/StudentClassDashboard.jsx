@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { toast, confirmDialog } from "../context/FeedbackContext";
 import { db } from "../firebase/config";
-import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, addDoc, serverTimestamp } from "firebase/firestore";
+import { cachedQuery, invalidateCache } from "../utils/firestoreCache";
 import { formatStudentName } from "../utils/helpers";
 import { 
   ArrowLeft,
@@ -22,7 +23,8 @@ import {
   FolderKanban,
   ExternalLink,
   Eye,
-  Check
+  Check,
+  RefreshCw
 } from "lucide-react";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
@@ -94,6 +96,7 @@ export default function StudentClassDashboard() {
   const [isTasksLoading, setIsTasksLoading] = useState(false);
   const [isMarkingDone, setIsMarkingDone] = useState({});
   const [taskArchiveQuarter, setTaskArchiveQuarter] = useState("1st Quarter");
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const targetClassTag = decodeURIComponent(rawClassParam || "");
   let extractedTeacherId = "";
@@ -113,166 +116,214 @@ export default function StudentClassDashboard() {
   };
 
   const displayTitle = formatTitle(extractedClassId);
+  const userRef = useRef(user);
+  userRef.current = user;
+  const studentUid = user?.id || user?.uid;
+
+  const loadClassData = useCallback(
+    async (forceRefresh = false) => {
+      const currentUser = userRef.current;
+      if (!currentUser || !targetClassTag) return;
+
+      if (!extractedTeacherId) {
+        console.warn("StudentClassDashboard: extractedTeacherId is empty, skipping queries to prevent unscoped reads.");
+        setIsLoading(false);
+        setIsExamsLoading(false);
+        return;
+      }
+
+      if (forceRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+        setIsExamsLoading(true);
+        setIsTasksLoading(true);
+      }
+
+      try {
+        const uid = currentUser.id || currentUser.uid;
+        const classIdVariants = Array.from(
+          new Set([targetClassTag, extractedClassId, decodeURIComponent(targetClassTag)].filter(Boolean))
+        );
+
+        // 1. Cached Teacher Name
+        const teacherPromise = cachedQuery(
+          `user_profile_${extractedTeacherId}`,
+          async () => {
+            const snap = await getDoc(doc(db, "users", extractedTeacherId));
+            return snap.exists() ? snap.data().name || "" : "";
+          },
+          { forceRefresh }
+        );
+
+        // 2. Scoped Sessions (strictly classIdVariants, NEVER teacher-wide!)
+        const sessionsPromise = cachedQuery(
+          `class_sessions_${targetClassTag}`,
+          async () => {
+            const snap = await getDocs(
+              query(collection(db, "sessions"), where("classId", "in", classIdVariants))
+            );
+            return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        );
+
+        // 3. Student Vocab Submissions (shared key with StudentDashboard & StudentVocabHistory)
+        const vocabSubsPromise = cachedQuery(
+          `student_vocab_subs_${currentUser.id}`,
+          async () => {
+            const snap = await getDocs(
+              query(collection(db, "vocab_submissions"), where("studentId", "==", currentUser.id))
+            );
+            return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        );
+
+        // 4. Published Exams scoped to class
+        const examsPromise = cachedQuery(
+          `class_exams_${targetClassTag}`,
+          async () => {
+            const snap = await getDocs(
+              query(
+                collection(db, "exams"),
+                where("status", "==", "published"),
+                where("classId", "in", classIdVariants)
+              )
+            );
+            return snap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        );
+
+        // 5. Student Exam Submissions (shared key with StudentExamSession)
+        const examSubsPromise = cachedQuery(
+          `student_exam_subs_${uid}`,
+          async () => {
+            const snap = await getDocs(
+              query(collection(db, "exam_submissions"), where("studentId", "==", uid))
+            );
+            return snap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        );
+
+        // 6. Published Tasks scoped to class (shared key with StudentTaskHistory)
+        const tasksPromise = cachedQuery(
+          `class_tasks_${targetClassTag}`,
+          async () => {
+            const snap = await getDocs(
+              query(
+                collection(db, "tasks"),
+                where("status", "==", "published"),
+                where("classId", "in", classIdVariants)
+              )
+            );
+            return snap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        );
+
+        // 7. Student Task Submissions (shared key with StudentDashboard & StudentTaskHistory)
+        const taskSubsPromise = cachedQuery(
+          `student_task_subs_${uid}`,
+          async () => {
+            const snap = await getDocs(
+              query(collection(db, "task_submissions"), where("studentId", "==", uid))
+            );
+            return snap.docs.map((d) => ({ id: d.id, firestoreId: d.id, ...d.data() }));
+          },
+          { forceRefresh }
+        );
+
+        const [
+          loadedTeacherName,
+          rawSessions,
+          vocabList,
+          relevantExams,
+          examSubs,
+          relevantTasks,
+          taskSubs
+        ] = await Promise.all([
+          teacherPromise,
+          sessionsPromise,
+          vocabSubsPromise,
+          examsPromise,
+          examSubsPromise,
+          tasksPromise,
+          taskSubsPromise
+        ]);
+
+        setTeacherName(loadedTeacherName);
+
+        const relevantSessions = rawSessions.filter((s) => {
+          const hasVocab =
+            s.vocabularyWords &&
+            (Array.isArray(s.vocabularyWords)
+              ? s.vocabularyWords.length > 0
+              : typeof s.vocabularyWords === "string" && s.vocabularyWords.trim().length > 0);
+          const matchesTeacher = !s.teacherId || s.teacherId === extractedTeacherId;
+          return hasVocab && matchesTeacher;
+        });
+        relevantSessions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        setVocabSessions(relevantSessions);
+
+        setVocabSubmissionsList(vocabList);
+        const vMap = {};
+        vocabList.forEach((data) => {
+          const sessionDate = data.date || (data.createdAt ? data.createdAt.split("T")[0] : "");
+          if (sessionDate) {
+            if (data.sessionId) vMap[`${data.sessionId}`] = data;
+            if (data.classId) vMap[`${data.classId}-${sessionDate}`] = data;
+            if (data.rawClassId) vMap[`${data.rawClassId}-${sessionDate}`] = data;
+            vMap[`${currentUser.id}-${data.rawClassId || data.classId}-${sessionDate}`] = data;
+          }
+        });
+        setVocabSubmissionsMap(vMap);
+
+        const sortedExams = [...relevantExams].sort((a, b) => {
+          const timeA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+          const timeB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+          return timeB - timeA;
+        });
+        setExamsList(sortedExams);
+
+        setExamSubmissionsList(examSubs);
+        const eMap = {};
+        examSubs.forEach((data) => {
+          if (data.examId) eMap[data.examId] = data;
+        });
+        setExamSubmissionsMap(eMap);
+
+        setTasksList(relevantTasks);
+        const tMap = {};
+        taskSubs.forEach((data) => {
+          if (data.taskId) {
+            const matchesClass =
+              data.classId === targetClassTag ||
+              data.classId === extractedClassId ||
+              relevantTasks.some((t) => (t.firestoreId || t.id) === data.taskId);
+            if (matchesClass) {
+              tMap[data.taskId] = data;
+            }
+          }
+        });
+        setTaskSubmissionsMap(tMap);
+      } catch (e) {
+        console.error("Error loading student classroom data:", e);
+      } finally {
+        setIsLoading(false);
+        setIsExamsLoading(false);
+        setIsTasksLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [studentUid, targetClassTag, extractedClassId, extractedTeacherId]
+  );
 
   useEffect(() => {
-    if (!user || !targetClassTag) return;
-    loadTeacherInfo();
-    setIsLoading(true);
-
-    // 1. Real-time Sessions Listener (Vocab Assignments)
-    if (!extractedTeacherId) {
-      console.warn("StudentClassDashboard: extractedTeacherId is empty, skipping all listeners to prevent unscoped reads.");
-      setIsLoading(false);
-      return;
-    }
-    const sessionsQuery = query(collection(db, "sessions"), where("teacherId", "==", extractedTeacherId));
-
-    const unsubSessions = onSnapshot(sessionsQuery, (sessionsSnap) => {
-      const rawSessions = sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      const relevantSessions = rawSessions.filter((s) => {
-        const hasVocab = s.vocabularyWords && (Array.isArray(s.vocabularyWords) ? s.vocabularyWords.length > 0 : typeof s.vocabularyWords === 'string' && s.vocabularyWords.trim().length > 0);
-        const sessionClassTag = `${s.teacherId}_${s.classId}`;
-
-        const matchesExactTag = sessionClassTag === targetClassTag;
-        const matchesClassId = s.classId === extractedClassId || s.classId === targetClassTag;
-        const matchesTeacher = extractedTeacherId ? s.teacherId === extractedTeacherId : true;
-
-        return hasVocab && (matchesExactTag || (matchesClassId && matchesTeacher));
-      });
-
-      relevantSessions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-      setVocabSessions(relevantSessions);
-      setIsLoading(false);
-    }, (e) => {
-      console.error("Error listening to class session data:", e);
-      setIsLoading(false);
-    });
-
-    // 2. Real-time Vocab Submissions Listener for Student
-    const vocabSubQuery = query(
-      collection(db, "vocab_submissions"),
-      where("studentId", "==", user.id)
-    );
-
-    const unsubSubmissions = onSnapshot(vocabSubQuery, (subSnap) => {
-      const list = subSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setVocabSubmissionsList(list);
-
-      const submissionsMap = {};
-      list.forEach((data) => {
-        const sessionDate = data.date || (data.createdAt ? data.createdAt.split("T")[0] : "");
-        if (sessionDate) {
-          if (data.sessionId) submissionsMap[`${data.sessionId}`] = data;
-          if (data.classId) submissionsMap[`${data.classId}-${sessionDate}`] = data;
-          if (data.rawClassId) submissionsMap[`${data.rawClassId}-${sessionDate}`] = data;
-          submissionsMap[`${user.id}-${data.rawClassId || data.classId}-${sessionDate}`] = data;
-        }
-      });
-      setVocabSubmissionsMap(submissionsMap);
-      setIsLoading(false);
-    }, (e) => {
-      console.error("Error listening to vocab submissions:", e);
-      setIsLoading(false);
-    });
-
-    // 3. Real-time Exams Listener (Filtered by published status & scoped to this classroom)
-    const classIdVariants = Array.from(new Set([targetClassTag, extractedClassId, decodeURIComponent(targetClassTag)].filter(Boolean)));
-    const examsQuery = query(
-      collection(db, "exams"),
-      where("status", "==", "published"),
-      where("classId", "in", classIdVariants)
-    );
-    const unsubExams = onSnapshot(examsQuery, (examsSnap) => {
-      const relevantExams = examsSnap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
-
-      relevantExams.sort((a, b) => {
-        const timeA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-        const timeB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-        return timeB - timeA;
-      });
-
-      setExamsList(relevantExams);
-      setIsExamsLoading(false);
-    }, (e) => {
-      console.error("Error listening to exams:", e);
-      setIsExamsLoading(false);
-    });
-
-    // 4. Real-time Exam Submissions Listener for Student
-    const studentUid = user?.id || user?.uid;
-    const examSubQuery = query(
-      collection(db, "exam_submissions"),
-      where("studentId", "==", studentUid)
-    );
-
-    const unsubExamSubs = onSnapshot(examSubQuery, (subSnap) => {
-      const list = subSnap.docs.map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }));
-      setExamSubmissionsList(list);
-
-      const subsMap = {};
-      list.forEach((data) => {
-        if (data.examId) {
-          subsMap[data.examId] = data;
-        }
-      });
-      setExamSubmissionsMap(subsMap);
-    }, (e) => {
-      console.error("Error listening to exam submissions:", e);
-    });
-
-    loadTasksData();
-
-    return () => {
-      unsubSessions();
-      unsubSubmissions();
-      unsubExams();
-      unsubExamSubs();
-    };
-  }, [user?.id, targetClassTag]);
-
-  // Load Published Tasks & Student Task Submissions
-  const loadTasksData = async () => {
-    if (!user || !targetClassTag) return;
-    setIsTasksLoading(true);
-    try {
-      const classIdVariants = Array.from(new Set([targetClassTag, extractedClassId, decodeURIComponent(targetClassTag)].filter(Boolean)));
-      const qTasks = query(
-        collection(db, "tasks"),
-        where("status", "==", "published"),
-        where("classId", "in", classIdVariants)
-      );
-      const tasksSnap = await getDocs(qTasks);
-      const relevantTasks = tasksSnap.docs.map((d) => ({ firestoreId: d.id, ...d.data() }));
-
-      setTasksList(relevantTasks);
-
-      const studentUid = user.id || user.uid;
-      const subSnap = await getDocs(
-        query(
-          collection(db, "task_submissions"),
-          where("studentId", "==", studentUid)
-        )
-      );
-
-      const subsMap = {};
-      subSnap.docs.forEach((doc) => {
-        const data = doc.data();
-        if (data.taskId) {
-          const matchesClass = data.classId === targetClassTag || data.classId === extractedClassId || relevantTasks.some(t => (t.firestoreId || t.id) === data.taskId);
-          if (matchesClass) {
-            subsMap[data.taskId] = { id: doc.id, firestoreId: doc.id, ...data };
-          }
-        }
-      });
-
-      setTaskSubmissionsMap(subsMap);
-    } catch (e) {
-      console.error("Error loading tasks in student portal:", e);
-    } finally {
-      setIsTasksLoading(false);
-    }
-  };
+    loadClassData(false);
+  }, [loadClassData]);
 
   const handleMarkExternalTaskDone = async (task) => {
     const taskId = task.firestoreId || task.id;
@@ -293,6 +344,7 @@ export default function StudentClassDashboard() {
       };
 
       const docRef = await addDoc(collection(db, "task_submissions"), payload);
+      invalidateCache(`student_task_subs_${studentUid}`);
       setTaskSubmissionsMap(prev => ({
         ...prev,
         [taskId]: { firestoreId: docRef.id, ...payload }
@@ -302,19 +354,6 @@ export default function StudentClassDashboard() {
       toast.error("Failed to mark task as done: " + e.message);
     } finally {
       setIsMarkingDone(prev => ({ ...prev, [taskId]: false }));
-    }
-  };
-
-  // Load Instructor info if teacherId exists
-  const loadTeacherInfo = async () => {
-    if (!extractedTeacherId) return;
-    try {
-      const teacherSnap = await getDoc(doc(db, "users", extractedTeacherId));
-      if (teacherSnap.exists()) {
-        setTeacherName(teacherSnap.data().name || "");
-      }
-    } catch (e) {
-      console.warn("Could not load teacher profile:", e);
     }
   };
 
@@ -373,9 +412,16 @@ export default function StudentClassDashboard() {
       };
 
       await setDoc(doc(db, "vocab_submissions", subDocId), payload);
+      invalidateCache(`student_vocab_subs_${user.id}`);
+      const savedDoc = { id: subDocId, ...payload };
+      setVocabSubmissionsList((prev) => [
+        savedDoc,
+        ...prev.filter((item) => item.id !== subDocId)
+      ]);
       setVocabSubmissionsMap((prev) => ({
         ...prev,
-        [sessionKey]: payload
+        [sessionKey]: payload,
+        [`${extractedClassId}-${sessionDate}`]: payload
       }));
       setVocabSuccessMsg((prev) => ({
         ...prev,
@@ -408,6 +454,8 @@ export default function StudentClassDashboard() {
       const sessionKey = `${classId}-${sessionDate}`;
 
       await deleteDoc(doc(db, "vocab_submissions", subDocId));
+      invalidateCache(`student_vocab_subs_${user.id}`);
+      setVocabSubmissionsList((prev) => prev.filter((item) => item.id !== subDocId));
       
       setVocabSubmissionsMap(prev => {
         const next = { ...prev };
@@ -463,6 +511,16 @@ export default function StudentClassDashboard() {
               </p>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={() => loadClassData(true)}
+            disabled={isRefreshing}
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold transition-all cursor-pointer disabled:opacity-60 shrink-0 self-start sm:self-auto"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            <span>Refresh</span>
+          </button>
         </div>
       </div>
 

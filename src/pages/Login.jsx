@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { auth, db } from "../firebase/config";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, query, where, getDocs, doc, setDoc } from "firebase/firestore";
-import { KeyRound, Mail, AlertCircle, ArrowRight, Sparkles, User, GraduationCap, Lock, Hash } from "lucide-react";
+import { db } from "../firebase/config";
+import { doc, getDoc } from "firebase/firestore";
+import { KeyRound, Mail, AlertCircle, ArrowRight, User, GraduationCap, Lock, Hash } from "lucide-react";
 
 export default function Login() {
-  const { login, loading } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [loginType, setLoginType] = useState("faculty"); // "faculty" | "student"
@@ -17,90 +16,7 @@ export default function Login() {
   const [pin, setPin] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
-  const [seedingText, setSeedingText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Seed default admin and teacher accounts if they don't exist in Firestore
-  useEffect(() => {
-    const seedDefaultAccounts = async () => {
-      try {
-        const usersRef = collection(db, "users");
-
-        // 1. Seed Admin
-        const adminQuery = query(usersRef, where("email", "==", "admin@school.edu"));
-        const adminSnap = await getDocs(adminQuery);
-        if (adminSnap.empty) {
-          setSeedingText("Seeding Super Admin account...");
-          try {
-            const credential = await createUserWithEmailAndPassword(auth, "admin@school.edu", "admin123");
-            const uid = credential.user.uid;
-            await setDoc(doc(db, "users", uid), {
-              id: uid,
-              name: "System Admin",
-              email: "admin@school.edu",
-              role: "admin",
-              avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Admin"
-            });
-            // Immediately sign out since createUserWithEmailAndPassword logs the client in
-            await auth.signOut();
-          } catch (err) {
-            if (err.code !== "auth/email-already-in-use") {
-              console.error("Failed to seed admin in auth", err);
-            }
-          }
-        }
-
-        // 2. Seed default Teacher (Sarah Jenkins)
-        const teacherQuery = query(usersRef, where("email", "==", "sarah.jenkins@schooldistrict.org"));
-        const teacherSnap = await getDocs(teacherQuery);
-        if (teacherSnap.empty) {
-          setSeedingText("Seeding Sarah Jenkins (Teacher) account...");
-          try {
-            const credential = await createUserWithEmailAndPassword(auth, "sarah.jenkins@schooldistrict.org", "password123");
-            const uid = credential.user.uid;
-            await setDoc(doc(db, "users", uid), {
-              id: uid,
-              name: "Sarah Jenkins",
-              email: "sarah.jenkins@schooldistrict.org",
-              role: "teacher",
-              avatar: "https://api.dicebear.com/7.x/adventurer/svg?seed=Sarah",
-              assignments: [
-                { grade: "Grade 1", gradeLevel: "Grade 1", subject: "Homeroom A", startTime: "08:30", endTime: "09:30", daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] },
-                { grade: "Grade 5", gradeLevel: "Grade 5", subject: "Mathematics", startTime: "09:45", endTime: "10:45", daysOfWeek: ["Monday", "Wednesday", "Friday"] },
-                { grade: "Grade 8", gradeLevel: "Grade 8", subject: "General Science", startTime: "11:00", endTime: "12:00", daysOfWeek: ["Tuesday", "Thursday"] },
-                { grade: "Grade 11", gradeLevel: "Grade 11", subject: "English Literature", startTime: "13:30", endTime: "14:30", daysOfWeek: ["Monday", "Wednesday", "Friday"] }
-              ]
-            });
-            
-            // Seed a few default students for Sarah's first class (Grade 1 - Homeroom A)
-            const defaultStudents = [
-              { id: "s101", name: "Alexander Wright", internationalName: "Alex", nationalName: "Wright", communityCenter: "Northside Community Center", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
-              { id: "s102", name: "Benjamin Cooper", internationalName: "Ben", nationalName: "Cooper", communityCenter: "Westside Hub", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
-              { id: "s103", name: "Charlotte Hayes", internationalName: "Charlotte", nationalName: "Han Sol-ji", communityCenter: "Chinatown Youth Center", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
-              { id: "s104", name: "Daniel Martinez", internationalName: "Danny", nationalName: "Daniel Martinez", communityCenter: "Centro Hispano", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid },
-              { id: "s105", name: "Emma Watson", internationalName: "Emma", nationalName: "Emi Tanaka", communityCenter: "Little Tokyo Hub", enrollmentDate: "2026-07-01", role: "student", classId: "grade-1-homeroom-a", teacherId: uid }
-            ];
-
-            for (const s of defaultStudents) {
-              await setDoc(doc(db, "users", s.id), s);
-            }
-
-            await auth.signOut();
-          } catch (err) {
-            if (err.code !== "auth/email-already-in-use") {
-              console.error("Failed to seed teacher in auth", err);
-            }
-          }
-        }
-      } catch (e) {
-        console.error("Error during automatic seeding", e);
-      } finally {
-        setSeedingText("");
-      }
-    };
-
-    seedDefaultAccounts();
-  }, []);
 
   const handleLoginSuccess = (userData) => {
     const from = location.state?.from ? (location.state.from.pathname + (location.state.from.search || "")) : null;
@@ -144,16 +60,14 @@ export default function Login() {
     }
 
     try {
-      await login(targetEmail, targetPassword, rememberMe);
-      // Wait a brief moment for the auth listener to resolve and populate Firestore profiles
-      const checkProfileInterval = setInterval(async () => {
-        const userDoc = await getDocs(query(collection(db, "users"), where("email", "==", targetEmail.toLowerCase())));
-        if (!userDoc.empty) {
-          clearInterval(checkProfileInterval);
-          const data = userDoc.docs[0].data();
-          handleLoginSuccess(data);
-        }
-      }, 300);
+      const loggedInUser = await login(targetEmail, targetPassword, rememberMe);
+      const userSnap = await getDoc(doc(db, "users", loggedInUser.uid));
+      if (userSnap.exists()) {
+        handleLoginSuccess(userSnap.data());
+      } else {
+        setIsSubmitting(false);
+        setError("Account profile not found. Please contact Admin.");
+      }
     } catch (err) {
       setIsSubmitting(false);
       if (
@@ -206,14 +120,6 @@ export default function Login() {
             <span>Student Login</span>
           </button>
         </div>
-
-        {/* Seeding banner indicator */}
-        {seedingText && (
-          <div className="mb-6 flex items-center space-x-2 rounded-xl bg-brand-50 dark:bg-brand-900/20 p-3.5 text-xs font-semibold text-brand-700 dark:text-brand-400 border border-brand-100 dark:border-brand-800/50 animate-pulse transition-colors">
-            <Sparkles className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
-            <span>{seedingText}</span>
-          </div>
-        )}
 
         {/* Logo and header */}
         <div className="flex flex-col items-center text-center space-y-3.5 mb-8">
@@ -356,7 +262,7 @@ export default function Login() {
 
           <button
             type="submit"
-            disabled={isSubmitting || seedingText}
+            disabled={isSubmitting}
             className="w-full mt-2 inline-flex items-center justify-center space-x-2 rounded-xl bg-slate-900 dark:bg-brand-600 py-2.5 text-sm font-semibold text-white shadow-md dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 transition-all hover:bg-slate-800 dark:hover:bg-brand-500 focus:ring-2 focus:ring-slate-900/10 active:scale-[0.98] disabled:opacity-50 cursor-pointer"
           >
             {isSubmitting ? "Signing in..." : "Sign In"}

@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { toast, confirmDialog } from "../context/FeedbackContext";
 import { db } from "../firebase/config";
 import { doc, getDoc, collection, addDoc, serverTimestamp, query, where, getDocs } from "firebase/firestore";
+import { invalidateCache } from "../utils/firestoreCache";
 import { formatStudentName } from "../utils/helpers";
 import { 
   Clock, 
@@ -256,6 +257,7 @@ export default function StudentExamSession() {
       };
 
       await addDoc(collection(db, "exam_submissions"), payload);
+      invalidateCache(`student_exam_subs_${user.id}`);
 
       if (finalStatus === "Graded") {
         toast.success(`🎉 Exam Submitted! Score: ${objScore} / ${totalExamPoints} pts`);

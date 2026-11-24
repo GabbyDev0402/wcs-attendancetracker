@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, updateDoc, onSnapshot } from "firebase/firestore";
+import { cachedQuery, invalidateCache } from "../utils/firestoreCache";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "../context/FeedbackContext";
 import { formatStudentName, formatTime12Hour, formatScheduleString } from "../utils/helpers";
@@ -20,7 +21,8 @@ import {
   MessageSquare,
   FileText,
   Bell,
-  CheckSquare
+  CheckSquare,
+  RefreshCw
 } from "lucide-react";
 
 export default function TeacherDashboard() {
@@ -85,7 +87,7 @@ export default function TeacherDashboard() {
     setTeacherClasses(parsedClasses);
   }, [user?.id, JSON.stringify(user?.assignments)]);
 
-  // Load pending & graded diaries if user is a Math teacher (Real-time onSnapshot)
+  // Load pending diaries via real-time listener; lazy-load graded archive on Diaries tab
   useEffect(() => {
     if (!isMathTeacher || !user) return;
 
@@ -109,30 +111,47 @@ export default function TeacherDashboard() {
       setIsPendingDiariesLoading(false);
     });
 
-    // 2. Graded Diaries Archive Listener (Strict Math Teacher Isolation)
-    const qGraded = query(
-      collection(db, "diaries"),
-      where("status", "==", "graded"),
-      where("mathTeacherId", "==", currentTeacherUid)
-    );
-
-    const unsubGraded = onSnapshot(qGraded, (snap) => {
-      const items = snap.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(d => d.mathTeacherId === currentTeacherUid);
-
-      setRawGradedDiaries(items);
-      setIsGradedDiariesLoading(false);
-    }, (e) => {
-      console.error("Error listening to graded diaries archive:", e);
-      setIsGradedDiariesLoading(false);
-    });
-
     return () => {
       unsubPending();
-      unsubGraded();
     };
   }, [isMathTeacher, user?.id]);
+
+  const loadGradedDiaries = useCallback(
+    async (forceRefresh = false) => {
+      const currentTeacherUid = user?.id || user?.uid;
+      if (!isMathTeacher || !currentTeacherUid) return;
+      setIsGradedDiariesLoading(true);
+      try {
+        const items = await cachedQuery(
+          `teacher_graded_diaries_${currentTeacherUid}`,
+          async () => {
+            const qGraded = query(
+              collection(db, "diaries"),
+              where("status", "==", "graded"),
+              where("mathTeacherId", "==", currentTeacherUid)
+            );
+            const snap = await getDocs(qGraded);
+            return snap.docs
+              .map((d) => ({ id: d.id, ...d.data() }))
+              .filter((d) => d.mathTeacherId === currentTeacherUid);
+          },
+          { forceRefresh }
+        );
+        setRawGradedDiaries(items);
+      } catch (e) {
+        console.error("Error loading graded diaries archive:", e);
+      } finally {
+        setIsGradedDiariesLoading(false);
+      }
+    },
+    [isMathTeacher, user?.id, user?.uid]
+  );
+
+  useEffect(() => {
+    if (activeTeacherTab === "diaries" && isMathTeacher && user?.id) {
+      loadGradedDiaries(false);
+    }
+  }, [activeTeacherTab, isMathTeacher, user?.id, loadGradedDiaries]);
 
   // Derived In-Memory Filtered Graded Diaries Archive
   const gradedDiaries = useMemo(() => {
@@ -251,6 +270,21 @@ export default function TeacherDashboard() {
         feedback: diaryFeedbackText.trim()
       });
 
+      const currentTeacherUid = user?.id || user?.uid;
+      if (currentTeacherUid) {
+        invalidateCache(`teacher_graded_diaries_${currentTeacherUid}`);
+      }
+      const updatedDiary = {
+        ...selectedDiary,
+        id: docId,
+        status: "graded",
+        feedback: diaryFeedbackText.trim()
+      };
+      setRawGradedDiaries((prev) => [
+        updatedDiary,
+        ...prev.filter((d) => (d.id || `${d.studentId}-${d.date}`) !== docId)
+      ]);
+
       toast.success("Feedback Updated!");
       setIsDiaryModalOpen(false);
       setSelectedDiary(null);
@@ -288,13 +322,25 @@ export default function TeacherDashboard() {
           classNameMap[c.id] = c.name;
         });
 
-        // 1. Fetch Students enrolled in teacher's classes V2
-        const studentsQuery = query(
-          collection(db, "users"),
-          where("role", "==", "student")
+        // 1. Fetch Students enrolled with this teacher (scoped query + legacy fallback only if empty)
+        const rawStudents = await cachedQuery(
+          `teacher_students_${user.id}`,
+          async () => {
+            const scopedSnap = await getDocs(
+              query(
+                collection(db, "users"),
+                where("enrolledTeachers", "array-contains", user.id)
+              )
+            );
+            if (!scopedSnap.empty) {
+              return scopedSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            }
+            const legacySnap = await getDocs(
+              query(collection(db, "users"), where("role", "==", "student"))
+            );
+            return legacySnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          }
         );
-        const studentsSnap = await getDocs(studentsQuery);
-        const rawStudents = studentsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         const teacherPrefix = `${user.id}_`;
 
         const allStudents = rawStudents.filter(s => {
@@ -304,22 +350,29 @@ export default function TeacherDashboard() {
           return hasClassTag || hasTeacher || s.teacherId === user.id || matchesClass;
         });
 
-        // 2. Fetch Sessions for this teacher
-        const sessionsQuery = query(
-          collection(db, "sessions"),
-          where("teacherId", "==", user.id)
+        // 2. Fetch Sessions for this teacher (shared cache across TeacherDashboard & Reports)
+        const allSessions = await cachedQuery(
+          `teacher_sessions_${user.id}`,
+          async () => {
+            const sessionsSnap = await getDocs(
+              query(collection(db, "sessions"), where("teacherId", "==", user.id))
+            );
+            if (!sessionsSnap.empty || classIds.length === 0) {
+              return sessionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            }
+            const legacyMap = new Map();
+            for (let i = 0; i < classIds.length; i += 10) {
+              const chunk = classIds.slice(i, i + 10);
+              const legacySnap = await getDocs(
+                query(collection(db, "sessions"), where("classId", "in", chunk))
+              );
+              legacySnap.docs.forEach((d) => {
+                legacyMap.set(d.id, { id: d.id, ...d.data() });
+              });
+            }
+            return Array.from(legacyMap.values());
+          }
         );
-        const sessionsSnap = await getDocs(sessionsQuery);
-        let allSessions = sessionsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        if (allSessions.length === 0 && classIds.length > 0) {
-          const legacyQuery = query(
-            collection(db, "sessions"),
-            where("classId", "in", classIds)
-          );
-          const legacySnap = await getDocs(legacyQuery);
-          allSessions = legacySnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        }
 
         // 3. Determine today's logged state & pending classes count
         const todayRecs = allSessions.filter(r => r.date === todayStr);
@@ -652,6 +705,15 @@ export default function TeacherDashboard() {
                     Showing Last 7 Days
                   </span>
                 )}
+                <button
+                  type="button"
+                  onClick={() => loadGradedDiaries(true)}
+                  disabled={isGradedDiariesLoading}
+                  title="Refresh graded archive"
+                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 cursor-pointer disabled:opacity-60"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isGradedDiariesLoading ? "animate-spin" : ""}`} />
+                </button>
               </div>
             </div>
 

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { cachedQuery } from "../utils/firestoreCache";
 import { 
   ArrowLeft, 
   FolderKanban, 
@@ -13,7 +14,8 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowUpDown,
-  BookOpen
+  BookOpen,
+  RefreshCw
 } from "lucide-react";
 
 export default function StudentTaskHistory() {
@@ -24,9 +26,14 @@ export default function StudentTaskHistory() {
   const [tasksList, setTasksList] = useState([]);
   const [taskSubmissionsMap, setTaskSubmissionsMap] = useState({});
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedQuarter, setSelectedQuarter] = useState("1st Quarter");
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" = Chronological (oldest/earliest first)
   const [expandedCards, setExpandedCards] = useState({});
+
+  const userRef = useRef(user);
+  userRef.current = user;
+  const studentUid = user?.id || user?.uid;
 
   // Extract and decode URL params
   const targetClassTag = decodeURIComponent(rawClassParam || "");
@@ -59,53 +66,69 @@ export default function StudentTaskHistory() {
     ? `${expectedGrade} ${expectedSubject.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}`
     : extractedClassId.split("-").map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 
+  const loadTaskHistory = useCallback(
+    async (forceRefresh = false) => {
+      const currentUser = userRef.current;
+      if (!currentUser || !targetClassTag) return;
+
+      if (forceRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+
+      try {
+        const uid = currentUser.id || currentUser.uid;
+        const classIdVariants = Array.from(
+          new Set([targetClassTag, extractedClassId, decodeURIComponent(targetClassTag)].filter(Boolean))
+        );
+
+        const [allTasks, subs] = await Promise.all([
+          cachedQuery(
+            `class_tasks_${targetClassTag}`,
+            async () => {
+              const snap = await getDocs(
+                query(
+                  collection(db, "tasks"),
+                  where("status", "==", "published"),
+                  where("classId", "in", classIdVariants)
+                )
+              );
+              return snap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
+            },
+            { forceRefresh }
+          ),
+          cachedQuery(
+            `student_task_subs_${uid}`,
+            async () => {
+              const snap = await getDocs(
+                query(collection(db, "task_submissions"), where("studentId", "==", uid))
+              );
+              return snap.docs.map((d) => ({ firestoreId: d.id, id: d.id, ...d.data() }));
+            },
+            { forceRefresh }
+          )
+        ]);
+
+        setTasksList(allTasks);
+        const subsMap = {};
+        subs.forEach((data) => {
+          if (data.taskId) subsMap[data.taskId] = data;
+        });
+        setTaskSubmissionsMap(subsMap);
+      } catch (err) {
+        console.error("Error loading tasks history:", err);
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [studentUid, targetClassTag, extractedClassId]
+  );
+
   useEffect(() => {
-    if (!user || !targetClassTag) return;
-    setIsLoading(true);
-
-    const classIdVariants = Array.from(new Set([targetClassTag, extractedClassId, decodeURIComponent(targetClassTag)].filter(Boolean)));
-    const studentUid = user.id || user.uid;
-
-    // 1. Scoped query for published tasks in this classroom
-    const tasksQuery = query(
-      collection(db, "tasks"),
-      where("status", "==", "published"),
-      where("classId", "in", classIdVariants)
-    );
-
-    // 2. Scoped query for this student's task submissions
-    const taskSubQuery = query(
-      collection(db, "task_submissions"),
-      where("studentId", "==", studentUid)
-    );
-
-    const unsubTasks = onSnapshot(tasksQuery, (snap) => {
-      const allTasks = snap.docs.map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }));
-      setTasksList(allTasks);
-      setIsLoading(false);
-    }, (err) => {
-      console.error("Error loading tasks in task history:", err);
-      setIsLoading(false);
-    });
-
-    const unsubSubs = onSnapshot(taskSubQuery, (subSnap) => {
-      const subs = subSnap.docs.map(d => ({ firestoreId: d.id, id: d.id, ...d.data() }));
-      const subsMap = {};
-      subs.forEach(data => {
-        if (data.taskId) {
-          subsMap[data.taskId] = data;
-        }
-      });
-      setTaskSubmissionsMap(subsMap);
-    }, (err) => {
-      console.error("Error loading submissions in task history:", err);
-    });
-
-    return () => {
-      unsubTasks();
-      unsubSubs();
-    };
-  }, [user?.id, targetClassTag]);
+    loadTaskHistory(false);
+  }, [loadTaskHistory]);
 
   const toggleExpand = (taskId) => {
     setExpandedCards(prev => ({ ...prev, [taskId]: !prev[taskId] }));
@@ -221,6 +244,16 @@ export default function StudentTaskHistory() {
                 <option value="desc">Latest First</option>
               </select>
             </div>
+
+            <button
+              type="button"
+              onClick={() => loadTaskHistory(true)}
+              disabled={isRefreshing}
+              title="Refresh tasks"
+              className="inline-flex items-center space-x-1 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
+            </button>
           </div>
         </div>
 

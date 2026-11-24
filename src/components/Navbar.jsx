@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, Users, BookOpen, Sun, Moon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, Users, BookOpen, Sun, Moon, ChevronLeft, ChevronRight, FileSpreadsheet } from "lucide-react";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
@@ -46,7 +46,8 @@ export default function Navbar() {
     ? [
         { name: "Dashboard", path: "/teacher", icon: CalendarCheck },
         { name: "Lesson Reports", path: "/teacher/lesson-reports", icon: BookOpen },
-        { name: "Monthly Reports", path: "/teacher/reports", icon: BarChart3 }
+        { name: "Monthly Reports", path: "/teacher/reports", icon: BarChart3 },
+        { name: "Lesson Plans", path: "/teacher/lesson-plans", icon: FileSpreadsheet }
       ]
     : [];
 

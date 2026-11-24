@@ -9,6 +9,7 @@ import {
   browserSessionPersistence 
 } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import { clearFirestoreCache } from "../utils/firestoreCache";
 
 const AuthContext = createContext(null);
 
@@ -49,6 +50,7 @@ export const AuthProvider = ({ children }) => {
           setUser(null);
         }
       } else {
+        clearFirestoreCache();
         setUser(null);
       }
       setLoading(false);
@@ -93,6 +95,7 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
+      clearFirestoreCache();
       await signOut(auth);
     } catch (error) {
       console.error("Error signing out:", error);
