@@ -6,6 +6,7 @@ import { cachedQuery, invalidateCache } from "../utils/firestoreCache";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "../context/FeedbackContext";
 import { formatStudentName, formatTime12Hour, formatScheduleString } from "../utils/helpers";
+import ActiveTermBadge from "../components/ActiveTermBadge";
 import {
   Users,
   Calendar,
@@ -573,9 +574,12 @@ export default function TeacherDashboard() {
             Here is your daily schedule, classroom assessments, and academic overview.
           </p>
         </div>
-        <div className="text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 rounded-xl px-4 py-2 shadow-sm flex items-center space-x-2 transition-colors">
-          <Calendar className="h-4 w-4 text-brand-500" />
-          <span>Today: {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <ActiveTermBadge variant="hero" />
+          <div className="text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 rounded-xl px-4 py-2.5 shadow-sm flex items-center space-x-2 transition-colors">
+            <Calendar className="h-4 w-4 text-brand-500" />
+            <span>Today: {new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+          </div>
         </div>
       </div>
 

@@ -4,6 +4,14 @@ import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { cachedQuery } from "../utils/firestoreCache";
+import {
+  DEFAULT_ACADEMIC_CALENDAR,
+  TRIMESTER_TERM_LABELS,
+  normalizeTermLabel,
+  doesTermMatchFilter,
+  getActiveTermLabel
+} from "../utils/academicCalendar";
+import { loadAcademicCalendar } from "../utils/academicCalendarService";
 import { 
   ArrowLeft, 
   FolderKanban, 
@@ -27,7 +35,15 @@ export default function StudentTaskHistory() {
   const [taskSubmissionsMap, setTaskSubmissionsMap] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [selectedQuarter, setSelectedQuarter] = useState("1st Quarter");
+  const [selectedQuarter, setSelectedQuarter] = useState(() => getActiveTermLabel(DEFAULT_ACADEMIC_CALENDAR));
+  const [academicCalendar, setAcademicCalendar] = useState(DEFAULT_ACADEMIC_CALENDAR);
+
+  useEffect(() => {
+    loadAcademicCalendar().then((cal) => {
+      setAcademicCalendar(cal);
+      setSelectedQuarter(getActiveTermLabel(cal));
+    });
+  }, []);
   const [sortOrder, setSortOrder] = useState("asc"); // "asc" = Chronological (oldest/earliest first)
   const [expandedCards, setExpandedCards] = useState({});
 
@@ -141,10 +157,13 @@ export default function StudentTaskHistory() {
     return sub && (sub.status === "graded" || sub.status === "Graded");
   });
 
-  // Filter by selected quarter
+  // Filter by selected term (backward compatible with legacy Quarter labels)
   const filteredGraded = gradedTasks.filter((task) => {
     if (selectedQuarter === "all") return true;
-    return (task.quarter || "1st Quarter") === selectedQuarter;
+    return doesTermMatchFilter(
+      task.term || task.quarter || normalizeTermLabel("", task.dueDate || task.createdAt, academicCalendar),
+      selectedQuarter
+    );
   });
 
   // Sort chronologically by due date (oldest/earliest first: Day 1, Day 2, etc.)
@@ -212,21 +231,20 @@ export default function StudentTaskHistory() {
           </div>
 
           <div className="flex items-center space-x-3 flex-wrap gap-y-2">
-            {/* Quarter Filter */}
+            {/* Term Filter */}
             <div className="flex items-center space-x-2">
               <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                Quarter:
+                Term:
               </label>
               <select
                 value={selectedQuarter}
                 onChange={(e) => setSelectedQuarter(e.target.value)}
                 className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-xs"
               >
-                <option value="1st Quarter">1st Quarter</option>
-                <option value="2nd Quarter">2nd Quarter</option>
-                <option value="3rd Quarter">3rd Quarter</option>
-                <option value="4th Quarter">4th Quarter</option>
-                <option value="all">All Quarters</option>
+                {TRIMESTER_TERM_LABELS.map((lbl) => (
+                  <option key={lbl} value={lbl}>{lbl}</option>
+                ))}
+                <option value="all">All Terms</option>
               </select>
             </div>
 
@@ -306,7 +324,7 @@ export default function StudentTaskHistory() {
                             {task.category || "Written Task"}
                           </span>
                           <span className="inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                            {task.quarter || "1st Quarter"}
+                            {normalizeTermLabel(task.term || task.quarter, task.dueDate || task.createdAt, academicCalendar)}
                           </span>
                         </div>
                       </div>

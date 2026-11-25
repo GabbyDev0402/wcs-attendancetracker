@@ -6,7 +6,20 @@ import { useAuth } from "../context/AuthContext";
 import { toast, confirmDialog } from "../context/FeedbackContext";
 import ProfileSettingsModal from "../components/ProfileSettingsModal";
 import AdminLessonPlansTab from "../components/AdminLessonPlansTab";
+import ActiveTermBadge from "../components/ActiveTermBadge";
 import { formatStudentName, formatScheduleString } from "../utils/helpers";
+import {
+  DEFAULT_ACADEMIC_CALENDAR,
+  TRIMESTER_TERM_LABELS,
+  TRIMESTER_EXAM_CATEGORIES,
+  doesExamCategoryMatchFilter,
+  doesTermMatchFilter,
+  getActiveTermLabel
+} from "../utils/academicCalendar";
+import {
+  loadAcademicCalendar,
+  saveAcademicCalendar
+} from "../utils/academicCalendarService";
 import { 
   Users, 
   BookOpen, 
@@ -385,6 +398,38 @@ export default function AdminDashboard() {
   // Dashboard Tab State ("teachers" | "students" | "compliance" | "academic" | "lesson-plans")
   const [activeTab, setActiveTab] = useState("teachers");
   const [pendingLessonPlansCount, setPendingLessonPlansCount] = useState(0);
+
+  // Academic Term Calendar State (Admin configurable in settings/academic_calendar)
+  const [academicCalendar, setAcademicCalendar] = useState(DEFAULT_ACADEMIC_CALENDAR);
+  const [isTermCalendarModalOpen, setIsTermCalendarModalOpen] = useState(false);
+  const [calendarDraft, setCalendarDraft] = useState(DEFAULT_ACADEMIC_CALENDAR);
+  const [isSavingCalendar, setIsSavingCalendar] = useState(false);
+
+  useEffect(() => {
+    loadAcademicCalendar().then((cal) => {
+      setAcademicCalendar(cal);
+      setCalendarDraft(cal);
+    });
+  }, []);
+
+  const handleSaveTermCalendar = async (e) => {
+    e.preventDefault();
+    setIsSavingCalendar(true);
+    try {
+      const saved = await saveAcademicCalendar(
+        calendarDraft,
+        user?.name || user?.email || "Admin"
+      );
+      setAcademicCalendar(saved);
+      setCalendarDraft(saved);
+      setIsTermCalendarModalOpen(false);
+      toast.success("Academic Term Calendar saved! Vocabulary & Diary periods updated.");
+    } catch (err) {
+      toast.error(err.message || "Failed to save Term Calendar.");
+    } finally {
+      setIsSavingCalendar(false);
+    }
+  };
 
   useEffect(() => {
     const fetchPendingLessonPlanBadge = async () => {
@@ -1732,7 +1777,7 @@ export default function AdminDashboard() {
       )
     ).sort((a, b) => a.localeCompare(b))
   ];
-  const quarterOptions = ["All", "1st Quarter", "2nd Quarter", "3rd Quarter", "4th Quarter"];
+  const termOptions = ["All", ...TRIMESTER_TERM_LABELS];
 
   const getGradeNum = (gradeStr) => {
     const match = (gradeStr || "").toString().match(/\d+/);
@@ -1890,11 +1935,11 @@ export default function AdminDashboard() {
     return { hasScore: false, noSubmission: true, examTitle: targetExam.title, maxScore };
   };
 
-  // 1. Filtered exams by selected Category and Quarter
+  // 1. Filtered exams by selected Category and Term (with backward-compatible legacy matching)
   const filteredExams = React.useMemo(() => {
     return academicExams.filter(exam => {
-      if (reportFilterExamCategory !== "All Categories" && exam.category !== reportFilterExamCategory) return false;
-      if (reportFilterQuarter !== "All" && exam.quarter !== reportFilterQuarter) return false;
+      if (!doesExamCategoryMatchFilter(exam.category, reportFilterExamCategory)) return false;
+      if (!doesTermMatchFilter(exam.term || exam.quarter, reportFilterQuarter)) return false;
       const classIdStr = (exam.classId || "").toLowerCase();
       const titleStr = (exam.title || "").toLowerCase();
       const commStr = (exam.community || "").toLowerCase();
@@ -2787,10 +2832,10 @@ export default function AdminDashboard() {
           return;
         }
 
-        // 1. Find matching exam
+        // 1. Find matching exam (supports both Trimester labels and legacy Quarter labels)
         const matchedExam = academicExams.find(ex => {
-          const matchesCat = complianceFilterExamCategory === "All Categories" || ex.category === complianceFilterExamCategory;
-          const matchesQtr = complianceFilterQuarter === "All" || ex.quarter === complianceFilterQuarter;
+          const matchesCat = doesExamCategoryMatchFilter(ex.category, complianceFilterExamCategory);
+          const matchesQtr = doesTermMatchFilter(ex.term || ex.quarter, complianceFilterQuarter);
           if (!matchesCat || !matchesQtr) return false;
 
           const exClassId = (ex.classId || "").toLowerCase();
@@ -2861,19 +2906,13 @@ export default function AdminDashboard() {
   }, [teachers, students, academicExams, academicExamSubs, complianceFilterExamCategory, complianceFilterQuarter]);
 
   const uniqueExamCategories = [
-    "1st Monthly Exam",
-    "2nd Monthly Exam",
-    "3rd Monthly Exam",
-    "4th Monthly Exam",
-    "5th Monthly Exam",
-    "6th Monthly Exam",
-    "7th Monthly Exam",
-    "1st Quarterly Exam",
-    "2nd Quarterly Exam",
-    "3rd Quarterly Exam",
-    "4th Quarterly Exam",
+    ...TRIMESTER_EXAM_CATEGORIES,
     "All Categories",
-    ...new Set(academicExams.map(e => e.category).filter(Boolean))
+    ...new Set(
+      academicExams
+        .map(e => e.category)
+        .filter(c => c && !/quarterly exam/i.test(c))
+    )
   ].filter((v, i, a) => a.indexOf(v) === i);
 
   // Send password reset magic link email
@@ -2910,7 +2949,26 @@ export default function AdminDashboard() {
             Manage academic staff profiles, master schedules, and global student master list.
           </p>
         </div>
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <ActiveTermBadge
+            variant="hero"
+            calendar={academicCalendar}
+            onClick={() => {
+              setCalendarDraft(academicCalendar);
+              setIsTermCalendarModalOpen(true);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setCalendarDraft(academicCalendar);
+              setIsTermCalendarModalOpen(true);
+            }}
+            className="inline-flex items-center space-x-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
+          >
+            <Calendar className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+            <span>Term Calendar</span>
+          </button>
           <button
             onClick={() => setIsProfileModalOpen(true)}
             className="inline-flex items-center space-x-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
@@ -3551,8 +3609,8 @@ export default function AdminDashboard() {
                   onChange={(e) => setComplianceFilterQuarter(e.target.value)}
                   className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                 >
-                  {quarterOptions.map((q) => (
-                    <option key={q} value={q}>{q === "All" ? "All Quarters" : q}</option>
+                  {termOptions.map((q) => (
+                    <option key={q} value={q}>{q === "All" ? "All Terms" : q}</option>
                   ))}
                 </select>
               </div>
@@ -3808,18 +3866,18 @@ export default function AdminDashboard() {
                 </select>
               </div>
 
-              {/* Quarter Filter */}
+              {/* Term Filter */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Filter by Quarter
+                  Filter by Term
                 </label>
                 <select
                   value={reportFilterQuarter}
                   onChange={(e) => setReportFilterQuarter(e.target.value)}
                   className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                 >
-                  {quarterOptions.map((q) => (
-                    <option key={q} value={q}>{q === "All" ? "All Quarters" : q}</option>
+                  {termOptions.map((q) => (
+                    <option key={q} value={q}>{q === "All" ? "All Terms" : q}</option>
                   ))}
                 </select>
               </div>
@@ -5565,6 +5623,150 @@ export default function AdminDashboard() {
         isOpen={isProfileModalOpen}
         onClose={() => setIsProfileModalOpen(false)}
       />
+
+      {/* Academic Term Calendar Configuration Modal */}
+      {isTermCalendarModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-5 my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-xl">
+                  <Calendar className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 font-heading">
+                    Academic Term Calendar
+                  </h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    Sets Term 1–3 date windows so Vocabulary, Math Diary, and E-Class Record reset automatically each term.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTermCalendarModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTermCalendar} className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    Academic Year Label
+                  </label>
+                  <input
+                    type="text"
+                    value={calendarDraft.academicYear || ""}
+                    onChange={(e) =>
+                      setCalendarDraft((prev) => ({ ...prev, academicYear: e.target.value }))
+                    }
+                    placeholder="SY 2026-2027"
+                    className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                  />
+                </div>
+                <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 text-xs font-bold text-emerald-700 dark:text-emerald-300 shrink-0">
+                  Today: {getActiveTermLabel(calendarDraft)}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {["TERM 1", "TERM 2", "TERM 3"].map((termKey) => {
+                  const termObj = calendarDraft.terms?.[termKey] || DEFAULT_ACADEMIC_CALENDAR.terms[termKey];
+                  return (
+                    <div
+                      key={termKey}
+                      className="p-4 rounded-2xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/70 space-y-2.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-extrabold text-slate-800 dark:text-slate-100">
+                          {termObj.label}
+                        </span>
+                        <span className="text-[10px] font-semibold text-slate-400">
+                          {termObj.startDate} to {termObj.endDate}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            Start Date
+                          </label>
+                          <input
+                            type="date"
+                            required
+                            value={termObj.startDate || ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCalendarDraft((prev) => ({
+                                ...prev,
+                                terms: {
+                                  ...prev.terms,
+                                  [termKey]: { ...prev.terms[termKey], startDate: val }
+                                }
+                              }));
+                            }}
+                            className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                            End Date (Term Exam)
+                          </label>
+                          <input
+                            type="date"
+                            required
+                            value={termObj.endDate || ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCalendarDraft((prev) => ({
+                                ...prev,
+                                terms: {
+                                  ...prev.terms,
+                                  [termKey]: { ...prev.terms[termKey], endDate: val }
+                                }
+                              }));
+                            }}
+                            className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setCalendarDraft(DEFAULT_ACADEMIC_CALENDAR)}
+                  className="text-xs font-bold text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 underline cursor-pointer"
+                >
+                  Reset to SY 2026–2027 Defaults
+                </button>
+                <div className="flex items-center space-x-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsTermCalendarModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingCalendar}
+                    className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <CheckCircle className="h-4 w-4" />
+                    <span>{isSavingCalendar ? "Saving..." : "Save Term Calendar"}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

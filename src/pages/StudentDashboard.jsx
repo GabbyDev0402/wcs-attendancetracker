@@ -6,6 +6,7 @@ import { db } from "../firebase/config";
 import { collection, query, where, getDocs, doc, getDoc, setDoc, deleteDoc } from "firebase/firestore";
 import { cachedQuery, invalidateCache } from "../utils/firestoreCache";
 import { formatStudentName } from "../utils/helpers";
+import ActiveTermBadge from "../components/ActiveTermBadge";
 import { 
   GraduationCap, 
   Hash, 
@@ -400,7 +401,8 @@ export default function StudentDashboard() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <ActiveTermBadge variant="hero" />
             <button
               type="button"
               onClick={() => loadStudentDashboard(true)}

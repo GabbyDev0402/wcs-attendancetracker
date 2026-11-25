@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import ActiveTermBadge from "./ActiveTermBadge";
 import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, Users, BookOpen, Sun, Moon, ChevronLeft, ChevronRight, FileSpreadsheet } from "lucide-react";
 
 export default function Navbar() {
@@ -125,6 +126,7 @@ export default function Navbar() {
           <div className="hidden md:flex md:items-center space-x-2 lg:space-x-3 shrink-0 ml-auto">
             {user ? (
               <div className="flex items-center space-x-2 lg:space-x-3">
+                <ActiveTermBadge variant="navbar" />
                 <button
                   onClick={toggleTheme}
                   className="p-1.5 rounded-full text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors cursor-pointer"
@@ -192,6 +194,9 @@ export default function Navbar() {
         <div className="md:hidden border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950 px-2 pt-2 pb-4 space-y-1 shadow-inner transition-colors">
           {user ? (
             <>
+              <div className="px-4 pt-1 pb-2">
+                <ActiveTermBadge variant="navbar" />
+              </div>
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
