@@ -999,8 +999,9 @@ export default function StudentClassDashboard() {
             </div>
 
             {(() => {
-              // Active tasks: strictly unsubmitted & not past due, OR submitted awaiting teacher grade
+              // Active tasks: strictly unsubmitted & not past due, OR submitted awaiting teacher grade (excludes offline/manual tasks)
               const activeTasks = (tasksList || []).filter((task) => {
+                if (task.mode === "manual") return false;
                 const taskId = task.firestoreId || task.id;
                 const sub = taskSubmissionsMap[taskId];
                 const isSubmitted = !!sub;
@@ -1141,6 +1142,7 @@ export default function StudentClassDashboard() {
           {/* ── Missed Tasks Section ── */}
           {(() => {
             const missedTasks = (tasksList || []).filter((task) => {
+              if (task.mode === "manual") return false;
               const taskId = task.firestoreId || task.id;
               const sub = taskSubmissionsMap[taskId];
               const isSubmitted = !!sub;

@@ -328,7 +328,7 @@ export default function StudentTaskHistory() {
                     <div className="flex items-center space-x-4 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
                       <span className="inline-flex items-center space-x-1">
                         <Calendar className="h-3.5 w-3.5" />
-                        <span>Due: {task.dueDate || "No Due Date"}</span>
+                        <span>{task.mode === "manual" ? "Date" : "Due"}: {task.dueDate || (task.mode === "manual" ? "Recorded" : "No Due Date")}</span>
                       </span>
                       <span>• Max: {task.totalPoints || task.maxScore || 50} pts</span>
                     </div>

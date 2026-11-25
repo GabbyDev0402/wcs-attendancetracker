@@ -81,6 +81,17 @@ import ClassLessonPlanTab from "../components/ClassLessonPlanTab";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
 
+function getDefaultQuarterFromDate(dateStr) {
+  if (!dateStr) return "1st Quarter";
+  const dateObj = new Date(dateStr);
+  if (isNaN(dateObj.getTime())) return "1st Quarter";
+  const month = dateObj.getMonth() + 1;
+  if (month >= 8 && month <= 10) return "1st Quarter";
+  if (month === 11 || month === 12 || month === 1) return "2nd Quarter";
+  if (month >= 2 && month <= 4) return "3rd Quarter";
+  return "4th Quarter";
+}
+
 const DEFAULT_CLASSROOM_TAB_ORDER = [
   "attendance",
   "vocabularies",
@@ -598,6 +609,26 @@ export default function ClassDashboard() {
   const [manualQuizObjScores, setManualQuizObjScores] = useState({});
   const [manualQuizSubjScores, setManualQuizSubjScores] = useState({});
   const [isSavingQuizGrade, setIsSavingQuizGrade] = useState(false);
+
+  // Tasks Cards Quarter Filter & Quick Manual Score Recording State
+  const [tasksListQuarterFilter, setTasksListQuarterFilter] = useState("ALL");
+  const [isQuickScoreTaskModalOpen, setIsQuickScoreTaskModalOpen] = useState(false);
+  const [editingManualTask, setEditingManualTask] = useState(null);
+  const [quickTaskTitle, setQuickTaskTitle] = useState("");
+  const [quickTaskCategory, setQuickTaskCategory] = useState("Written Task");
+  const [quickTaskQuarter, setQuickTaskQuarter] = useState(() => getDefaultQuarterFromDate(todayStr));
+  const [quickTaskMaxScore, setQuickTaskMaxScore] = useState(20);
+  const [quickTaskDate, setQuickTaskDate] = useState(todayStr);
+  const [quickTaskDescription, setQuickTaskDescription] = useState("");
+  const [isSavingQuickTask, setIsSavingQuickTask] = useState(false);
+
+  // Rapid Task 'Input Scores' Modal State
+  const [isTaskInputScoresModalOpen, setIsTaskInputScoresModalOpen] = useState(false);
+  const [selectedTaskForScores, setSelectedTaskForScores] = useState(null);
+  const [taskScoreInputs, setTaskScoreInputs] = useState({});
+  const [taskScoresSearchQuery, setTaskScoresSearchQuery] = useState("");
+  const [isSavingTaskScores, setIsSavingTaskScores] = useState(false);
+  const [taskGradeSuccessToast, setTaskGradeSuccessToast] = useState(false);
 
   // E-Class Record State (Tab 6)
   const [recordQuarter, setRecordQuarter] = useState("1st Quarter");
@@ -1826,12 +1857,275 @@ export default function ClassDashboard() {
       const tag = `${user.id}_${classId}`;
       invalidateCache(`class_tasks_teacher_${tag}`);
       invalidateCache(`class_task_subs_teacher_${tag}`);
+      fetchedTabsRef.current["record"] = false;
       toast.success("Task and associated submissions deleted successfully.");
       loadTasks(true);
       loadTaskSubmissions(true);
     } catch (e) {
       console.error("Error deleting task:", e);
       toast.error("Failed to delete task: " + e.message);
+    }
+  };
+
+  // Quick Manual Score Activity Modal Handlers
+  const handleOpenQuickScoreTaskModal = () => {
+    setEditingManualTask(null);
+    setQuickTaskTitle("");
+    setQuickTaskCategory("Written Task");
+    setQuickTaskQuarter(getDefaultQuarterFromDate(todayStr));
+    setQuickTaskMaxScore(20);
+    setQuickTaskDate(todayStr);
+    setQuickTaskDescription("");
+    setIsQuickScoreTaskModalOpen(true);
+  };
+
+  const handleOpenEditManualTaskModal = (task) => {
+    if (!task) return;
+    setEditingManualTask(task);
+    setQuickTaskTitle(task.title || "");
+    setQuickTaskCategory(task.category || "Written Task");
+    setQuickTaskQuarter(task.quarter || "1st Quarter");
+    setQuickTaskMaxScore(task.maxScore || task.totalPoints || 20);
+    setQuickTaskDate(task.dueDate || "");
+    setQuickTaskDescription(task.description || "");
+    setIsQuickScoreTaskModalOpen(true);
+  };
+
+  const handleSaveQuickScoreTask = async (openScoresImmediately = true) => {
+    if (!quickTaskTitle.trim()) {
+      toast.warning("Please enter an activity or task title.");
+      return;
+    }
+    const numericMax = Number(quickTaskMaxScore);
+    if (!numericMax || numericMax <= 0) {
+      toast.warning("Please enter a valid max score (greater than 0).");
+      return;
+    }
+
+    setIsSavingQuickTask(true);
+    try {
+      const tag = `${user.id}_${classId}`;
+      const payload = {
+        classId: tag,
+        teacherId: user.id,
+        academicYear: CURRENT_ACADEMIC_YEAR,
+        title: quickTaskTitle.trim(),
+        description: quickTaskDescription.trim(),
+        dueDate: quickTaskDate || todayStr,
+        quarter: quickTaskQuarter,
+        category: quickTaskCategory,
+        mode: "manual",
+        maxScore: numericMax,
+        totalPoints: numericMax,
+        status: "published",
+        updatedAt: new Date().toISOString()
+      };
+
+      let savedTaskDoc = null;
+      if (editingManualTask) {
+        const taskDocId = editingManualTask.firestoreId || editingManualTask.id;
+        await updateDoc(doc(db, "tasks", taskDocId), payload);
+        savedTaskDoc = { id: taskDocId, firestoreId: taskDocId, ...payload };
+
+        try {
+          const subsQ = query(collection(db, "task_submissions"), where("taskId", "==", taskDocId));
+          const subsSnap = await getDocs(subsQ);
+          if (!subsSnap.empty) {
+            await Promise.all(
+              subsSnap.docs.map((d) =>
+                updateDoc(doc(db, "task_submissions", d.id), {
+                  taskTitle: payload.title,
+                  maxScore: numericMax,
+                  category: payload.category,
+                  quarter: payload.quarter,
+                  updatedAt: new Date().toISOString()
+                })
+              )
+            );
+          }
+        } catch (subErr) {
+          console.warn("Could not cascade update task submissions:", subErr);
+        }
+      } else {
+        const docRef = await addDoc(collection(db, "tasks"), {
+          ...payload,
+          createdAt: new Date().toISOString()
+        });
+        savedTaskDoc = { id: docRef.id, firestoreId: docRef.id, ...payload };
+      }
+
+      const wasEditing = !!editingManualTask;
+      setIsQuickScoreTaskModalOpen(false);
+      setEditingManualTask(null);
+      invalidateCache(`class_tasks_teacher_${tag}`);
+      invalidateCache(`class_task_subs_teacher_${tag}`);
+      fetchedTabsRef.current["record"] = false;
+      await Promise.all([loadTasks(true), loadTaskSubmissions(true)]);
+      toast.success(wasEditing ? "Activity updated!" : "Activity created!");
+
+      if (openScoresImmediately && !wasEditing && savedTaskDoc) {
+        handleOpenTaskInputScoresModal(savedTaskDoc);
+      }
+    } catch (err) {
+      toast.error("Failed to save activity: " + err.message);
+    } finally {
+      setIsSavingQuickTask(false);
+    }
+  };
+
+  // Rapid Task 'Input Scores' Spreadsheet Modal Handlers
+  const handleOpenTaskInputScoresModal = (task) => {
+    if (!task) return;
+    setSelectedTaskForScores(task);
+    const taskDocId = task.firestoreId || task.id;
+    const subsForThisTask = (taskSubmissions || []).filter(
+      (sub) => sub.taskId === taskDocId || sub.taskId === task.id
+    );
+
+    const initialInputs = {};
+    classStudents.forEach((studentObj) => {
+      const stId = studentObj.uid || studentObj.id;
+      const matchingSub = subsForThisTask.find(
+        (sub) =>
+          sub.studentId === stId ||
+          sub.studentId === studentObj.id ||
+          sub.studentId === studentObj.uid
+      );
+      if (
+        matchingSub &&
+        matchingSub.status === "graded" &&
+        matchingSub.score !== undefined &&
+        matchingSub.score !== null
+      ) {
+        initialInputs[stId] = String(matchingSub.score);
+      }
+    });
+
+    setTaskScoreInputs(initialInputs);
+    setTaskScoresSearchQuery("");
+    setIsTaskInputScoresModalOpen(true);
+  };
+
+  const handleSetPerfectForAllTaskScores = () => {
+    if (!selectedTaskForScores) return;
+    const maxSc = Number(selectedTaskForScores.maxScore || selectedTaskForScores.totalPoints || 50);
+    const nextInputs = { ...taskScoreInputs };
+    classStudents
+      .filter((st) => {
+        if (!taskScoresSearchQuery.trim()) return true;
+        return formatStudentName(st).toLowerCase().includes(taskScoresSearchQuery.toLowerCase());
+      })
+      .forEach((st) => {
+        const stId = st.uid || st.id;
+        nextInputs[stId] = String(maxSc);
+      });
+    setTaskScoreInputs(nextInputs);
+  };
+
+  const handleSaveAllTaskScores = async () => {
+    if (!selectedTaskForScores) return;
+    const taskDocId = selectedTaskForScores.firestoreId || selectedTaskForScores.id;
+    const tag = `${user.id}_${classId}`;
+    const maxScore = Number(selectedTaskForScores.maxScore || selectedTaskForScores.totalPoints || 50);
+
+    const hasInvalidScore = classStudents.some((studentObj) => {
+      const stId = studentObj.uid || studentObj.id;
+      const raw = taskScoreInputs[stId];
+      if (raw === "" || raw === null || raw === undefined) return false;
+      const num = Number(raw);
+      return Number.isNaN(num) || num < 0 || num > maxScore;
+    });
+
+    if (hasInvalidScore) {
+      toast.warning(`One or more students have scores outside 0 to ${maxScore} points.`);
+      return;
+    }
+
+    setIsSavingTaskScores(true);
+    try {
+      const subsForThisTask = (taskSubmissions || []).filter(
+        (sub) => sub.taskId === taskDocId || sub.taskId === selectedTaskForScores.id
+      );
+
+      const batchPromises = classStudents.map(async (studentObj) => {
+        const studentId = studentObj.uid || studentObj.id;
+        const studentName = formatStudentName(studentObj);
+        const existingSub = subsForThisTask.find(
+          (s) =>
+            s.studentId === studentId ||
+            s.studentId === studentObj.id ||
+            s.studentId === studentObj.uid
+        );
+
+        const rawScore = taskScoreInputs[studentId];
+        const hasScore = rawScore !== "" && rawScore !== null && rawScore !== undefined;
+
+        if (!hasScore) {
+          if (existingSub) {
+            const existingSubId = existingSub.firestoreId || existingSub.id;
+            if (existingSub.answers && Object.keys(existingSub.answers).length > 0) {
+              await updateDoc(doc(db, "task_submissions", existingSubId), {
+                status: "pending_review",
+                score: existingSub.objScore ?? 0,
+                updatedAt: new Date().toISOString()
+              });
+            } else if (existingSub.status === "graded") {
+              await deleteDoc(doc(db, "task_submissions", existingSubId));
+            }
+          }
+          return;
+        }
+
+        const numericScore = Number(rawScore);
+        const sharedFields = {
+          score: numericScore,
+          maxScore: maxScore,
+          status: "graded",
+          taskTitle: selectedTaskForScores.title || "",
+          category: selectedTaskForScores.category || "Written Task",
+          quarter: selectedTaskForScores.quarter || "1st Quarter",
+          updatedAt: new Date().toISOString()
+        };
+
+        if (existingSub) {
+          const existingSubId = existingSub.firestoreId || existingSub.id;
+          await updateDoc(doc(db, "task_submissions", existingSubId), sharedFields);
+        } else {
+          const subDocId = `${studentId}_${taskDocId}`;
+          await setDoc(
+            doc(db, "task_submissions", subDocId),
+            {
+              taskId: taskDocId,
+              classId: tag,
+              teacherId: user.id,
+              studentId: studentId,
+              studentName: studentName,
+              mode: selectedTaskForScores.mode || "manual",
+              manualEntry: true,
+              academicYear: CURRENT_ACADEMIC_YEAR,
+              submittedAt: new Date().toISOString(),
+              ...sharedFields
+            },
+            { merge: true }
+          );
+        }
+      });
+
+      await Promise.all(batchPromises);
+
+      setIsTaskInputScoresModalOpen(false);
+      setSelectedTaskForScores(null);
+      setTaskScoreInputs({});
+      setTaskGradeSuccessToast(true);
+      setTimeout(() => setTaskGradeSuccessToast(false), 3000);
+      invalidateCache(`class_task_subs_teacher_${tag}`);
+      fetchedTabsRef.current["record"] = false;
+      toast.success("Scores saved to E-Class Record!");
+      await loadTaskSubmissions(true);
+    } catch (err) {
+      toast.error("Failed to save scores: " + err.message);
+    } finally {
+      setIsSavingTaskScores(false);
     }
   };
 
@@ -1864,6 +2158,7 @@ export default function ClassDashboard() {
       setSelectedExternalTaskSub(null);
       setExternalTaskScoreInput("");
       invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
+      fetchedTabsRef.current["record"] = false;
       loadTaskSubmissions(true);
       toast.success("Grade saved successfully!");
     } catch (err) {
@@ -1950,6 +2245,7 @@ export default function ClassDashboard() {
       setManualQuizObjScores({});
       setManualQuizSubjScores({});
       invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
+      fetchedTabsRef.current["record"] = false;
       loadTaskSubmissions(true);
       toast.success("Quiz grade saved successfully!");
     } catch (err) {
@@ -1966,6 +2262,7 @@ export default function ClassDashboard() {
         status: "pending_review"
       });
       invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
+      fetchedTabsRef.current["record"] = false;
       loadTaskSubmissions(true);
       toast.success("Submission moved to pending review.");
     } catch (err) {
@@ -1994,6 +2291,7 @@ export default function ClassDashboard() {
         })
       );
       invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
+      fetchedTabsRef.current["record"] = false;
       loadTaskSubmissions(true);
       toast.success(`Moved ${subsToMove.length} submission(s) to pending.`);
     } catch (err) {
@@ -2701,6 +2999,10 @@ export default function ClassDashboard() {
 
   const handleOpenEditTask = (task) => {
     if (!task) return;
+    if (task.mode === "manual") {
+      handleOpenEditManualTaskModal(task);
+      return;
+    }
     const taskId = task.firestoreId || task.id;
     setEditingTaskId(taskId);
     setTaskTitle(task.title || "");
@@ -2718,27 +3020,30 @@ export default function ClassDashboard() {
 
   const handlePublishTask = async () => {
     if (!taskTitle.trim()) { toast.warning("Please enter a task title."); return; }
-    if (!taskDueDate) { toast.warning("Please select a due date."); return; }
+    if (taskMode !== "manual" && !taskDueDate) { toast.warning("Please select a due date."); return; }
 
     if (taskMode === "external") {
       if (!taskExternalUrl.trim()) { toast.warning("Please enter the external Google Form/Doc URL."); return; }
     } else if (taskMode === "inApp") {
       if (taskQuestions.length === 0) { toast.warning("Please add at least one question to the quiz."); return; }
+    } else if (taskMode === "manual") {
+      if (!taskMaxScore || Number(taskMaxScore) <= 0) { toast.warning("Please enter a valid max score (greater than 0)."); return; }
     }
 
     try {
       const tag = `${user.id}_${classId}`;
-      const totalPoints = taskMode === "external"
+      const totalPoints = (taskMode === "external" || taskMode === "manual")
         ? (Number(taskMaxScore) || 50)
         : taskQuestions.reduce((sum, q) => ['section', 'info'].includes(q.type) ? sum : sum + (Number(q.points) || 0), 0);
 
+      const effectiveDueDate = taskDueDate || todayStr;
       const payload = {
         classId: tag,
         teacherId: user.id,
         academicYear: CURRENT_ACADEMIC_YEAR,
         title: taskTitle.trim(),
         description: taskDescription.trim(),
-        dueDate: taskDueDate,
+        dueDate: effectiveDueDate,
         quarter: taskQuarter,
         category: taskCategory,
         mode: taskMode,
@@ -2750,13 +3055,36 @@ export default function ClassDashboard() {
       if (taskMode === "external") {
         payload.externalUrl = taskExternalUrl.trim();
         payload.maxScore = Number(taskMaxScore) || 50;
+      } else if (taskMode === "manual") {
+        payload.maxScore = Number(taskMaxScore) || 50;
       } else {
         payload.questions = taskQuestions;
       }
 
+      const wasEditing = !!editingTaskId;
+      const savedMode = taskMode;
       let savedTaskId = editingTaskId;
       if (editingTaskId) {
         await updateDoc(doc(db, "tasks", editingTaskId), payload);
+        try {
+          const subsQ = query(collection(db, "task_submissions"), where("taskId", "==", editingTaskId));
+          const subsSnap = await getDocs(subsQ);
+          if (!subsSnap.empty) {
+            await Promise.all(
+              subsSnap.docs.map((d) =>
+                updateDoc(doc(db, "task_submissions", d.id), {
+                  taskTitle: payload.title,
+                  maxScore: totalPoints,
+                  category: payload.category,
+                  quarter: payload.quarter,
+                  updatedAt: new Date().toISOString()
+                })
+              )
+            );
+          }
+        } catch (subErr) {
+          console.warn("Could not cascade update task submissions:", subErr);
+        }
       } else {
         const docRef = await addDoc(collection(db, "tasks"), {
           ...payload,
@@ -2765,7 +3093,7 @@ export default function ClassDashboard() {
         savedTaskId = docRef.id;
       }
 
-      setLastPublishedTaskId(savedTaskId);
+      setLastPublishedTaskId(savedMode === "manual" ? null : savedTaskId);
       resetTaskBuilder();
       setTaskPublishSuccess(true);
       setTimeout(() => {
@@ -2773,8 +3101,14 @@ export default function ClassDashboard() {
         setCopiedPublishLink(false);
       }, 5000);
       invalidateCache(`class_tasks_teacher_${user.id}_${classId}`);
-      toast.success("Task published successfully!");
-      loadTasks(true);
+      invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
+      fetchedTabsRef.current["record"] = false;
+      toast.success(wasEditing ? "Task updated successfully!" : "Task published successfully!");
+      await Promise.all([loadTasks(true), loadTaskSubmissions(true)]);
+
+      if (!wasEditing && savedMode === "manual" && savedTaskId) {
+        handleOpenTaskInputScoresModal({ id: savedTaskId, firestoreId: savedTaskId, ...payload });
+      }
     } catch (e) {
       toast.error("Failed to save task: " + e.message);
     }
@@ -4024,6 +4358,13 @@ export default function ClassDashboard() {
       {/* TAB 5: ASSIGNMENTS & TASKS VIEW (E-CLASS RECORD PHASE 1) */}
       {activeTab === "tasks" && (
         <div className="space-y-6">
+          {taskGradeSuccessToast && (
+            <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-800 animate-fade-in">
+              <Sparkles className="h-4 w-4" />
+              <span>Task scores batch saved to E-Class Record successfully!</span>
+            </div>
+          )}
+
           {taskPublishSuccess && (
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 p-3.5 rounded-xl border border-emerald-100 dark:border-emerald-800 animate-fade-in">
               <div className="flex items-center space-x-2">
@@ -4059,153 +4400,239 @@ export default function ClassDashboard() {
           {!isBuildingTask ? (
             /* ── Task List View ── */
             <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
                     Assignments & Tasks Studio
                   </h2>
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                    Manage written tasks, performance tasks, external Google Forms, and in-app quizzes.
+                    Manage written tasks, performance tasks, manual activity scores, external Google Forms, and in-app quizzes.
                   </p>
                 </div>
-                <button
-                  onClick={() => {
-                    resetTaskBuilder();
-                    setIsBuildingTask(true);
-                  }}
-                  className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Create New Task</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                  <div className="flex items-center space-x-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quarter</label>
+                    <select
+                      value={tasksListQuarterFilter}
+                      onChange={(e) => setTasksListQuarterFilter(e.target.value)}
+                      className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
+                    >
+                      <option value="ALL">All Quarters</option>
+                      <option value="1st Quarter">1st Quarter</option>
+                      <option value="2nd Quarter">2nd Quarter</option>
+                      <option value="3rd Quarter">3rd Quarter</option>
+                      <option value="4th Quarter">4th Quarter</option>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenQuickScoreTaskModal}
+                    className="inline-flex items-center space-x-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    <span>+ Record Score</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetTaskBuilder();
+                      setIsBuildingTask(true);
+                    }}
+                    className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Create New Task</span>
+                  </button>
+                </div>
               </div>
 
               {isTasksLoading ? (
                 <div className="py-16 text-center text-slate-400 text-sm">Loading tasks...</div>
-              ) : tasks.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {tasks.map((task) => (
-                    <div
-                      key={task.firestoreId || task.id}
-                      className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3.5 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-1">
-                          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{task.title}</h3>
-                          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                            <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${task.category === "Performance Task"
-                                ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
-                                : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
-                              }`}>
-                              {task.category || "Written Task"}
+              ) : (() => {
+                const filteredTasks = tasksListQuarterFilter === "ALL"
+                  ? tasks
+                  : tasks.filter((t) => (t.quarter || "1st Quarter") === tasksListQuarterFilter);
+
+                if (filteredTasks.length === 0) {
+                  return (
+                    <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+                      <FolderKanban className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                        {tasks.length === 0 ? "No Tasks or Quizzes Created Yet" : `No Tasks Found for ${tasksListQuarterFilter}`}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {tasks.length === 0
+                          ? 'Click "+ Record Score" for offline/classroom scores or "Create New Task" to build an assignment or quiz.'
+                          : "Switch the Quarter filter or add a new activity for this quarter."}
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {filteredTasks.map((task) => {
+                      const taskDocId = task.firestoreId || task.id;
+                      const subsForThisTask = taskSubmissions.filter(
+                        (sub) => sub.taskId === taskDocId || sub.taskId === task.id
+                      );
+                      const gradedCount = subsForThisTask.filter((s) => s.status === "graded").length;
+                      const isFullyGraded = gradedCount === classStudents.length && classStudents.length > 0;
+
+                      return (
+                        <div
+                          key={taskDocId}
+                          className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3.5 transition-colors flex flex-col justify-between"
+                        >
+                          <div className="space-y-3.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-1">
+                                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{task.title}</h3>
+                                <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                  <span className={`inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold border ${task.category === "Performance Task"
+                                      ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
+                                      : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
+                                    }`}>
+                                    {task.category || "Written Task"}
+                                  </span>
+                                  <span className="inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                    {task.quarter || "1st Quarter"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center space-x-1.5 shrink-0">
+                                <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[10px] font-bold border ${task.mode === "external"
+                                    ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+                                    : task.mode === "manual"
+                                    ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800"
+                                    : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+                                  }`}>
+                                  {task.mode === "external" ? (
+                                    <>
+                                      <ExternalLink className="h-3 w-3" />
+                                      <span>External Link</span>
+                                    </>
+                                  ) : task.mode === "manual" ? (
+                                    <>
+                                      <FileSpreadsheet className="h-3 w-3" />
+                                      <span>Manual Score</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ListChecks className="h-3 w-3" />
+                                      <span>In-App Quiz</span>
+                                    </>
+                                  )}
+                                </span>
+                                {task.mode !== "manual" && (
+                                  <>
+                                    <button
+                                      onClick={() => copyStudentTaskLink(taskDocId)}
+                                      className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center space-x-1 ${
+                                        copiedTaskId === taskDocId
+                                          ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700"
+                                          : "border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400"
+                                      }`}
+                                      title={copiedTaskId === taskDocId ? "Link Copied!" : "Copy Direct Student Link"}
+                                    >
+                                      {copiedTaskId === taskDocId ? (
+                                        <>
+                                          <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                          <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Copied!</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy className="h-3.5 w-3.5" />
+                                          <span className="text-[10px] font-bold">Copy Link</span>
+                                        </>
+                                      )}
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenTaskPreview(task)}
+                                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"
+                                      title="Preview Student View"
+                                    >
+                                      <Eye className="h-3.5 w-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => handleOpenEditTask(task)}
+                                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"
+                                  title="Edit Task"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTask(task)}
+                                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 transition-colors cursor-pointer"
+                                  title="Delete Task"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {task.description && (
+                              <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
+                                {task.description}
+                              </p>
+                            )}
+
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                              <span className="inline-flex items-center space-x-1">
+                                <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                                <span>{task.mode === "manual" ? "Date" : "Due"}: {task.dueDate || (task.mode === "manual" ? "Recorded" : "No Due Date")}</span>
+                              </span>
+
+                              <span className="inline-flex items-center space-x-1 text-slate-700 dark:text-slate-200 font-extrabold">
+                                <Sparkles className="h-3.5 w-3.5 text-brand-500" />
+                                <span>{task.totalPoints || task.maxScore || 50} pts</span>
+                              </span>
+                            </div>
+
+                            {task.mode === "external" && task.externalUrl && (
+                              <a
+                                href={task.externalUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center space-x-1.5 text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline pt-1"
+                              >
+                                <span>Open Resource</span>
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Card Footer: Grading Progress Pill + Rapid Input Scores Button */}
+                          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                            <span className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                              isFullyGraded
+                                ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                                : gradedCount > 0
+                                ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+                                : "bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                            }`}>
+                              <CheckCircle className="h-3.5 w-3.5" />
+                              <span>{gradedCount} of {classStudents.length} Students Graded</span>
                             </span>
-                            <span className="inline-flex px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                              {task.quarter || "1st Quarter"}
-                            </span>
+
+                            <button
+                              type="button"
+                              onClick={() => handleOpenTaskInputScoresModal(task)}
+                              className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                            >
+                              <FileSpreadsheet className="h-3.5 w-3.5" />
+                              <span>Input Scores</span>
+                            </button>
                           </div>
                         </div>
-
-                        <div className="flex items-center space-x-1.5 shrink-0">
-                          <span className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[10px] font-bold border ${task.mode === "external"
-                              ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
-                              : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
-                            }`}>
-                            {task.mode === "external" ? (
-                              <>
-                                <ExternalLink className="h-3 w-3" />
-                                <span>External Link</span>
-                              </>
-                            ) : (
-                              <>
-                                <ListChecks className="h-3 w-3" />
-                                <span>In-App Quiz</span>
-                              </>
-                            )}
-                          </span>
-                          <button
-                            onClick={() => copyStudentTaskLink(task.firestoreId || task.id)}
-                            className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center space-x-1 ${
-                              copiedTaskId === (task.firestoreId || task.id)
-                                ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700"
-                                : "border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400"
-                            }`}
-                            title={copiedTaskId === (task.firestoreId || task.id) ? "Link Copied!" : "Copy Direct Student Link"}
-                          >
-                            {copiedTaskId === (task.firestoreId || task.id) ? (
-                              <>
-                                <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Copied!</span>
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="h-3.5 w-3.5" />
-                                <span className="text-[10px] font-bold">Copy Link</span>
-                              </>
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handleOpenTaskPreview(task)}
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"
-                            title="Preview Student View"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenEditTask(task)}
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-brand-600 hover:border-brand-300 dark:hover:text-brand-400 transition-colors cursor-pointer"
-                            title="Edit Task"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteTask(task)}
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 hover:border-red-200 dark:hover:border-red-900 transition-colors cursor-pointer"
-                            title="Delete Task"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {task.description && (
-                        <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
-                          {task.description}
-                        </p>
-                      )}
-
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 font-semibold">
-                        <span className="inline-flex items-center space-x-1">
-                          <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                          <span>Due: {task.dueDate || "No Due Date"}</span>
-                        </span>
-
-                        <span className="inline-flex items-center space-x-1 text-slate-700 dark:text-slate-200 font-extrabold">
-                          <Sparkles className="h-3.5 w-3.5 text-brand-500" />
-                          <span>{task.totalPoints || task.maxScore || 50} pts</span>
-                        </span>
-                      </div>
-
-                      {task.mode === "external" && task.externalUrl && (
-                        <a
-                          href={task.externalUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center space-x-1.5 text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline pt-1"
-                        >
-                          <span>Open Resource</span>
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
-                  <FolderKanban className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Tasks or Quizzes Created Yet</p>
-                  <p className="text-xs text-slate-400">Click "Create New Task" to build your first assignment or quiz.</p>
-                </div>
-              )}
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               {/* ── Pending Submissions Section ── */}
               <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-4">
                 <div className="flex items-center justify-between">
@@ -4465,9 +4892,11 @@ export default function ClassDashboard() {
                                         <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border shrink-0 ${
                                           group.mode === "external"
                                             ? "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+                                            : group.mode === "manual"
+                                            ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800"
                                             : "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
                                         }`}>
-                                          {group.mode === "external" ? "External Link" : "In-App Quiz"}
+                                          {group.mode === "external" ? "External Link" : group.mode === "manual" ? "Manual Score" : "In-App Quiz"}
                                         </span>
                                       </div>
 
@@ -4529,7 +4958,7 @@ export default function ClassDashboard() {
                                                     <Clock className="h-3 w-3" />
                                                     <span>To Pending</span>
                                                   </button>
-                                                  {sub.mode === "external" || sub.status === "turned_in" ? (
+                                                  {sub.mode === "manual" || group.mode === "manual" || sub.mode === "external" || sub.status === "turned_in" || !sub.answers ? (
                                                     <button
                                                       onClick={() => handleOpenExternalTaskGradingModal(sub)}
                                                       className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-all cursor-pointer"
@@ -4576,15 +5005,17 @@ export default function ClassDashboard() {
                   <span>Cancel</span>
                 </button>
                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">Task & Quiz Builder Studio</h2>
-                <button
-                  type="button"
-                  onClick={() => handleOpenTaskPreview()}
-                  className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-bold transition-all cursor-pointer shadow-xs"
-                  title="Preview Student View"
-                >
-                  <Eye className="h-4 w-4 text-brand-600 dark:text-brand-400" />
-                  <span>Preview</span>
-                </button>
+                {taskMode !== "manual" ? (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenTaskPreview()}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                    title="Preview Student View"
+                  >
+                    <Eye className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+                    <span>Preview</span>
+                  </button>
+                ) : <div className="w-20" />}
               </div>
 
               {/* Core Information Card */}
@@ -4604,7 +5035,9 @@ export default function ClassDashboard() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Due Date *</label>
+                    <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                      {taskMode === "manual" ? "Activity Date (Optional)" : "Due Date *"}
+                    </label>
                     <input
                       type="date"
                       value={taskDueDate}
@@ -4706,6 +5139,31 @@ export default function ClassDashboard() {
                       </p>
                     </div>
                   </div>
+
+                  <div
+                    onClick={() => setTaskMode("manual")}
+                    className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-start space-x-3 ${taskMode === "manual"
+                        ? "border-brand-500 bg-brand-50/40 dark:bg-brand-900/30"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 bg-white dark:bg-slate-800/50"
+                      }`}
+                  >
+                    <input
+                      type="radio"
+                      name="taskMode"
+                      checked={taskMode === "manual"}
+                      onChange={() => setTaskMode("manual")}
+                      className="mt-1 accent-brand-600 cursor-pointer"
+                    />
+                    <div>
+                      <div className="flex items-center space-x-1.5 font-bold text-sm text-slate-800 dark:text-slate-100">
+                        <FileSpreadsheet className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                        <span>Manual Score (Classroom / Offline Activity)</span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        Record scores directly for seatwork, recitations, paper quizzes, or offline performance tasks without creating online questions.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Conditional UI: External Link Mode */}
@@ -4733,6 +5191,23 @@ export default function ClassDashboard() {
                           className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
                         />
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Conditional UI: Manual Score Mode */}
+                {taskMode === "manual" && (
+                  <div className="pt-2 space-y-4 animate-fade-in border-t border-slate-100 dark:border-slate-800">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Max Point Score *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={taskMaxScore}
+                        onChange={(e) => setTaskMaxScore(parseInt(e.target.value) || "")}
+                        placeholder="e.g. 20"
+                        className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                      />
                     </div>
                   </div>
                 )}
@@ -5235,7 +5710,7 @@ export default function ClassDashboard() {
                   className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-6 py-3 text-sm font-bold shadow-lg transition-all cursor-pointer"
                 >
                   <Sparkles className="h-4 w-4" />
-                  <span>{editingTaskId ? "Save Changes" : "Publish Task / Quiz"}</span>
+                  <span>{editingTaskId ? "Save Changes" : taskMode === "manual" ? "Save & Input Scores" : "Publish Task / Quiz"}</span>
                 </button>
               </div>
             </div>
@@ -6559,6 +7034,378 @@ export default function ClassDashboard() {
                 >
                   <CheckCircle className="h-4 w-4" />
                   <span>{isSavingScores ? "Saving Scores..." : "Save All Scores"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: Quick Record Manual Score Activity Modal */}
+      {isQuickScoreTaskModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 transition-all my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
+                  {editingManualTask ? "Edit Activity / Score Entry" : "Record Activity / Task Score"}
+                </h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  Log classroom quizzes, seatwork, or performance tasks straight into E-Class Record.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuickScoreTaskModalOpen(false);
+                  setEditingManualTask(null);
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                  Activity / Quiz / Performance Task Title *
+                </label>
+                <input
+                  type="text"
+                  value={quickTaskTitle}
+                  onChange={(e) => setQuickTaskTitle(e.target.value)}
+                  placeholder="e.g., Quiz #2 — Algebraic Expressions"
+                  className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    E-Class Category *
+                  </label>
+                  <select
+                    value={quickTaskCategory}
+                    onChange={(e) => setQuickTaskCategory(e.target.value)}
+                    className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  >
+                    <option value="Written Task">Written Task (WW)</option>
+                    <option value="Performance Task">Performance Task (PT)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    Quarter *
+                  </label>
+                  <select
+                    value={quickTaskQuarter}
+                    onChange={(e) => setQuickTaskQuarter(e.target.value)}
+                    className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  >
+                    <option value="1st Quarter">1st Quarter</option>
+                    <option value="2nd Quarter">2nd Quarter</option>
+                    <option value="3rd Quarter">3rd Quarter</option>
+                    <option value="4th Quarter">4th Quarter</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    Max Score (Points) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={quickTaskMaxScore}
+                    onChange={(e) => setQuickTaskMaxScore(e.target.value)}
+                    placeholder="20"
+                    className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                    Activity Date (Optional)
+                  </label>
+                  <input
+                    type="date"
+                    value={quickTaskDate}
+                    onChange={(e) => setQuickTaskDate(e.target.value)}
+                    className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                  Notes / Description (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={quickTaskDescription}
+                  onChange={(e) => setQuickTaskDescription(e.target.value)}
+                  placeholder="Optional details about this activity or grading criteria..."
+                  className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 border-t border-slate-100 dark:border-slate-800 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuickScoreTaskModalOpen(false);
+                  setEditingManualTask(null);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSaveQuickScoreTask(true)}
+                disabled={isSavingQuickTask}
+                className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <CheckCircle className="h-4 w-4" />
+                <span>{isSavingQuickTask ? "Saving..." : editingManualTask ? "Update Activity" : "Save & Input Scores"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 5: Rapid Task 'Input Scores' Spreadsheet Modal */}
+      {isTaskInputScoresModalOpen && selectedTaskForScores && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-4xl w-full p-6 shadow-2xl space-y-5 transition-all my-8 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4 shrink-0">
+              <div>
+                <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                  <FileSpreadsheet className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                  <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
+                    Rapid Score Entry — {selectedTaskForScores.title}
+                  </h3>
+                  <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                    selectedTaskForScores.category === "Performance Task"
+                      ? "bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-100 dark:border-purple-800"
+                      : "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-100 dark:border-blue-800"
+                  }`}>
+                    {selectedTaskForScores.category || "Written Task"}
+                  </span>
+                  <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                    {selectedTaskForScores.quarter || "1st Quarter"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  Enter student scores out of <strong className="text-emerald-600 dark:text-emerald-400 font-mono">{selectedTaskForScores.maxScore || selectedTaskForScores.totalPoints || 50} pts</strong>. Scores save directly into E-Class Record.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTaskInputScoresModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Search Filter & Quick Actions */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between shrink-0 gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={taskScoresSearchQuery}
+                  onChange={(e) => setTaskScoresSearchQuery(e.target.value)}
+                  placeholder="Filter student by name..."
+                  className="w-full pl-9 pr-4 py-2 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
+                />
+              </div>
+
+              <div className="flex items-center space-x-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleSetPerfectForAllTaskScores}
+                  className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>Set Perfect for All</span>
+                </button>
+                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Total Enrolled: <strong className="text-slate-800 dark:text-slate-200">{classStudents.length} Students</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Spreadsheet Table Body */}
+            <div className="overflow-y-auto border border-slate-100 dark:border-slate-800 rounded-2xl flex-1">
+              <table className="w-full border-collapse text-left">
+                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider z-10">
+                  <tr>
+                    <th className="px-4 py-3">#</th>
+                    <th className="px-4 py-3">Student Name</th>
+                    <th className="px-3 py-3 text-center">Score (Max: {selectedTaskForScores.maxScore || selectedTaskForScores.totalPoints || 50})</th>
+                    <th className="px-3 py-3 text-center">Percentage</th>
+                    <th className="px-4 py-3 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200">
+                  {(() => {
+                    const filteredStudents = classStudents.filter((st) => {
+                      if (!taskScoresSearchQuery.trim()) return true;
+                      return formatStudentName(st).toLowerCase().includes(taskScoresSearchQuery.toLowerCase());
+                    });
+                    const taskDocId = selectedTaskForScores.firestoreId || selectedTaskForScores.id;
+                    const subsForThisTask = (taskSubmissions || []).filter(
+                      (sub) => sub.taskId === taskDocId || sub.taskId === selectedTaskForScores.id
+                    );
+                    const maxSc = Number(selectedTaskForScores.maxScore || selectedTaskForScores.totalPoints || 50);
+
+                    return filteredStudents.map((st, sIdx) => {
+                      const stId = st.uid || st.id;
+                      const studentSub = subsForThisTask.find(
+                        (s) => s.studentId === stId || s.studentId === st.id || s.studentId === st.uid
+                      );
+                      const isPendingOnline = studentSub && studentSub.status !== "graded";
+                      const rawScore = taskScoreInputs[stId] ?? "";
+                      const hasScore = rawScore !== "" && rawScore !== null && rawScore !== undefined;
+                      const numericScore = hasScore ? Number(rawScore) : 0;
+                      const isInvalid = hasScore && (Number.isNaN(numericScore) || numericScore < 0 || numericScore > maxSc);
+                      const pct = hasScore && !isInvalid ? Math.min(100, Math.round((numericScore / maxSc) * 100)) : null;
+
+                      return (
+                        <tr key={stId} className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors ${isInvalid ? "bg-red-50/30 dark:bg-red-950/20" : ""}`}>
+                          <td className="px-4 py-3 font-mono text-[11px] text-slate-400 font-bold">
+                            {sIdx + 1}
+                          </td>
+                          <td className="px-4 py-3 font-bold text-slate-800 dark:text-slate-100">
+                            {formatStudentName(st)}
+                          </td>
+                          <td className="px-3 py-3 text-center">
+                            <div className="inline-flex items-center space-x-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                max={maxSc}
+                                step="any"
+                                data-task-score-idx={sIdx}
+                                value={rawScore}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setTaskScoreInputs((prev) => ({ ...prev, [stId]: val }));
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    const nextInput = document.querySelector(`input[data-task-score-idx="${sIdx + 1}"]`);
+                                    if (nextInput) {
+                                      nextInput.focus();
+                                      nextInput.select();
+                                    }
+                                  }
+                                }}
+                                placeholder="—"
+                                className={`w-24 text-center text-xs font-bold font-mono border rounded-xl py-1.5 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all ${
+                                  isInvalid
+                                    ? "border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/30"
+                                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                                }`}
+                              />
+                              <span className="text-[11px] font-mono text-slate-400">/ {maxSc}</span>
+                            </div>
+                            {isInvalid && (
+                              <div className="text-[9px] font-bold text-red-500 uppercase tracking-tight mt-0.5">
+                                Exceeds 0–{maxSc}!
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-center font-mono font-semibold">
+                            {isInvalid ? (
+                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
+                                Invalid
+                              </span>
+                            ) : pct !== null ? (
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${
+                                pct >= 75 ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                                pct >= 50 ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                                "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                              }`}>
+                                {pct}%
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 dark:text-slate-600">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {hasScore ? (
+                              <div className="flex items-center justify-end space-x-2">
+                                <span className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                                  <CheckCircle className="h-3 w-3" />
+                                  <span>Graded</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setTaskScoreInputs((prev) => ({ ...prev, [stId]: "" }))}
+                                  title="Clear Score"
+                                  className="text-[10px] font-bold text-slate-400 hover:text-red-500 underline cursor-pointer"
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                            ) : isPendingOnline ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                <Clock className="h-3 w-3" />
+                                <span>Pending Review</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-slate-400">
+                                Not Graded
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4 shrink-0">
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                  {classStudents.filter((st) => {
+                    const id = st.uid || st.id;
+                    const val = taskScoreInputs[id];
+                    return val !== "" && val !== null && val !== undefined;
+                  }).length}
+                </span>{" "}
+                of {classStudents.length} Students Graded
+              </div>
+
+              <div className="flex items-center space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setIsTaskInputScoresModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAllTaskScores}
+                  disabled={isSavingTaskScores}
+                  className="inline-flex items-center space-x-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  <span>{isSavingTaskScores ? "Saving Scores..." : "Save All Scores"}</span>
                 </button>
               </div>
             </div>

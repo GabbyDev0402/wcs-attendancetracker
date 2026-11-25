@@ -736,6 +736,7 @@ export default function StudentDashboard() {
                 );
 
                 const pendingClassTasks = classTasks.filter(task => {
+                  if (task.mode === "manual") return false;
                   const taskId = task.firestoreId || task.id;
                   const isSubmitted = (myTaskSubmissions || []).some(sub => sub.taskId === taskId || sub.taskId === task.id);
                   const isPastDue = !!task.dueDate && task.dueDate < todayStr;
