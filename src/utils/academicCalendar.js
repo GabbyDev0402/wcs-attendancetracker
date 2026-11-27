@@ -256,3 +256,68 @@ export function getDefaultTermForExamCategory(category) {
   }
   return "Term 1";
 }
+
+/**
+ * Authoritative exam -> Trimester resolver ("Term 1" | "Term 2" | "Term 3").
+ * Priority:
+ *   1. Explicit `exam.term` (saved on Trimester-era exams).
+ *   2. Exam category/title monthly inference BEFORE legacy `exam.quarter`
+ *      so old 2nd/3rd Monthly Exams tagged "2nd Quarter" stay in Term 1.
+ *   3. Legacy `exam.quarter` fallback.
+ *   4. Creation/exam date fallback against the Academic Term Calendar.
+ */
+export function resolveExamTermLabel(exam, calendar = DEFAULT_ACADEMIC_CALENDAR) {
+  if (!exam) return "Term 1";
+  if (exam.term) {
+    return normalizeTermLabel(exam.term, exam.createdAt || exam.date, calendar);
+  }
+
+  const catAndTitle = `${exam.category || ""} ${exam.title || ""}`.toLowerCase();
+  if (
+    catAndTitle.includes("1st monthly") ||
+    catAndTitle.includes("2nd monthly") ||
+    catAndTitle.includes("3rd monthly") ||
+    catAndTitle.includes("1st quarterly") ||
+    catAndTitle.includes("term 1")
+  ) {
+    return "Term 1";
+  }
+  if (
+    catAndTitle.includes("4th monthly") ||
+    catAndTitle.includes("5th monthly") ||
+    catAndTitle.includes("2nd quarterly") ||
+    catAndTitle.includes("term 2")
+  ) {
+    return "Term 2";
+  }
+  if (
+    catAndTitle.includes("6th monthly") ||
+    catAndTitle.includes("7th monthly") ||
+    catAndTitle.includes("8th monthly") ||
+    catAndTitle.includes("3rd quarterly") ||
+    catAndTitle.includes("4th quarterly") ||
+    catAndTitle.includes("term 3")
+  ) {
+    return "Term 3";
+  }
+
+  if (exam.quarter) {
+    return normalizeTermLabel(exam.quarter, exam.createdAt || exam.date, calendar);
+  }
+  return termKeyToLabel(resolveTermKeyFromDate(exam.createdAt || exam.date, calendar));
+}
+
+export function getExamCategoriesForTerm(termLabel) {
+  const f = String(termLabel || "").trim();
+  if (!f || f.toLowerCase() === "all") {
+    return [...TRIMESTER_EXAM_CATEGORIES];
+  }
+  const normalized = normalizeTermLabel(f);
+  if (normalized === "Term 2") {
+    return ["4th Monthly Exam", "5th Monthly Exam", "Term 2 Exam"];
+  }
+  if (normalized === "Term 3") {
+    return ["6th Monthly Exam", "7th Monthly Exam", "Term 3 Exam"];
+  }
+  return ["1st Monthly Exam", "2nd Monthly Exam", "3rd Monthly Exam", "Term 1 Exam"];
+}

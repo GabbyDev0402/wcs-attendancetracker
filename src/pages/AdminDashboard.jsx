@@ -4,7 +4,6 @@ import { collection, query, where, getDocs, getCountFromServer, doc, updateDoc, 
 import { sendPasswordResetEmail } from "firebase/auth";
 import { useAuth } from "../context/AuthContext";
 import { toast, confirmDialog } from "../context/FeedbackContext";
-import ProfileSettingsModal from "../components/ProfileSettingsModal";
 import AdminLessonPlansTab from "../components/AdminLessonPlansTab";
 import ActiveTermBadge from "../components/ActiveTermBadge";
 import { formatStudentName, formatScheduleString } from "../utils/helpers";
@@ -14,12 +13,24 @@ import {
   TRIMESTER_EXAM_CATEGORIES,
   doesExamCategoryMatchFilter,
   doesTermMatchFilter,
-  getActiveTermLabel
+  getActiveTermLabel,
+  getTodayManilaYmd,
+  getDefaultExamCategoryForTerm,
+  normalizeTermLabel,
+  resolveExamTermLabel,
+  getExamCategoriesForTerm
 } from "../utils/academicCalendar";
+import { aggregateStudentExamScores } from "../utils/adminReportUtils";
 import {
   loadAcademicCalendar,
   saveAcademicCalendar
 } from "../utils/academicCalendarService";
+import {
+  isMediaWorkerConfigured,
+  fetchR2StorageSummary,
+  triggerR2Cleanup
+} from "../utils/mediaUploadService";
+import { formatFileSize } from "../utils/mediaUtils";
 import { 
   Users, 
   BookOpen, 
@@ -44,7 +55,6 @@ import {
   ShieldCheck,
   ShieldAlert,
   Printer,
-  Settings,
   Download,
   Table,
   ListFilter,
@@ -400,15 +410,78 @@ export default function AdminDashboard() {
   const [pendingLessonPlansCount, setPendingLessonPlansCount] = useState(0);
 
   // Academic Term Calendar State (Admin configurable in settings/academic_calendar)
+  const todayStr = getTodayManilaYmd();
   const [academicCalendar, setAcademicCalendar] = useState(DEFAULT_ACADEMIC_CALENDAR);
+  const activeTermLabel = getActiveTermLabel(academicCalendar, todayStr);
   const [isTermCalendarModalOpen, setIsTermCalendarModalOpen] = useState(false);
   const [calendarDraft, setCalendarDraft] = useState(DEFAULT_ACADEMIC_CALENDAR);
   const [isSavingCalendar, setIsSavingCalendar] = useState(false);
+  const hasManualReportFilterRef = useRef(false);
+  const hasManualComplianceFilterRef = useRef(false);
+
+  // Subtle R2 Media Storage & Cleanup Quick-Check State
+  const [isStorageModalOpen, setIsStorageModalOpen] = useState(false);
+  const [storageSummary, setStorageSummary] = useState(null);
+  const [isLoadingStorage, setIsLoadingStorage] = useState(false);
+  const [cleanupPreview, setCleanupPreview] = useState(null);
+  const [isRunningCleanup, setIsRunningCleanup] = useState(false);
+
+  const handleOpenStorageModal = async () => {
+    setIsStorageModalOpen(true);
+    setCleanupPreview(null);
+    if (!isMediaWorkerConfigured()) return;
+    setIsLoadingStorage(true);
+    try {
+      const summary = await fetchR2StorageSummary();
+      setStorageSummary(summary);
+    } catch (err) {
+      toast.error(err.message || "Failed to fetch R2 storage summary.");
+    } finally {
+      setIsLoadingStorage(false);
+    }
+  };
+
+  const handleRunR2Cleanup = async (dryRun = true) => {
+    if (!isMediaWorkerConfigured()) return;
+    if (!dryRun) {
+      const ok = await confirmDialog({
+        title: "Clean Up Expired Student Uploads?",
+        message: "This will permanently delete student homework files whose Term + 14-day grace period has ended. Profile photos, teacher quiz diagrams, scores, and E-Class Records will NOT be affected.",
+        confirmText: "Delete Expired Files",
+        type: "warning"
+      });
+      if (!ok) return;
+    }
+    setIsRunningCleanup(true);
+    try {
+      const res = await triggerR2Cleanup({ dryRun });
+      setCleanupPreview(res);
+      if (!dryRun) {
+        toast.success(`Cleaned ${res.deletedCount} expired file(s), freed ${formatFileSize(res.freedBytes)}.`);
+        const refreshed = await fetchR2StorageSummary();
+        setStorageSummary(refreshed);
+      }
+    } catch (err) {
+      toast.error(err.message || "Failed to run cleanup.");
+    } finally {
+      setIsRunningCleanup(false);
+    }
+  };
 
   useEffect(() => {
     loadAcademicCalendar().then((cal) => {
       setAcademicCalendar(cal);
       setCalendarDraft(cal);
+      const nextActiveTerm = getActiveTermLabel(cal, todayStr);
+      const nextDefaultCat = getDefaultExamCategoryForTerm(nextActiveTerm);
+      if (!hasManualReportFilterRef.current) {
+        setReportFilterQuarter(nextActiveTerm);
+        setReportFilterExamCategory(nextDefaultCat);
+      }
+      if (!hasManualComplianceFilterRef.current) {
+        setComplianceFilterQuarter(nextActiveTerm);
+        setComplianceFilterExamCategory(nextDefaultCat);
+      }
     });
   }, []);
 
@@ -422,6 +495,14 @@ export default function AdminDashboard() {
       );
       setAcademicCalendar(saved);
       setCalendarDraft(saved);
+      const nextActiveTerm = getActiveTermLabel(saved, todayStr);
+      const nextDefaultCat = getDefaultExamCategoryForTerm(nextActiveTerm);
+      hasManualReportFilterRef.current = false;
+      hasManualComplianceFilterRef.current = false;
+      setReportFilterQuarter(nextActiveTerm);
+      setReportFilterExamCategory(nextDefaultCat);
+      setComplianceFilterQuarter(nextActiveTerm);
+      setComplianceFilterExamCategory(nextDefaultCat);
       setIsTermCalendarModalOpen(false);
       toast.success("Academic Term Calendar saved! Vocabulary & Diary periods updated.");
     } catch (err) {
@@ -450,20 +531,25 @@ export default function AdminDashboard() {
   const [pendingDiariesList, setPendingDiariesList] = useState([]);
 
   // Institutional Academic Reports State (Tab 4)
+  const defaultActiveTerm = getActiveTermLabel(DEFAULT_ACADEMIC_CALENDAR, todayStr);
   const [academicExams, setAcademicExams] = useState([]);
   const [academicExamSubs, setAcademicExamSubs] = useState([]);
   const [isAcademicLoading, setIsAcademicLoading] = useState(false);
   const [reportFilterGrade, setReportFilterGrade] = useState("All");
   const [reportFilterCommunity, setReportFilterCommunity] = useState("All");
-  const [reportFilterQuarter, setReportFilterQuarter] = useState("All");
-  const [reportFilterExamCategory, setReportFilterExamCategory] = useState("1st Monthly Exam");
+  const [reportFilterQuarter, setReportFilterQuarter] = useState(defaultActiveTerm);
+  const [reportFilterExamCategory, setReportFilterExamCategory] = useState(() =>
+    getDefaultExamCategoryForTerm(defaultActiveTerm)
+  );
   const [reportSearchQuery, setReportSearchQuery] = useState("");
   const [academicSubView, setAcademicSubView] = useState("pivot"); // 'pivot' | 'deficiencies'
   const [isDeficiencyCopied, setIsDeficiencyCopied] = useState(false);
 
   // Teacher Assessment Compliance State (Tab 3)
-  const [complianceFilterExamCategory, setComplianceFilterExamCategory] = useState("1st Monthly Exam");
-  const [complianceFilterQuarter, setComplianceFilterQuarter] = useState("All");
+  const [complianceFilterExamCategory, setComplianceFilterExamCategory] = useState(() =>
+    getDefaultExamCategoryForTerm(defaultActiveTerm)
+  );
+  const [complianceFilterQuarter, setComplianceFilterQuarter] = useState(defaultActiveTerm);
   const [complianceDrilldownClass, setComplianceDrilldownClass] = useState(null);
 
   useEffect(() => {
@@ -882,9 +968,6 @@ export default function AdminDashboard() {
       badgeText
     };
   };
-
-  // Profile Settings Modal State
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Provision Teacher Modal Form State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1820,11 +1903,10 @@ export default function AdminDashboard() {
     return false;
   };
 
-  // Group and resolve exams for a grade level within a Pillar using Grade-Wide Classroom Union + Flexible Ceilings
-  const getPillarExamsForGrade = (gradeLevel, pillar, filteredExamsList) => {
+  // Group and resolve exams for a grade level within a Pillar (returns lists so All Categories aggregates all exams in the Term)
+  const getPillarExamListsForGrade = (gradeLevel, pillar, filteredExamsList) => {
     const effectiveAddedSubject = getEffectiveAddedSubject(gradeLevel, pillar);
 
-    // Find all candidate exams matching this student's grade level and belonging to this pillar
     const candidateExams = (filteredExamsList || []).filter(ex => {
       if (!matchExamGrade(ex, gradeLevel)) return false;
       const isCore = isExamMatchingSubject(ex, null, pillar.core);
@@ -1832,121 +1914,62 @@ export default function AdminDashboard() {
       return isCore || isAdded;
     });
 
-    let coreExam = null;
-    let addedExam = null;
+    const coreExams = [];
+    const addedExams = [];
+    const seenCoreIds = new Set();
+    const seenAddedIds = new Set();
 
-    if (candidateExams.length >= 2) {
-      // 1. Try explicit matching first
-      const explicitCore = candidateExams.find(e => {
-        const rawSubj = (e.subject || "").trim();
-        const spec = (e.specificSubject || "").toLowerCase().trim();
-        const coreLower = pillar.core.toLowerCase();
+    candidateExams.forEach(e => {
+      const eId = e.firestoreId || e.id || `${e.title}_${e.category}`;
+      const rawSubj = (e.subject || "").trim();
+      const spec = (e.specificSubject || "").toLowerCase().trim();
+      const coreLower = pillar.core.toLowerCase();
+      const addedLower = pillar.added.toLowerCase();
+      const effLower = effectiveAddedSubject.toLowerCase();
 
-        if (rawSubj && rawSubj.toLowerCase() === coreLower) return true;
-        if (spec === coreLower) return true;
-        return isExamMatchingSubject(e, null, pillar.core) && !isExamMatchingSubject(e, null, effectiveAddedSubject) && !isExamMatchingSubject(e, null, pillar.added);
-      });
+      const explicitCore =
+        (rawSubj && rawSubj.toLowerCase() === coreLower) ||
+        spec === coreLower ||
+        (isExamMatchingSubject(e, null, pillar.core) && !isExamMatchingSubject(e, null, effectiveAddedSubject) && !isExamMatchingSubject(e, null, pillar.added));
 
-      const explicitAdded = candidateExams.find(e => {
-        const rawSubj = (e.subject || "").trim();
-        const spec = (e.specificSubject || "").toLowerCase().trim();
-        const addedLower = pillar.added.toLowerCase();
-        const effLower = effectiveAddedSubject.toLowerCase();
+      const explicitAdded =
+        (rawSubj && (rawSubj.toLowerCase() === addedLower || rawSubj.toLowerCase() === effLower || isSubjectMatchingSlot(rawSubj, pillar.added))) ||
+        spec === addedLower ||
+        spec === effLower ||
+        isSubjectMatchingSlot(spec, pillar.added) ||
+        ((isExamMatchingSubject(e, null, effectiveAddedSubject) || isExamMatchingSubject(e, null, pillar.added)) && !isExamMatchingSubject(e, null, pillar.core));
 
-        if (rawSubj && (rawSubj.toLowerCase() === addedLower || rawSubj.toLowerCase() === effLower || isSubjectMatchingSlot(rawSubj, pillar.added))) return true;
-        if (spec === addedLower || spec === effLower || isSubjectMatchingSlot(spec, pillar.added)) return true;
-        return isExamMatchingSubject(e, null, effectiveAddedSubject) || isExamMatchingSubject(e, null, pillar.added);
-      });
-
-      if (explicitCore && explicitAdded && (explicitCore.firestoreId !== explicitAdded.firestoreId && explicitCore.id !== explicitAdded.id)) {
-        coreExam = explicitCore;
-        addedExam = explicitAdded;
-      } else if (explicitCore && !explicitAdded) {
-        coreExam = explicitCore;
-        const other = candidateExams.find(e => (e.firestoreId || e.id) !== (coreExam.firestoreId || coreExam.id));
-        if (other && (isExamMatchingSubject(other, null, effectiveAddedSubject) || isExamMatchingSubject(other, null, pillar.added))) {
-          addedExam = other;
-        }
-      } else if (!explicitCore && explicitAdded) {
-        addedExam = explicitAdded;
-        const other = candidateExams.find(e => (e.firestoreId || e.id) !== (addedExam.firestoreId || addedExam.id));
-        if (other && isExamMatchingSubject(other, null, pillar.core)) {
-          coreExam = other;
-        }
-      } else {
-        const coreMatch = candidateExams.find(e => isExamMatchingSubject(e, null, pillar.core));
-        const addedMatch = candidateExams.find(e => (isExamMatchingSubject(e, null, effectiveAddedSubject) || isExamMatchingSubject(e, null, pillar.added)) && (e.firestoreId || e.id) !== (coreMatch?.firestoreId || coreMatch?.id));
-        coreExam = coreMatch || null;
-        addedExam = addedMatch || null;
+      if (explicitCore && !seenCoreIds.has(eId)) {
+        seenCoreIds.add(eId);
+        coreExams.push(e);
+      } else if (explicitAdded && !seenAddedIds.has(eId)) {
+        seenAddedIds.add(eId);
+        addedExams.push(e);
+      } else if (isExamMatchingSubject(e, null, pillar.core) && !seenCoreIds.has(eId)) {
+        seenCoreIds.add(eId);
+        coreExams.push(e);
+      } else if ((isExamMatchingSubject(e, null, effectiveAddedSubject) || isExamMatchingSubject(e, null, pillar.added)) && !seenAddedIds.has(eId)) {
+        seenAddedIds.add(eId);
+        addedExams.push(e);
       }
-    } else if (candidateExams.length === 1) {
-      const single = candidateExams[0];
-      const isExplicitCore = isExamMatchingSubject(single, null, pillar.core);
-      const isExplicitAdded = isExamMatchingSubject(single, null, effectiveAddedSubject) || isExamMatchingSubject(single, null, pillar.added);
+    });
 
-      if (isExplicitCore && !isExplicitAdded) {
-        coreExam = single;
-      } else if (isExplicitAdded && !isExplicitCore) {
-        addedExam = single;
-      } else if (isExplicitCore) {
-        coreExam = single;
-      } else if (isExplicitAdded) {
-        addedExam = single;
-      }
-    }
-
-    return { coreExam, addedExam, effectiveAddedSubject };
+    return { coreExams, addedExams, effectiveAddedSubject };
   };
 
-  // Helper to resolve student score for an identified exam document
-  const resolveStudentScoreForExam = (student, targetExam, fallbackSubject, gLevel, academicExamSubsList) => {
-    const sId = student.id || student.uid || "";
-
-    // If no active exam exists for this column/pillar/grade, return noExam
-    if (!targetExam) {
-      return { hasScore: false, noExam: true };
-    }
-
-    const examId = targetExam.firestoreId || targetExam.id;
-    const sub = academicExamSubsList.find(s => 
-      (s.examId === examId || (s.examId && s.examId === targetExam.id)) &&
-      (s.studentId === sId || s.studentId === student.uid || s.studentId === student.id)
-    );
-
-    const maxScore = Number(targetExam.maxScore) > 0 ? Number(targetExam.maxScore) : (Number(sub?.maxScore) || 100);
-
-    if (sub) {
-      const objScore = sub.objScore !== undefined ? (Number(sub.objScore) || 0) : (sub.score !== undefined ? (Number(sub.score) || 0) : 0);
-      const subjScore = Number(sub.subjScore) || 0;
-      const earnedScore = (sub.objScore !== undefined || sub.subjScore !== undefined) ? (objScore + subjScore) : (Number(sub.score) || 0);
-      const percentage = maxScore > 0 ? Math.round((earnedScore / maxScore) * 100) : 0;
-
-      return {
-        hasScore: true,
-        earnedScore,
-        maxScore,
-        percentage,
-        objScore,
-        subjScore,
-        examTitle: targetExam.title
-      };
-    }
-
-    return { hasScore: false, noSubmission: true, examTitle: targetExam.title, maxScore };
-  };
-
-  // 1. Filtered exams by selected Category and Term (with backward-compatible legacy matching)
+  // 1. Filtered exams by selected Category and Term (with authoritative legacy Term mapping)
   const filteredExams = React.useMemo(() => {
     return academicExams.filter(exam => {
       if (!doesExamCategoryMatchFilter(exam.category, reportFilterExamCategory)) return false;
-      if (!doesTermMatchFilter(exam.term || exam.quarter, reportFilterQuarter)) return false;
+      const resolvedTerm = resolveExamTermLabel(exam, academicCalendar);
+      if (!doesTermMatchFilter(resolvedTerm, reportFilterQuarter)) return false;
       const classIdStr = (exam.classId || "").toLowerCase();
       const titleStr = (exam.title || "").toLowerCase();
       const commStr = (exam.community || "").toLowerCase();
       if (classIdStr.includes("laos") || titleStr.includes("laos") || commStr.includes("laos")) return false;
       return true;
     });
-  }, [academicExams, reportFilterExamCategory, reportFilterQuarter]);
+  }, [academicExams, reportFilterExamCategory, reportFilterQuarter, academicCalendar]);
 
   // 2. Dynamic Subject Extraction segregated into Standard and ESL
   const { standardSubjects, eslSubjects } = React.useMemo(() => {
@@ -2256,17 +2279,17 @@ export default function AdminDashboard() {
       const percentages = [];
 
       STANDARD_PILLARS.forEach(pillar => {
-        const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
+        const { coreExams, addedExams, effectiveAddedSubject } = getPillarExamListsForGrade(gLevel, pillar, filteredExams);
 
         // Core Subject
-        const coreScore = resolveStudentScoreForExam(st, coreExam, pillar.core, gLevel, academicExamSubs);
+        const coreScore = aggregateStudentExamScores(st, coreExams, academicExamSubs);
         subjectScores[pillar.core] = coreScore;
         if (coreScore.hasScore) {
           percentages.push(coreScore.percentage);
         }
 
         // Added Subject
-        const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        const addedScore = aggregateStudentExamScores(st, addedExams, academicExamSubs);
         addedScore.effectiveLabel = effectiveAddedSubject;
         subjectScores[pillar.added] = addedScore;
         if (addedScore.hasScore) {
@@ -2321,17 +2344,17 @@ export default function AdminDashboard() {
       const percentages = [];
 
       ESL_PILLARS.forEach(pillar => {
-        const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
+        const { coreExams, addedExams, effectiveAddedSubject } = getPillarExamListsForGrade(gLevel, pillar, filteredExams);
 
         // Core Subject (Reading, Grammar, Speaking, Vocabulary)
-        const coreScore = resolveStudentScoreForExam(st, coreExam, pillar.core, gLevel, academicExamSubs);
+        const coreScore = aggregateStudentExamScores(st, coreExams, academicExamSubs);
         subjectScores[pillar.core] = coreScore;
         if (coreScore.hasScore) {
           percentages.push(coreScore.percentage);
         }
 
         // Added Subject (Values, MAPEH, Literature, TLE)
-        const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        const addedScore = aggregateStudentExamScores(st, addedExams, academicExamSubs);
         addedScore.effectiveLabel = effectiveAddedSubject;
         subjectScores[pillar.added] = addedScore;
         if (addedScore.hasScore) {
@@ -2478,10 +2501,10 @@ export default function AdminDashboard() {
       }
 
       STANDARD_PILLARS.forEach(pillar => {
-        const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
+        const { coreExams, addedExams, effectiveAddedSubject } = getPillarExamListsForGrade(gLevel, pillar, filteredExams);
 
         // Core Subject
-        const coreScore = resolveStudentScoreForExam(st, coreExam, pillar.core, gLevel, academicExamSubs);
+        const coreScore = aggregateStudentExamScores(st, coreExams, academicExamSubs);
         if (coreScore.hasScore) {
           recordedSubjects.push({ subject: pillar.core, pillar: pillar.core, type: "Core", score: coreScore });
         } else {
@@ -2495,7 +2518,7 @@ export default function AdminDashboard() {
         }
 
         // Added Subject (Pair with Core Teacher)
-        const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        const addedScore = aggregateStudentExamScores(st, addedExams, academicExamSubs);
         if (addedScore.hasScore) {
           recordedSubjects.push({ subject: effectiveAddedSubject, pillar: pillar.core, type: "Added", score: addedScore });
         } else {
@@ -2582,10 +2605,10 @@ export default function AdminDashboard() {
       }
 
       ESL_PILLARS.forEach(pillar => {
-        const { coreExam, addedExam, effectiveAddedSubject } = getPillarExamsForGrade(gLevel, pillar, filteredExams);
+        const { coreExams, addedExams, effectiveAddedSubject } = getPillarExamListsForGrade(gLevel, pillar, filteredExams);
 
         // Core Subject (Reading, Grammar, Speaking, Vocabulary)
-        const coreScore = resolveStudentScoreForExam(st, coreExam, pillar.core, gLevel, academicExamSubs);
+        const coreScore = aggregateStudentExamScores(st, coreExams, academicExamSubs);
         if (coreScore.hasScore) {
           recordedSubjects.push({ subject: pillar.core, pillar: pillar.core, type: "Core", score: coreScore });
         } else {
@@ -2599,7 +2622,7 @@ export default function AdminDashboard() {
         }
 
         // Added Subject (Values, MAPEH, Literature, TLE -> Paired with Core teacher)
-        const addedScore = resolveStudentScoreForExam(st, addedExam, effectiveAddedSubject, gLevel, academicExamSubs);
+        const addedScore = aggregateStudentExamScores(st, addedExams, academicExamSubs);
         if (addedScore.hasScore) {
           recordedSubjects.push({ subject: effectiveAddedSubject, pillar: pillar.core, type: "Added", score: addedScore });
         } else {
@@ -2650,27 +2673,34 @@ export default function AdminDashboard() {
         return a.studentName.localeCompare(b.studentName);
       });
 
-    const stdDeficiencies = stdRaw
-      .map(st => buildStandardDeficiencyRow(st))
-      .filter(st => st.missingCount > 0)
-      .sort((a, b) => {
-        const gradeA = getGradeNum(a.gradeLevel);
-        const gradeB = getGradeNum(b.gradeLevel);
-        if (gradeB !== gradeA) return gradeB - gradeA;
-        if (b.missingCount !== a.missingCount) return b.missingCount - a.missingCount;
-        return a.studentName.localeCompare(b.studentName);
-      });
+    // When no exams exist yet for the selected Term + Category, report 0 pending deficiencies cleanly
+    const noExamsCreatedYet = !is1stMonthly && filteredExams.length === 0;
 
-    const eslDeficiencies = eslRaw
-      .map(st => buildEslDeficiencyRow(st))
-      .filter(st => st.missingCount > 0)
-      .sort((a, b) => {
-        const rankA = getEslGradeRank(a.gradeLevel);
-        const rankB = getEslGradeRank(b.gradeLevel);
-        if (rankB !== rankA) return rankB - rankA;
-        if (b.missingCount !== a.missingCount) return b.missingCount - a.missingCount;
-        return a.studentName.localeCompare(b.studentName);
-      });
+    const stdDeficiencies = noExamsCreatedYet
+      ? []
+      : stdRaw
+          .map(st => buildStandardDeficiencyRow(st))
+          .filter(st => st.missingCount > 0)
+          .sort((a, b) => {
+            const gradeA = getGradeNum(a.gradeLevel);
+            const gradeB = getGradeNum(b.gradeLevel);
+            if (gradeB !== gradeA) return gradeB - gradeA;
+            if (b.missingCount !== a.missingCount) return b.missingCount - a.missingCount;
+            return a.studentName.localeCompare(b.studentName);
+          });
+
+    const eslDeficiencies = noExamsCreatedYet
+      ? []
+      : eslRaw
+          .map(st => buildEslDeficiencyRow(st))
+          .filter(st => st.missingCount > 0)
+          .sort((a, b) => {
+            const rankA = getEslGradeRank(a.gradeLevel);
+            const rankB = getEslGradeRank(b.gradeLevel);
+            if (rankB !== rankA) return rankB - rankA;
+            if (b.missingCount !== a.missingCount) return b.missingCount - a.missingCount;
+            return a.studentName.localeCompare(b.studentName);
+          });
 
     return {
       standardStudents: stdRows,
@@ -2832,10 +2862,11 @@ export default function AdminDashboard() {
           return;
         }
 
-        // 1. Find matching exam (supports both Trimester labels and legacy Quarter labels)
-        const matchedExam = academicExams.find(ex => {
+        // 1. Find all matching exams (supports both single Category and All Categories combined mode)
+        const matchedExams = academicExams.filter(ex => {
           const matchesCat = doesExamCategoryMatchFilter(ex.category, complianceFilterExamCategory);
-          const matchesQtr = doesTermMatchFilter(ex.term || ex.quarter, complianceFilterQuarter);
+          const resolvedTerm = resolveExamTermLabel(ex, academicCalendar);
+          const matchesQtr = doesTermMatchFilter(resolvedTerm, complianceFilterQuarter);
           if (!matchesCat || !matchesQtr) return false;
 
           const exClassId = (ex.classId || "").toLowerCase();
@@ -2859,24 +2890,40 @@ export default function AdminDashboard() {
           return hasTag || hasLegacy || (matchesGradeDirect && (!st.enrolledClasses || st.enrolledClasses.length === 0));
         });
 
-        // 3. Find graded submissions for this exam
-        let gradedSubs = [];
-        if (matchedExam) {
-          const exId = matchedExam.firestoreId || matchedExam.id;
-          gradedSubs = academicExamSubs.filter(s => 
-            (s.examId === exId || s.examId === matchedExam.id) &&
+        // 3. Evaluate grading completion across 1 or multiple exams in the selected scope
+        const enrolledCount = enrolledStudents.length;
+        let gradedCount = 0;
+        let pendingStudents = [];
+
+        if (matchedExams.length === 1) {
+          const singleExam = matchedExams[0];
+          const exId = singleExam.firestoreId || singleExam.id;
+          const gradedSubs = academicExamSubs.filter(s =>
+            (s.examId === exId || s.examId === singleExam.id) &&
             enrolledStudents.some(st => (st.id && st.id === s.studentId) || (st.uid && st.uid === s.studentId))
           );
+          gradedCount = gradedSubs.length;
+          pendingStudents = enrolledStudents.filter(st =>
+            !gradedSubs.some(s => s.studentId === st.id || s.studentId === st.uid)
+          );
+        } else if (matchedExams.length > 1) {
+          pendingStudents = enrolledStudents.filter(st => {
+            const completedForSt = matchedExams.filter(ex => {
+              const exId = ex.firestoreId || ex.id;
+              return academicExamSubs.some(s =>
+                (s.examId === exId || s.examId === ex.id) &&
+                (s.studentId === st.id || s.studentId === st.uid)
+              );
+            }).length;
+            return completedForSt < matchedExams.length;
+          });
+          gradedCount = Math.max(0, enrolledCount - pendingStudents.length);
         }
 
-        const enrolledCount = enrolledStudents.length;
-        const gradedCount = gradedSubs.length;
         const pendingCount = Math.max(0, enrolledCount - gradedCount);
         const completionRate = enrolledCount > 0 ? Math.round((gradedCount / enrolledCount) * 100) : 0;
-
-        const pendingStudents = enrolledStudents.filter(st => 
-          !gradedSubs.some(s => s.studentId === st.id || s.studentId === st.uid)
-        );
+        const primaryExam = matchedExams[0] || null;
+        const combinedMaxScore = matchedExams.reduce((sum, ex) => sum + (Number(ex.maxScore) || 0), 0);
 
         classRows.push({
           teacherId: tId,
@@ -2885,10 +2932,15 @@ export default function AdminDashboard() {
           grade: g,
           subject: subj,
           classTag,
-          exam: matchedExam,
-          isExamCreated: !!matchedExam,
-          examTitle: matchedExam?.title || "No Exam Scope Created",
-          examMaxScore: matchedExam?.maxScore || null,
+          exam: primaryExam,
+          matchedExams,
+          examCount: matchedExams.length,
+          isExamCreated: matchedExams.length > 0,
+          examTitle:
+            matchedExams.length > 1
+              ? `${matchedExams.length} Exams Combined`
+              : primaryExam?.title || "No Exam Scope Created",
+          examMaxScore: matchedExams.length > 1 ? combinedMaxScore : (primaryExam?.maxScore || null),
           enrolledCount,
           gradedCount,
           pendingCount,
@@ -2903,17 +2955,19 @@ export default function AdminDashboard() {
       if (a.completionRate !== b.completionRate) return a.completionRate - b.completionRate;
       return a.teacherName.localeCompare(b.teacherName);
     });
-  }, [teachers, students, academicExams, academicExamSubs, complianceFilterExamCategory, complianceFilterQuarter]);
+  }, [teachers, students, academicExams, academicExamSubs, complianceFilterExamCategory, complianceFilterQuarter, academicCalendar]);
 
-  const uniqueExamCategories = [
-    ...TRIMESTER_EXAM_CATEGORIES,
-    "All Categories",
-    ...new Set(
-      academicExams
-        .map(e => e.category)
-        .filter(c => c && !/quarterly exam/i.test(c))
-    )
-  ].filter((v, i, a) => a.indexOf(v) === i);
+  const buildScopedCategoryOptions = (selectedTerm) => {
+    const baseCats = getExamCategoriesForTerm(selectedTerm);
+    const extraCustom = (academicExams || [])
+      .filter((e) => !selectedTerm || selectedTerm === "All" || doesTermMatchFilter(resolveExamTermLabel(e, academicCalendar), selectedTerm))
+      .map((e) => e.category)
+      .filter((c) => c && !/quarterly exam/i.test(c) && !baseCats.includes(c));
+    return [...baseCats, ...new Set(extraCustom), "All Categories"];
+  };
+
+  const complianceExamCategoryOptions = buildScopedCategoryOptions(complianceFilterQuarter);
+  const reportExamCategoryOptions = buildScopedCategoryOptions(reportFilterQuarter);
 
   // Send password reset magic link email
   const handleSendResetEmail = async (teacherEmail) => {
@@ -2946,7 +3000,7 @@ export default function AdminDashboard() {
             Admin Console <span className="text-slate-400 dark:text-slate-500 font-normal">—</span> <span className="text-brand-600 dark:text-brand-400">Washington School International (Online)</span>
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 transition-colors">
-            Manage academic staff profiles, master schedules, and global student master list.
+            Manage teachers, students, schedules, and exam scores.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -2958,31 +3012,13 @@ export default function AdminDashboard() {
               setIsTermCalendarModalOpen(true);
             }}
           />
-          <button
-            type="button"
-            onClick={() => {
-              setCalendarDraft(academicCalendar);
-              setIsTermCalendarModalOpen(true);
-            }}
-            className="inline-flex items-center space-x-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
-          >
-            <Calendar className="h-4 w-4 text-brand-600 dark:text-brand-400" />
-            <span>Term Calendar</span>
-          </button>
-          <button
-            onClick={() => setIsProfileModalOpen(true)}
-            className="inline-flex items-center space-x-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer"
-          >
-            <Settings className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-            <span>Profile Settings</span>
-          </button>
           {activeTab === "teachers" && (
             <button
               onClick={() => setIsModalOpen(true)}
               className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
             >
               <UserPlus className="h-4 w-4" />
-              <span>Provision New Teacher</span>
+              <span>Add Teacher</span>
             </button>
           )}
           {activeTab === "students" && (
@@ -2991,7 +3027,7 @@ export default function AdminDashboard() {
               className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-brand-100/60 dark:shadow-lg dark:shadow-blue-500/40 dark:hover:shadow-blue-500/60 hover:bg-brand-700 active:scale-[0.98] transition-all cursor-pointer"
             >
               <UserPlus className="h-4 w-4" />
-              <span>Provision New Student</span>
+              <span>Add Student</span>
             </button>
           )}
         </div>
@@ -3004,7 +3040,7 @@ export default function AdminDashboard() {
             <Users className="h-5 w-5" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Active Teachers</span>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Teachers</span>
             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.totalTeachers}</h3>
           </div>
         </div>
@@ -3014,7 +3050,7 @@ export default function AdminDashboard() {
             <BookOpen className="h-5 w-5" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Managed Classes</span>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Classes</span>
             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.totalClasses}</h3>
           </div>
         </div>
@@ -3024,7 +3060,7 @@ export default function AdminDashboard() {
             <UserCheck className="h-5 w-5" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Total Student Accounts</span>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Students</span>
             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.totalStudents}</h3>
           </div>
         </div>
@@ -3035,7 +3071,7 @@ export default function AdminDashboard() {
               <AlertCircle className="h-5 w-5" />
             </div>
             <div>
-              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Unassigned Students</span>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Unassigned</span>
               <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mt-0.5 transition-colors">{stats.unassignedStudents}</h3>
             </div>
           </div>
@@ -3061,7 +3097,7 @@ export default function AdminDashboard() {
           }`}
         >
           <Users className="h-4 w-4" />
-          <span>Faculty Directory</span>
+          <span>Teachers</span>
           <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full text-slate-600 dark:text-slate-300 font-extrabold">
             {teachers.length}
           </span>
@@ -3076,7 +3112,7 @@ export default function AdminDashboard() {
           }`}
         >
           <GraduationCap className="h-4 w-4" />
-          <span>Global Student Directory</span>
+          <span>Students</span>
           <span className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full text-slate-600 dark:text-slate-300 font-extrabold">
             {students.length}
           </span>
@@ -3091,7 +3127,7 @@ export default function AdminDashboard() {
           }`}
         >
           <ShieldAlert className="h-4 w-4" />
-          <span>Teacher Compliance</span>
+          <span>Compliance</span>
           {teachers.reduce((acc, t) => acc + computeTeacherCompliance(t).totalPending, 0) > 0 && (
             <span className="text-xs bg-amber-500 text-white px-2 py-0.5 rounded-full font-black">
               {teachers.reduce((acc, t) => acc + computeTeacherCompliance(t).totalPending, 0)}
@@ -3108,7 +3144,7 @@ export default function AdminDashboard() {
           }`}
         >
           <BookOpen className="h-4 w-4" />
-          <span>Academic Reports</span>
+          <span>Exam Scores</span>
           {academicExamSubs.length > 0 && (
             <span className="text-xs bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 px-2 py-0.5 rounded-full font-extrabold">
               {academicExamSubs.length}
@@ -3138,9 +3174,9 @@ export default function AdminDashboard() {
       {activeTab === "teachers" && (
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors animate-fade-in">
           <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex items-center justify-between transition-colors">
-            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Provisioned Academic Staff</h2>
+            <h2 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">Teachers</h2>
             <span className="text-xs text-slate-400 dark:text-slate-500 font-semibold bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700 transition-colors">
-              {teachers.length} Active Instructors
+              {teachers.length} Active
             </span>
           </div>
 
@@ -3447,10 +3483,10 @@ export default function AdminDashboard() {
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
-                Faculty Compliance & Grading Oversight Board
+                Teacher Compliance
               </h2>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                Real-time monitoring of unreviewed student diaries and vocabulary sentence submissions.
+                Track pending student diaries, vocabulary reviews, and exam grading.
               </p>
             </div>
           </div>
@@ -3497,9 +3533,9 @@ export default function AdminDashboard() {
 
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden transition-colors">
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/20 dark:bg-slate-800/20 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">Faculty Workload Matrix</h3>
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 font-heading">Pending Reviews</h3>
               <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-100 dark:border-slate-700">
-                {teachers.length} Faculty Members Evaluated
+                {teachers.length} Teachers
               </span>
             </div>
 
@@ -3584,11 +3620,11 @@ export default function AdminDashboard() {
                     <BookOpen className="h-5 w-5" />
                   </div>
                   <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
-                    Teacher Assessment & Exam Grading Compliance Matrix
+                    Exam Grading Status
                   </h3>
                 </div>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Monitors whether teachers have created exam scopes and finalized grades for their assigned classes.
+                  Track exam creation and grading progress by class.
                 </p>
               </div>
 
@@ -3596,21 +3632,43 @@ export default function AdminDashboard() {
               <div className="flex flex-wrap items-center gap-2.5">
                 <select
                   value={complianceFilterExamCategory}
-                  onChange={(e) => setComplianceFilterExamCategory(e.target.value)}
+                  onChange={(e) => {
+                    hasManualComplianceFilterRef.current = true;
+                    setComplianceFilterExamCategory(e.target.value);
+                  }}
                   className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                 >
-                  {uniqueExamCategories.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
+                  {complianceExamCategoryOptions.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat === "All Categories"
+                        ? complianceFilterQuarter === "All"
+                          ? "All Categories (Full Year)"
+                          : `All Categories (${complianceFilterQuarter} Combined)`
+                        : cat}
+                    </option>
                   ))}
                 </select>
 
                 <select
                   value={complianceFilterQuarter}
-                  onChange={(e) => setComplianceFilterQuarter(e.target.value)}
+                  onChange={(e) => {
+                    const nextTerm = e.target.value;
+                    hasManualComplianceFilterRef.current = true;
+                    setComplianceFilterQuarter(nextTerm);
+                    if (
+                      nextTerm !== "All" &&
+                      complianceFilterExamCategory !== "All Categories" &&
+                      !getExamCategoriesForTerm(nextTerm).includes(complianceFilterExamCategory)
+                    ) {
+                      setComplianceFilterExamCategory(getDefaultExamCategoryForTerm(nextTerm));
+                    }
+                  }}
                   className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                 >
                   {termOptions.map((q) => (
-                    <option key={q} value={q}>{q === "All" ? "All Terms" : q}</option>
+                    <option key={q} value={q}>
+                      {q === "All" ? "All Terms" : `${q}${q === activeTermLabel ? " (Current)" : ""}`}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -3671,7 +3729,11 @@ export default function AdminDashboard() {
                           {row.isExamCreated ? (
                             <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                               <CheckCircle className="h-3 w-3" />
-                              <span>Published ({row.examMaxScore} pts)</span>
+                              <span>
+                                {row.examCount > 1
+                                  ? `${row.examCount} Exams (${row.examMaxScore} pts total)`
+                                  : `Published (${row.examMaxScore} pts)`}
+                              </span>
                             </span>
                           ) : (
                             <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800">
@@ -3752,11 +3814,11 @@ export default function AdminDashboard() {
               <div className="flex items-center space-x-2">
                 <BookOpen className="h-6 w-6 text-brand-600 dark:text-brand-400" />
                 <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
-                  Institutional Academic Performance Reports
+                  Exam Scores
                 </h2>
               </div>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                School-wide exam performance metrics, test scores, and grade distribution analytics.
+                View, filter, and export student exam scores.
               </p>
             </div>
 
@@ -3777,7 +3839,7 @@ export default function AdminDashboard() {
                 title="Download formatted Excel spreadsheet with colors, pillars, and grades"
               >
                 <Download className="h-4 w-4" />
-                <span>Export (Excel)</span>
+                <span>Excel</span>
               </button>
 
               <button
@@ -3793,7 +3855,7 @@ export default function AdminDashboard() {
                 className="inline-flex items-center space-x-2 rounded-xl bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white px-4 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer"
               >
                 <Printer className="h-4 w-4" />
-                <span>Print / Save PDF</span>
+                <span>Print / PDF</span>
               </button>
             </div>
           </div>
@@ -3804,7 +3866,7 @@ export default function AdminDashboard() {
               {/* Search */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Search Student / Exam
+                  Search
                 </label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
@@ -3812,7 +3874,7 @@ export default function AdminDashboard() {
                     type="text"
                     value={reportSearchQuery}
                     onChange={(e) => setReportSearchQuery(e.target.value)}
-                    placeholder="Search name or exam..."
+                    placeholder="Search student or exam..."
                     className="w-full pl-9 pr-3 py-2 text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 font-medium"
                   />
                 </div>
@@ -3821,15 +3883,24 @@ export default function AdminDashboard() {
               {/* Exam Category Filter */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Filter by Exam Category
+                  Exam
                 </label>
                 <select
                   value={reportFilterExamCategory}
-                  onChange={(e) => setReportFilterExamCategory(e.target.value)}
+                  onChange={(e) => {
+                    hasManualReportFilterRef.current = true;
+                    setReportFilterExamCategory(e.target.value);
+                  }}
                   className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                 >
-                  {uniqueExamCategories.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
+                  {reportExamCategoryOptions.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat === "All Categories"
+                        ? reportFilterQuarter === "All"
+                          ? "All Categories (Full Year)"
+                          : `All Categories (${reportFilterQuarter} Combined)`
+                        : cat}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -3837,7 +3908,7 @@ export default function AdminDashboard() {
               {/* Grade Level Filter */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Filter by Grade Level
+                  Grade
                 </label>
                 <select
                   value={reportFilterGrade}
@@ -3845,7 +3916,7 @@ export default function AdminDashboard() {
                   className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                 >
                   {uniqueGradeLevels.map((g) => (
-                    <option key={g} value={g}>{g === "All" ? "All Grade Levels" : g}</option>
+                    <option key={g} value={g}>{g === "All" ? "All Grades" : g}</option>
                   ))}
                 </select>
               </div>
@@ -3853,7 +3924,7 @@ export default function AdminDashboard() {
               {/* Community Filter */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Filter by Community
+                  Community
                 </label>
                 <select
                   value={reportFilterCommunity}
@@ -3869,15 +3940,28 @@ export default function AdminDashboard() {
               {/* Term Filter */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Filter by Term
+                  Term
                 </label>
                 <select
                   value={reportFilterQuarter}
-                  onChange={(e) => setReportFilterQuarter(e.target.value)}
+                  onChange={(e) => {
+                    const nextTerm = e.target.value;
+                    hasManualReportFilterRef.current = true;
+                    setReportFilterQuarter(nextTerm);
+                    if (
+                      nextTerm !== "All" &&
+                      reportFilterExamCategory !== "All Categories" &&
+                      !getExamCategoriesForTerm(nextTerm).includes(reportFilterExamCategory)
+                    ) {
+                      setReportFilterExamCategory(getDefaultExamCategoryForTerm(nextTerm));
+                    }
+                  }}
                   className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                 >
                   {termOptions.map((q) => (
-                    <option key={q} value={q}>{q === "All" ? "All Terms" : q}</option>
+                    <option key={q} value={q}>
+                      {q === "All" ? "All Terms" : `${q}${q === activeTermLabel ? " (Current)" : ""}`}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -3897,7 +3981,7 @@ export default function AdminDashboard() {
                 }`}
               >
                 <Table className="h-4 w-4" />
-                <span>Master Pivot Report</span>
+                <span>Score Table</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] bg-slate-100 dark:bg-slate-800 font-extrabold text-slate-700 dark:text-slate-300">
                   {standardStudents.length + eslStudents.length}
                 </span>
@@ -3913,7 +3997,7 @@ export default function AdminDashboard() {
                 }`}
               >
                 <AlertTriangle className="h-4 w-4" />
-                <span>Missing Scores & Deficiencies Audit</span>
+                <span>Missing Scores</span>
                 {(standardDeficiencies.length + eslDeficiencies.length) > 0 && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 font-extrabold">
                     {standardDeficiencies.length + eslDeficiencies.length} Pending
@@ -3931,7 +4015,7 @@ export default function AdminDashboard() {
                   title="Copy formatted deficiency notice for faculty group chats"
                 >
                   {isDeficiencyCopied ? <CheckCheck className="h-4 w-4 text-emerald-400" /> : <ClipboardCopy className="h-4 w-4" />}
-                  <span>{isDeficiencyCopied ? "Copied Reminder Notice!" : "Copy Reminder Notice"}</span>
+                  <span>{isDeficiencyCopied ? "Copied!" : "Copy Reminder"}</span>
                 </button>
 
                 <button
@@ -3941,13 +4025,13 @@ export default function AdminDashboard() {
                   title="Export missing scores audit to Excel"
                 >
                   <Download className="h-4 w-4" />
-                  <span>Export Deficiencies (Excel)</span>
+                  <span>Export Missing (Excel)</span>
                 </button>
               </div>
             ) : (
               <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                 <span>
-                  Showing <strong className="text-slate-800 dark:text-slate-200">{standardStudents.length} Standard</strong> & <strong className="text-slate-800 dark:text-slate-200">{eslStudents.length} ESL</strong> Students with Recorded Scores for <strong className="text-brand-600 dark:text-brand-400">{reportFilterExamCategory}</strong>
+                  <strong className="text-slate-800 dark:text-slate-200">{standardStudents.length} Standard</strong> · <strong className="text-slate-800 dark:text-slate-200">{eslStudents.length} ESL</strong> students — <strong className="text-brand-600 dark:text-brand-400">{reportFilterExamCategory}</strong>
                 </span>
               </div>
             )}
@@ -3956,7 +4040,7 @@ export default function AdminDashboard() {
           {/* Academic Report Data Tables */}
           {isAcademicLoading ? (
             <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-16 text-center text-slate-400 text-sm font-medium shadow-sm">
-              Loading school-wide academic data...
+              Loading exam scores...
             </div>
           ) : academicSubView === "deficiencies" ? (
             /* ════════════════════════════════════════════════════════════════════════
@@ -3971,17 +4055,17 @@ export default function AdminDashboard() {
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-rose-950 dark:text-rose-100 font-heading">
-                      Academic Score Deficiency & Incomplete Roster Audit
+                      Missing Exam Scores
                     </h4>
                     <p className="text-xs text-rose-800/80 dark:text-rose-300/80 mt-0.5">
-                      Identifies students who are missing 1 or more exam scores for <strong>{reportFilterExamCategory}</strong> ({reportFilterQuarter}). Check responsible subject teachers below to follow up.
+                      Students missing one or more scores for <strong>{reportFilterExamCategory}</strong> ({reportFilterQuarter}).
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center space-x-2 shrink-0">
                   <span className="text-xs font-black text-rose-700 dark:text-rose-300 bg-white dark:bg-slate-900 px-3.5 py-1.5 rounded-xl border border-rose-200 dark:border-rose-800 shadow-2xs">
-                    {standardDeficiencies.length + eslDeficiencies.length} Incomplete Student{standardDeficiencies.length + eslDeficiencies.length !== 1 ? 's' : ''}
+                    {standardDeficiencies.length + eslDeficiencies.length} Incomplete
                   </span>
                 </div>
               </div>
@@ -3993,7 +4077,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center space-x-2.5">
                       <div className="h-3 w-3 rounded-full bg-rose-500" />
                       <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
-                        Standard Curriculum Missing Scores
+                        Standard — Missing Scores
                       </h3>
                     </div>
                     <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-100 dark:border-rose-800">
@@ -4008,8 +4092,8 @@ export default function AdminDashboard() {
                           <th className="p-3.5">Student Name</th>
                           <th className="p-3.5">Grade Level</th>
                           <th className="p-3.5">Community</th>
-                          <th className="p-3.5">Deficiency Status</th>
-                          <th className="p-3.5">Missing Subjects & Responsible Teachers</th>
+                          <th className="p-3.5">Status</th>
+                          <th className="p-3.5">Missing Subjects & Teachers</th>
                           <th className="p-3.5 text-center">Progress</th>
                         </tr>
                       </thead>
@@ -4080,7 +4164,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center space-x-2.5">
                       <div className="h-3 w-3 rounded-full bg-amber-500" />
                       <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
-                        ESL Program Missing Scores
+                        ESL — Missing Scores
                       </h3>
                     </div>
                     <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800">
@@ -4095,8 +4179,8 @@ export default function AdminDashboard() {
                           <th className="p-3.5">Student Name</th>
                           <th className="p-3.5">Level / Grade</th>
                           <th className="p-3.5">Community</th>
-                          <th className="p-3.5">Deficiency Status</th>
-                          <th className="p-3.5">Missing Subjects & Responsible Teachers</th>
+                          <th className="p-3.5">Status</th>
+                          <th className="p-3.5">Missing Subjects & Teachers</th>
                           <th className="p-3.5 text-center">Progress</th>
                         </tr>
                       </thead>
@@ -4162,13 +4246,25 @@ export default function AdminDashboard() {
 
               {/* Zero Deficiencies State */}
               {standardDeficiencies.length === 0 && eslDeficiencies.length === 0 && (
-                <div className="bg-white dark:bg-slate-900 border border-emerald-100 dark:border-emerald-900/30 rounded-3xl p-16 text-center space-y-3 shadow-sm">
-                  <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto animate-bounce" />
-                  <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">100% Complete Roster Compliance!</h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                    All matching students have recorded scores for all subjects in <strong>{reportFilterExamCategory}</strong>. There are no score deficiencies.
-                  </p>
-                </div>
+                filteredExams.length === 0 && reportFilterExamCategory !== "1st Monthly Exam" ? (
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-16 text-center space-y-3 shadow-sm">
+                    <Calendar className="h-12 w-12 text-brand-500 mx-auto" />
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                      No exams yet for {reportFilterExamCategory} ({reportFilterQuarter})
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                      Missing scores will appear here once teachers create exams for this term.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-white dark:bg-slate-900 border border-emerald-100 dark:border-emerald-900/30 rounded-3xl p-16 text-center space-y-3 shadow-sm">
+                    <CheckCircle className="h-12 w-12 text-emerald-500 mx-auto animate-bounce" />
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">All Scores Complete!</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                      All matching students have scores recorded for <strong>{reportFilterExamCategory}</strong>.
+                    </p>
+                  </div>
+                )
               )}
             </div>
           ) : (
@@ -4180,7 +4276,7 @@ export default function AdminDashboard() {
               <div className="hidden print:block mb-6 text-center border-b-2 border-slate-900 pb-3">
                 <h1 className="text-base font-black text-black uppercase tracking-wider">Washington School International (Online)</h1>
                 <p className="text-xs text-slate-800 font-bold mt-0.5">
-                  Institutional Academic Performance Reports • {reportFilterExamCategory} {reportFilterQuarter !== "All" ? `• ${reportFilterQuarter}` : ""}
+                  Exam Scores • {reportFilterExamCategory} {reportFilterQuarter !== "All" ? `• ${reportFilterQuarter}` : ""}
                 </p>
                 <p className="text-[9px] text-slate-600 font-mono mt-0.5">
                   Generated: {new Date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })} • Standard ({standardStudents.length}) & ESL ({eslStudents.length}) Students
@@ -4194,7 +4290,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center space-x-2.5">
                       <div className="h-3 w-3 rounded-full bg-brand-500 print:hidden" />
                       <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading print:text-sm print:text-black">
-                        Standard Curriculum Master Report
+                        Standard Exam Scores
                       </h3>
                     </div>
                     <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800 print:border-none print:p-0 print:text-slate-700 print:text-[10px]">
@@ -4301,9 +4397,11 @@ export default function AdminDashboard() {
                               {[...STANDARD_CORE_SUBJECTS, ...STANDARD_ADDED_SUBJECTS].flatMap((subj) => {
                                 const sc = st.subjectScores[subj.key];
                                 const hasScore = sc && sc.hasScore;
-                                const tooltip = hasScore
-                                  ? `Score: ${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)${sc.examTitle ? ` • ${sc.examTitle}` : ''}`
-                                  : "No score recorded";
+                                const tooltip =
+                                  sc?.tooltip ||
+                                  (hasScore
+                                    ? `Score: ${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)${sc.examTitle ? ` • ${sc.examTitle}` : ''}`
+                                    : "No score recorded");
 
                                 return [
                                   <td
@@ -4327,7 +4425,12 @@ export default function AdminDashboard() {
                                       hasScore ? "text-slate-900 dark:text-slate-100" : "text-slate-400 dark:text-slate-500 font-bold"
                                     } print:p-0.5 print:text-[8px]`}
                                   >
-                                    {hasScore ? sc.earnedScore : 0}
+                                    <div>{hasScore ? sc.earnedScore : 0}</div>
+                                    {hasScore && sc.examCount > 1 && (
+                                      <div className="text-[9px] font-semibold text-brand-600 dark:text-brand-400 whitespace-nowrap print:hidden">
+                                        {sc.examCount} exams • {sc.percentage}%
+                                      </div>
+                                    )}
                                   </td>
                                 ];
                               })}
@@ -4359,7 +4462,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center space-x-2.5">
                       <div className="h-3 w-3 rounded-full bg-teal-500 print:hidden" />
                       <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading print:text-sm print:text-black">
-                        ESL Program Master Report
+                        ESL Exam Scores
                       </h3>
                     </div>
                     <span className="inline-flex px-3 py-1 rounded-xl text-xs font-bold bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 print:border-none print:p-0 print:text-slate-700 print:text-[10px]">
@@ -4457,9 +4560,11 @@ export default function AdminDashboard() {
                               {[...ESL_CORE_SUBJECTS, ...ESL_ADDED_SUBJECTS].flatMap((subj) => {
                                 const sc = st.subjectScores[subj.key];
                                 const hasScore = sc && sc.hasScore;
-                                const tooltip = hasScore
-                                  ? `Score: ${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)${sc.examTitle ? ` • ${sc.examTitle}` : ''}`
-                                  : "No score recorded";
+                                const tooltip =
+                                  sc?.tooltip ||
+                                  (hasScore
+                                    ? `Score: ${sc.earnedScore}/${sc.maxScore} (${sc.percentage}%)${sc.examTitle ? ` • ${sc.examTitle}` : ''}`
+                                    : "No score recorded");
 
                                 return [
                                   <td
@@ -4483,7 +4588,12 @@ export default function AdminDashboard() {
                                       hasScore ? "text-slate-900 dark:text-slate-100" : "text-slate-400 dark:text-slate-500 font-bold"
                                     } print:p-0.5 print:text-[8px]`}
                                   >
-                                    {hasScore ? sc.earnedScore : 0}
+                                    <div>{hasScore ? sc.earnedScore : 0}</div>
+                                    {hasScore && sc.examCount > 1 && (
+                                      <div className="text-[9px] font-semibold text-brand-600 dark:text-brand-400 whitespace-nowrap print:hidden">
+                                        {sc.examCount} exams • {sc.percentage}%
+                                      </div>
+                                    )}
                                   </td>
                                 ];
                               })}
@@ -4512,8 +4622,8 @@ export default function AdminDashboard() {
               {standardStudents.length === 0 && eslStudents.length === 0 && (
                 <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-16 text-center space-y-2 shadow-sm">
                   <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Students or Exam Submissions Found</p>
-                  <p className="text-xs text-slate-400">Try adjusting your filters or search query above.</p>
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No exam scores found</p>
+                  <p className="text-xs text-slate-400">Try changing the filters above.</p>
                 </div>
               )}
             </div>
@@ -4529,6 +4639,18 @@ export default function AdminDashboard() {
           onPendingCountChange={setPendingLessonPlansCount}
         />
       )}
+
+      {/* Subtle Admin Footer Quick-Check */}
+      <div className="pt-4 border-t border-slate-200/70 dark:border-slate-800/70 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 dark:text-slate-500 print:hidden">
+        <span>WSI Admin Console • {academicCalendar?.academicYear || "SY 2026-2027"}</span>
+        <button
+          type="button"
+          onClick={handleOpenStorageModal}
+          className="inline-flex items-center space-x-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 font-semibold transition-colors cursor-pointer"
+        >
+          <span>R2 Media Storage &amp; Cleanup</span>
+        </button>
+      </div>
 
 
 
@@ -5618,12 +5740,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Profile Settings Modal */}
-      <ProfileSettingsModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
-      />
-
       {/* Academic Term Calendar Configuration Modal */}
       {isTermCalendarModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
@@ -5764,6 +5880,112 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Subtle Footer R2 Storage & Auto-Cleanup Quick-Check Modal */}
+      {isStorageModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white font-heading">
+                  Cloudflare R2 Storage &amp; Auto-Cleanup
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Bucket: <span className="font-mono font-bold text-slate-600 dark:text-slate-300">washingtonschool</span> • Cron runs daily at 2:00 AM Manila (Term End + 14 days)
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsStorageModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {!isMediaWorkerConfigured() ? (
+              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-200">
+                `VITE_MEDIA_WORKER_URL` is not configured in environment variables yet.
+              </div>
+            ) : isLoadingStorage ? (
+              <div className="py-10 text-center text-xs text-slate-400">
+                Checking R2 bucket metrics...
+              </div>
+            ) : storageSummary ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60">
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Profile Photos (Kept)</div>
+                    <div className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">
+                      {storageSummary.byCategory?.avatars?.count || 0} files
+                    </div>
+                    <div className="text-[11px] text-slate-500">{formatFileSize(storageSummary.byCategory?.avatars?.bytes || 0)}</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60">
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Task Diagrams (Kept)</div>
+                    <div className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">
+                      {storageSummary.byCategory?.taskMedia?.count || 0} files
+                    </div>
+                    <div className="text-[11px] text-slate-500">{formatFileSize(storageSummary.byCategory?.taskMedia?.bytes || 0)}</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60">
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Student Uploads</div>
+                    <div className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">
+                      {storageSummary.byCategory?.submissions?.count || 0} files
+                    </div>
+                    <div className="text-[11px] text-slate-500">{formatFileSize(storageSummary.byCategory?.submissions?.bytes || 0)}</div>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50">
+                    <div className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">Expired (Ready)</div>
+                    <div className="text-base font-extrabold text-amber-800 dark:text-amber-200 mt-0.5">
+                      {storageSummary.expiredSubmissions?.count || 0} files
+                    </div>
+                    <div className="text-[11px] text-amber-700 dark:text-amber-300">{formatFileSize(storageSummary.expiredSubmissions?.bytes || 0)}</div>
+                  </div>
+                </div>
+
+                {cleanupPreview && (
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300">
+                    {cleanupPreview.dryRun ? (
+                      <span>Dry Run: <strong>{cleanupPreview.expiredFoundCount}</strong> expired file(s) ({formatFileSize(cleanupPreview.freedBytes)}) checked across {cleanupPreview.checkedCount} submissions.</span>
+                    ) : (
+                      <span>Cleanup Complete: Deleted <strong>{cleanupPreview.deletedCount}</strong> file(s), freed {formatFileSize(cleanupPreview.freedBytes)}.</span>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={handleOpenStorageModal}
+                    className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                  >
+                    Refresh
+                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      disabled={isRunningCleanup}
+                      onClick={() => handleRunR2Cleanup(true)}
+                      className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+                    >
+                      Preview Expired
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isRunningCleanup}
+                      onClick={() => handleRunR2Cleanup(false)}
+                      className="px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm cursor-pointer disabled:opacity-50"
+                    >
+                      {isRunningCleanup ? "Running..." : "Clean Up Now"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       )}
