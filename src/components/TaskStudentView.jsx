@@ -1,24 +1,59 @@
 import React, { useState, useMemo } from "react";
-import { 
-  ArrowLeft, 
+import {
+  ArrowLeft,
   ArrowRight,
-  CheckCircle, 
-  Sparkles, 
-  ListChecks, 
-  Send, 
-  Check, 
-  FolderKanban, 
-  FolderPlus, 
-  Type, 
-  Paperclip, 
-  CheckSquare, 
+  CheckCircle,
+  Sparkles,
+  ListChecks,
+  Send,
+  Check,
+  FolderKanban,
+  FolderPlus,
+  Type,
+  Paperclip,
+  CheckSquare,
   AlertCircle,
   ExternalLink,
   Eye,
-  X
+  X,
+  UploadCloud,
+  FileText,
+  Archive,
+  Trash2,
+  Loader2,
+  MessageSquare
 } from "lucide-react";
 import { computeTaskPages } from "../utils/helpers";
 import { toast } from "../context/FeedbackContext";
+import {
+  DEFAULT_ACADEMIC_CALENDAR,
+  getActiveTermLabel
+} from "../utils/academicCalendar";
+import {
+  isMatchingAnswerComplete
+} from "../utils/matchingUtils";
+import {
+  SUBMISSION_ACCEPT_ATTR,
+  MAX_SUBMISSION_FILES,
+  getTermFileExpirationDate,
+  formatShortDateUtc,
+  normalizeFileUploadAnswer,
+  hasFileUploadAnswerContent,
+  isImageAttachment,
+  isPdfAttachment,
+  isDocxAttachment,
+  formatFileSize,
+  isMediaExpired
+} from "../utils/mediaUtils";
+import {
+  isMediaWorkerConfigured,
+  uploadMediaToR2,
+  deleteMediaFromR2
+} from "../utils/mediaUploadService";
+import ImageAnnotationCanvas from "./ImageAnnotationCanvas";
+import ReferenceFilesViewer from "./ReferenceFilesViewer";
+import MatchingActivityWidget from "./MatchingActivityWidget";
+import RichTextDisplay from "./RichTextDisplay";
 
 export default function TaskStudentView({
   task,
@@ -30,10 +65,14 @@ export default function TaskStudentView({
   isSubmitting = false,
   isPreview = false,
   onClosePreview,
-  onReturn
+  onReturn,
+  taskTerm = "",
+  academicCalendar = DEFAULT_ACADEMIC_CALENDAR
 }) {
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [validationError, setValidationError] = useState(null);
+  const [uploadingFilesByQ, setUploadingFilesByQ] = useState({});
+  const [zoomedImageUrl, setZoomedImageUrl] = useState("");
 
   const questions = task?.questions || [];
 
@@ -103,6 +142,8 @@ export default function TaskStudentView({
 
         if (q.type === "checkboxes") {
           if (!Array.isArray(ans) || ans.length === 0) isMissing = true;
+        } else if (q.type === "matching") {
+          if (!isMatchingAnswerComplete(q, ans)) isMissing = true;
         } else if (q.type === "vocabulary") {
           if (!ans || typeof ans !== "object") {
             isMissing = true;
@@ -110,6 +151,8 @@ export default function TaskStudentView({
             const filled = Object.values(ans).filter((v) => v && v.toString().trim().length > 0);
             if (filled.length === 0) isMissing = true;
           }
+        } else if (q.type === "fileUpload") {
+          if (!hasFileUploadAnswerContent(ans)) isMissing = true;
         } else {
           if (ans === undefined || ans === null || ans.toString().trim() === "") {
             isMissing = true;
@@ -283,6 +326,10 @@ export default function TaskStudentView({
               {task.description}
             </p>
           )}
+          <ReferenceFilesViewer
+            files={task?.referenceFiles}
+            title="Task Reference Materials & Worksheets"
+          />
         </div>
       </div>
 
@@ -436,6 +483,26 @@ export default function TaskStudentView({
                     </h3>
                   )}
 
+                  {/* Question Diagram / Image Attachment */}
+                  {q.imageUrl && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setZoomedImageUrl(q.imageUrl)}
+                        className="group relative block w-fit max-w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 cursor-zoom-in"
+                      >
+                        <img
+                          src={q.imageUrl}
+                          alt={q.imageName || "Question Diagram"}
+                          className="max-h-72 w-auto object-contain"
+                        />
+                        <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-lg bg-slate-900/75 text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                          Click to Zoom
+                        </span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Multiple Choice */}
                   {q.type === "multipleChoice" && (
                     <div className="space-y-2.5 pt-2">
@@ -519,7 +586,19 @@ export default function TaskStudentView({
                     </div>
                   )}
 
-                  {/* Vocabulary */}
+                  {/* Matching Activity (Interactive SVG Column Connections) */}
+                  {q.type === "matching" && (
+                    <MatchingActivityWidget
+                      question={q}
+                      value={studentAnswers[q.id] || {}}
+                      onChange={(val) => handleValChange(q.id, val)}
+                      disabled={isSubmitted && !isPreview}
+                      showResults={Boolean(isSubmitted && !isPreview)}
+                      seedKey={`${submission?.studentId || (isPreview ? "preview" : "student")}_${q.id}`}
+                    />
+                  )}
+
+                  {/* Vocabulary (Legacy) */}
                   {q.type === "vocabulary" && (
                     <div className="space-y-4 pt-2">
                       <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -565,23 +644,274 @@ export default function TaskStudentView({
                     </div>
                   )}
 
-                  {/* File / Project Link Upload */}
-                  {q.type === "fileUpload" && (
-                    <div className="pt-2 space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Paperclip className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Project / File URL Link:</span>
+                  {/* File / Photo / PDF / DOCX Upload */}
+                  {q.type === "fileUpload" && (() => {
+                    const uploadVal = normalizeFileUploadAnswer(studentAnswers[q.id]);
+                    const maxAllowedFiles = Math.min(
+                      MAX_SUBMISSION_FILES,
+                      Math.max(1, Number(q.maxFiles) || MAX_SUBMISSION_FILES)
+                    );
+                    const uploadMode = q.uploadMode || "both";
+                    const resolvedTerm =
+                      task?.term || task?.quarter || taskTerm || getActiveTermLabel(academicCalendar);
+                    const expDate = getTermFileExpirationDate(academicCalendar, resolvedTerm);
+                    const isUploadingHere = Boolean(uploadingFilesByQ[q.id]);
+                    const qAnnotationsMap = submission?.fileAnnotations?.[q.id] || {};
+                    const qComment = submission?.fileComments?.[q.id] || "";
+
+                    const handleSelectFiles = async (fileList) => {
+                      const picked = Array.from(fileList || []);
+                      if (picked.length === 0) return;
+
+                      if (isPreview) {
+                        toast.info("Preview Mode: Files are only uploaded in live student mode.");
+                        return;
+                      }
+                      if (!isMediaWorkerConfigured()) {
+                        toast.error("Cloudflare Media Worker is not configured yet.");
+                        return;
+                      }
+
+                      const remainingSlots = maxAllowedFiles - uploadVal.files.length;
+                      if (remainingSlots <= 0) {
+                        toast.warning(`Maximum of ${maxAllowedFiles} files allowed for this question.`);
+                        return;
+                      }
+
+                      const toUpload = picked.slice(0, remainingSlots);
+                      if (picked.length > remainingSlots) {
+                        toast.warning(`Only uploading the first ${remainingSlots} file(s) (max ${maxAllowedFiles}).`);
+                      }
+
+                      setUploadingFilesByQ((prev) => ({ ...prev, [q.id]: true }));
+                      const newlyUploaded = [];
+                      for (const f of toUpload) {
+                        try {
+                          const meta = await uploadMediaToR2(f, {
+                            category: "submission",
+                            termKey: resolvedTerm,
+                            calendar: academicCalendar
+                          });
+                          newlyUploaded.push(meta);
+                        } catch (err) {
+                          toast.error(err.message || `Failed to upload ${f.name}`);
+                        }
+                      }
+
+                      if (newlyUploaded.length > 0) {
+                        handleValChange(q.id, {
+                          files: [...uploadVal.files, ...newlyUploaded],
+                          link: uploadVal.link
+                        });
+                        toast.success(`Uploaded ${newlyUploaded.length} file${newlyUploaded.length > 1 ? "s" : ""}!`);
+                      }
+                      setUploadingFilesByQ((prev) => ({ ...prev, [q.id]: false }));
+                    };
+
+                    const handleRemoveFile = (idxToRemove) => {
+                      const removedFile = uploadVal.files[idxToRemove];
+                      const nextFiles = uploadVal.files.filter((_, i) => i !== idxToRemove);
+                      handleValChange(q.id, { files: nextFiles, link: uploadVal.link });
+                      if (!isPreview && removedFile) {
+                        deleteMediaFromR2([removedFile]);
+                      }
+                    };
+
+                    return (
+                      <div className="pt-2 space-y-3">
+                        <ReferenceFilesViewer
+                          files={q.referenceFiles}
+                          title="Worksheet / Reference Files"
+                          compact
+                        />
+
+                        {/* Files Uploader (Shown in 'files' or 'both' mode when editable) */}
+                        {uploadMode !== "link" && (!isSubmitted || isPreview) && (
+                          <div className="space-y-2">
+                            <label
+                              className={`flex flex-col items-center justify-center p-5 rounded-2xl border-2 border-dashed transition-colors ${
+                                uploadVal.files.length >= maxAllowedFiles || isUploadingHere
+                                  ? "border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/20 opacity-60 cursor-not-allowed"
+                                  : "border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/30 dark:bg-emerald-950/20 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/40 cursor-pointer"
+                              }`}
+                            >
+                              {isUploadingHere ? (
+                                <Loader2 className="h-6 w-6 text-emerald-600 animate-spin mb-1.5" />
+                              ) : (
+                                <UploadCloud className="h-6 w-6 text-emerald-600 dark:text-emerald-400 mb-1.5" />
+                              )}
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                                {isUploadingHere
+                                  ? "Uploading files to R2..."
+                                  : `Click to upload Photos, PDF, or DOCX (${uploadVal.files.length}/${maxAllowedFiles})`}
+                              </span>
+                              <span className="text-[10.5px] text-slate-400 dark:text-slate-500 mt-0.5 text-center">
+                                Images ≤ 5 MB (auto-compressed) • PDF &amp; DOCX ≤ 10 MB
+                              </span>
+                              <input
+                                type="file"
+                                multiple
+                                accept={SUBMISSION_ACCEPT_ATTR}
+                                disabled={uploadVal.files.length >= maxAllowedFiles || isUploadingHere}
+                                onChange={(e) => {
+                                  handleSelectFiles(e.target.files);
+                                  e.target.value = "";
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+
+                            {expDate && (
+                              <p className="text-[10.5px] text-slate-400 dark:text-slate-500 flex items-center space-x-1.5 px-1">
+                                <Archive className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                                <span>
+                                  Uploaded files are stored for teacher grading and automatically cleared on{" "}
+                                  <strong className="text-slate-600 dark:text-slate-300">{formatShortDateUtc(expDate)}</strong> (14 days after {resolvedTerm} ends). Your score &amp; feedback stay permanently.
+                                </span>
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Uploaded Files Preview / Graded Annotation View */}
+                        {uploadVal.files.length > 0 && (
+                          <div className="space-y-3">
+                            {uploadVal.files.map((fileMeta, fIdx) => {
+                              const fileKey = fileMeta.key || fileMeta.url || String(fIdx);
+                              const fileExpired = isMediaExpired(fileMeta.expiresAt);
+                              const anns = qAnnotationsMap[fileKey] || qAnnotationsMap[fileMeta.url] || [];
+
+                              if (isImageAttachment(fileMeta)) {
+                                return (
+                                  <div key={fileKey} className="space-y-1.5">
+                                    <ImageAnnotationCanvas
+                                      mode="view"
+                                      imageUrl={fileMeta.url}
+                                      fileName={fileMeta.name || `Image ${fIdx + 1}`}
+                                      expiresAt={fileMeta.expiresAt}
+                                      termLabel={resolvedTerm}
+                                      annotations={anns}
+                                    />
+                                    {(!isSubmitted || isPreview) && (
+                                      <div className="flex justify-end">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRemoveFile(fIdx)}
+                                          className="inline-flex items-center space-x-1 text-[11px] font-bold text-red-500 hover:text-red-700 cursor-pointer"
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                          <span>Remove File</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              }
+
+                              const isPdf = isPdfAttachment(fileMeta);
+                              const isDocx = isDocxAttachment(fileMeta);
+
+                              return (
+                                <div
+                                  key={fileKey}
+                                  className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700"
+                                >
+                                  <div className="flex items-center space-x-3 min-w-0">
+                                    <div
+                                      className={`p-2 rounded-xl shrink-0 ${
+                                        isPdf
+                                          ? "bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400"
+                                          : isDocx
+                                          ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
+                                          : "bg-slate-100 dark:bg-slate-800 text-slate-600"
+                                      }`}
+                                    >
+                                      <FileText className="h-4 w-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                                        {fileMeta.name || "Uploaded Document"}
+                                      </p>
+                                      <p className="text-[10.5px] text-slate-400">
+                                        {isPdf ? "PDF Document" : isDocx ? "Word (.docx)" : "Attachment"}
+                                        {fileMeta.size ? ` • ${formatFileSize(fileMeta.size)}` : ""}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center space-x-2 shrink-0">
+                                    {fileExpired ? (
+                                      <span className="text-[11px] font-bold text-slate-400 italic">Archived</span>
+                                    ) : (
+                                      <a
+                                        href={isDocx ? `${fileMeta.url}?download=1` : fileMeta.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-bold text-brand-600 dark:text-brand-400 hover:bg-slate-50"
+                                      >
+                                        <span>{isDocx ? "Download" : "Open"}</span>
+                                        <ExternalLink className="h-3 w-3" />
+                                      </a>
+                                    )}
+                                    {(!isSubmitted || isPreview) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveFile(fIdx)}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 cursor-pointer"
+                                        title="Remove file"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Optional URL Link Box (hidden if uploadMode === "files") */}
+                        {uploadMode !== "files" && (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center space-x-2">
+                              <Paperclip className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                {uploadMode === "link" ? "Project / File URL Link:" : "Optional Project / Google Drive Link:"}
+                              </span>
+                            </div>
+                            <input
+                              type="url"
+                              disabled={isSubmitted && !isPreview}
+                              value={uploadVal.link}
+                              onChange={(e) => {
+                                const nextLink = e.target.value;
+                                if (uploadVal.files.length > 0 || uploadMode === "both") {
+                                  handleValChange(q.id, { files: uploadVal.files, link: nextLink });
+                                } else {
+                                  handleValChange(q.id, nextLink);
+                                }
+                              }}
+                              placeholder="Paste your project URL or Google Drive link here (e.g. https://...)..."
+                              className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 bg-slate-50/50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 transition-colors disabled:opacity-80"
+                            />
+                          </div>
+                        )}
+
+                        {/* Per-Question Teacher Comment after grading */}
+                        {isSubmitted && qComment && (
+                          <div className="p-3.5 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/50 text-xs space-y-1">
+                            <div className="flex items-center space-x-1.5 font-bold text-emerald-800 dark:text-emerald-300">
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              <span>Teacher Comment on Uploaded Work:</span>
+                            </div>
+                            <div className="text-emerald-700 dark:text-emerald-200 pl-5">
+                              <RichTextDisplay content={qComment} />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <input
-                        type="url"
-                        disabled={isSubmitted && !isPreview}
-                        value={studentAnswers[q.id] || ""}
-                        onChange={(e) => handleValChange(q.id, e.target.value)}
-                        placeholder="Paste your project URL or Google Drive link here (e.g. https://...)..."
-                        className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 bg-slate-50/50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500 transition-colors disabled:opacity-80"
-                      />
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Teacher's Rationale / Explanation Note */}
                   {(isSubmitted || isPreview) && q.rationale && q.rationale.trim() && (
@@ -642,6 +972,28 @@ export default function TaskStudentView({
               </button>
             )
           )}
+        </div>
+      )}
+      {/* Lightbox modal for zoomed question diagrams */}
+      {zoomedImageUrl && (
+        <div
+          onClick={() => setZoomedImageUrl("")}
+          className="fixed inset-0 z-[70] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="relative max-w-4xl w-full flex justify-center">
+            <img
+              src={zoomedImageUrl}
+              alt="Zoomed Diagram"
+              className="max-h-[85vh] w-auto rounded-2xl shadow-2xl border border-slate-700"
+            />
+            <button
+              type="button"
+              onClick={() => setZoomedImageUrl("")}
+              className="absolute top-2 right-2 p-2 rounded-full bg-slate-900/80 text-white hover:bg-slate-800 cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       )}
     </div>

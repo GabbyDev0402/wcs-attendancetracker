@@ -12,6 +12,17 @@ import {
   getActiveTermLabel
 } from "../utils/academicCalendar";
 import { loadAcademicCalendar } from "../utils/academicCalendarService";
+import {
+  normalizeFileUploadAnswer,
+  isImageAttachment,
+  isPdfAttachment,
+  isDocxAttachment,
+  formatFileSize,
+  isMediaExpired
+} from "../utils/mediaUtils";
+import { gradeMatchingQuestion } from "../utils/matchingUtils";
+import ImageAnnotationCanvas from "../components/ImageAnnotationCanvas";
+import RichTextDisplay from "../components/RichTextDisplay";
 import { 
   ArrowLeft, 
   FolderKanban, 
@@ -23,7 +34,9 @@ import {
   ChevronUp,
   ArrowUpDown,
   BookOpen,
-  RefreshCw
+  RefreshCw,
+  FileText,
+  ExternalLink
 } from "lucide-react";
 
 export default function StudentTaskHistory() {
@@ -297,6 +310,19 @@ export default function StudentTaskHistory() {
               const taskId = task.firestoreId || task.id;
               const sub = taskSubmissionsMap[taskId];
               const isExpanded = !!expandedCards[taskId];
+              const taskTermLabel = normalizeTermLabel(task.term || task.quarter, task.dueDate || task.createdAt, academicCalendar);
+              const uploadQuestions = (task.questions || []).filter((q) => q.type === "fileUpload");
+              const matchingQuestions = (task.questions || []).filter((q) => q.type === "matching");
+              const hasUploadedFilesOrComments =
+                Boolean(sub?.fileComments && Object.values(sub.fileComments).some(Boolean)) ||
+                Boolean(sub?.fileAnnotations && Object.keys(sub.fileAnnotations).length > 0) ||
+                uploadQuestions.some((q) => {
+                  const norm = normalizeFileUploadAnswer(sub?.answers?.[q.id]);
+                  return norm.files.length > 0 || norm.link.trim().length > 0;
+                });
+              const canExpand = Boolean(
+                sub?.feedback || hasUploadedFilesOrComments || matchingQuestions.length > 0
+              );
 
               return (
                 <div
@@ -362,29 +388,153 @@ export default function StudentTaskHistory() {
                         <span className="px-3 py-1 rounded-xl bg-emerald-100/60 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs font-bold">
                           Completed ✅
                         </span>
-                        {sub.feedback && (
+                        {canExpand && (
                           <button
                             type="button"
                             onClick={() => toggleExpand(taskId)}
-                            className="p-1 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 transition-colors cursor-pointer"
-                            title="View teacher feedback"
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition-colors cursor-pointer"
+                            title="View teacher feedback & annotated work"
                           >
+                            <span>{isExpanded ? "Hide Work" : "View Work & Feedback"}</span>
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </button>
                         )}
                       </div>
                     </div>
 
-                    {/* Expandable Teacher Feedback */}
-                    {isExpanded && sub.feedback && (
-                      <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 text-xs space-y-1.5 animate-fade-in">
-                        <div className="flex items-center space-x-1.5 font-bold text-emerald-800 dark:text-emerald-300">
-                          <MessageSquare className="h-3.5 w-3.5" />
-                          <span>Teacher Feedback & Notes:</span>
-                        </div>
-                        <p className="text-slate-700 dark:text-slate-300 pl-5 whitespace-pre-wrap leading-relaxed">
-                          "{sub.feedback}"
-                        </p>
+                    {/* Expandable Teacher Feedback, Annotated Photos & Submitted Files */}
+                    {isExpanded && canExpand && (
+                      <div className="space-y-3 animate-fade-in">
+                        {sub.feedback && (
+                          <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 text-xs space-y-1.5">
+                            <div className="flex items-center space-x-1.5 font-bold text-emerald-800 dark:text-emerald-300">
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              <span>Teacher Feedback & Notes:</span>
+                            </div>
+                            <p className="text-slate-700 dark:text-slate-300 pl-5 whitespace-pre-wrap leading-relaxed">
+                              "{sub.feedback}"
+                            </p>
+                          </div>
+                        )}
+
+                        {hasUploadedFilesOrComments && uploadQuestions.map((q) => {
+                          const norm = normalizeFileUploadAnswer(sub?.answers?.[q.id]);
+                          const qComment = sub?.fileComments?.[q.id] || "";
+                          const qAnns = sub?.fileAnnotations?.[q.id] || {};
+                          if (norm.files.length === 0 && !norm.link.trim() && !qComment) return null;
+
+                          return (
+                            <div key={q.id} className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 space-y-3">
+                              {norm.files.map((fileMeta, fIdx) => {
+                                const fileKey = fileMeta.key || fileMeta.url || String(fIdx);
+                                if (isImageAttachment(fileMeta)) {
+                                  return (
+                                    <ImageAnnotationCanvas
+                                      key={fileKey}
+                                      mode="view"
+                                      imageUrl={fileMeta.url}
+                                      fileName={fileMeta.name || `Image ${fIdx + 1}`}
+                                      expiresAt={fileMeta.expiresAt}
+                                      termLabel={taskTermLabel}
+                                      annotations={qAnns[fileKey] || qAnns[fileMeta.url] || []}
+                                    />
+                                  );
+                                }
+                                const isDocx = isDocxAttachment(fileMeta);
+                                const expired = isMediaExpired(fileMeta.expiresAt);
+                                return (
+                                  <div key={fileKey} className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs">
+                                    <div className="flex items-center space-x-2 min-w-0">
+                                      <FileText className="h-4 w-4 text-brand-500 shrink-0" />
+                                      <span className="font-bold text-slate-700 dark:text-slate-200 truncate">
+                                        {fileMeta.name || (isPdfAttachment(fileMeta) ? "Document.pdf" : "Document")}
+                                      </span>
+                                      {fileMeta.size && (
+                                        <span className="text-[10px] text-slate-400 shrink-0">({formatFileSize(fileMeta.size)})</span>
+                                      )}
+                                    </div>
+                                    {expired ? (
+                                      <span className="text-[11px] font-semibold text-slate-400 italic shrink-0">Cleared after {taskTermLabel}</span>
+                                    ) : (
+                                      <a
+                                        href={isDocx ? `${fileMeta.url}?download=1` : fileMeta.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center space-x-1 text-brand-600 dark:text-brand-400 font-bold hover:underline shrink-0"
+                                      >
+                                        <span>{isDocx ? "Download" : "Open"}</span>
+                                        <ExternalLink className="h-3 w-3" />
+                                      </a>
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                              {norm.link.trim() && (
+                                <a
+                                  href={norm.link.startsWith("http") ? norm.link : `https://${norm.link}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center space-x-1 text-xs font-bold text-brand-600 dark:text-brand-400 underline"
+                                >
+                                  <span>Submitted Link ↗</span>
+                                </a>
+                              )}
+
+                              {qComment && (
+                                <div className="p-2.5 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/50 text-xs text-emerald-800 dark:text-emerald-200 space-y-1">
+                                  <span className="font-extrabold block">Teacher Note:</span>
+                                  <RichTextDisplay content={qComment} className="text-xs" />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {matchingQuestions.map((q, mIdx) => {
+                          const mRes = gradeMatchingQuestion(q, sub?.answers?.[q.id]);
+                          const awardedPts = sub?.objScoresDetail?.[q.id] ?? mRes.earnedPoints;
+                          return (
+                            <div
+                              key={q.id || `match-${mIdx}`}
+                              className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-800/60 space-y-2 text-xs"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-extrabold text-amber-700 dark:text-amber-400">
+                                  Matching Activity #{mIdx + 1} Results
+                                </span>
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+                                  {mRes.correctCount}/{mRes.totalPairs} Pairs ({awardedPts}/{mRes.maxPoints} pts)
+                                </span>
+                              </div>
+                              <div className="space-y-1.5">
+                                {mRes.breakdown.map((row) => (
+                                  <div
+                                    key={row.pairId}
+                                    className={`flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] ${
+                                      row.isCorrect
+                                        ? "bg-emerald-50/70 dark:bg-emerald-950/25 border-emerald-200 dark:border-emerald-800/50"
+                                        : "bg-rose-50/70 dark:bg-rose-950/25 border-rose-200 dark:border-rose-800/50"
+                                    }`}
+                                  >
+                                    <span className="font-bold text-slate-800 dark:text-slate-100">
+                                      {row.pairNumber}. {row.leftLabel}
+                                    </span>
+                                    <span
+                                      className={`font-bold ${
+                                        row.isCorrect
+                                          ? "text-emerald-700 dark:text-emerald-300"
+                                          : "text-rose-700 dark:text-rose-300"
+                                      }`}
+                                    >
+                                      → {row.selectedLabel} {row.isCorrect ? "✓" : `✕ (Correct: ${row.expectedLabel})`}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
