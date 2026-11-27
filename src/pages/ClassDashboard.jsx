@@ -74,10 +74,52 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
-  RefreshCw
+  RefreshCw,
+  ImagePlus,
+  Archive,
+  Loader2,
+  MessageSquare
 } from "lucide-react";
 import TaskStudentView from "../components/TaskStudentView";
 import ClassLessonPlanTab from "../components/ClassLessonPlanTab";
+import ImageAnnotationCanvas from "../components/ImageAnnotationCanvas";
+import RichTextInput from "../components/RichTextInput";
+import RichTextDisplay from "../components/RichTextDisplay";
+import {
+  isRichTextEmpty,
+  sanitizeRichHtml
+} from "../utils/richTextUtils";
+import {
+  DEFAULT_MEDIA_GRACE_DAYS,
+  MAX_SUBMISSION_FILES,
+  MAX_TASK_REFERENCE_FILES,
+  MAX_QUESTION_REFERENCE_FILES,
+  TEACHER_REFERENCE_ACCEPT_ATTR,
+  getTermFileExpirationDate,
+  formatShortDateUtc,
+  normalizeFileUploadAnswer,
+  isImageAttachment,
+  isPdfAttachment,
+  isDocxAttachment,
+  formatFileSize,
+  isMediaExpired,
+  extractR2KeyFromUrlOrMeta,
+  collectQuestionMediaKeys,
+  collectSubmissionMediaKeys,
+  collectTaskMediaKeys
+} from "../utils/mediaUtils";
+import {
+  isMediaWorkerConfigured,
+  uploadMediaToR2,
+  deleteMediaFromR2
+} from "../utils/mediaUploadService";
+import {
+  MIN_MATCHING_PAIRS,
+  MAX_MATCHING_PAIRS,
+  MAX_MATCHING_DISTRACTORS,
+  createDefaultMatchingPairs,
+  gradeMatchingQuestion
+} from "../utils/matchingUtils";
 import {
   DEPED_WEIGHT_PROFILES,
   TRIMESTER_KEYS,
@@ -92,12 +134,14 @@ import {
   TRIMESTER_TERM_LABELS,
   TRIMESTER_EXAM_CATEGORIES,
   normalizeTermLabel,
+  termKeyToLabel,
   getDefaultTermForExamCategory,
   getDefaultExamCategoryForTerm,
   getTodayManilaYmd,
   getActiveTermKey,
   getActiveTermLabel,
-  doesTermMatchFilter
+  doesTermMatchFilter,
+  resolveExamTermLabel
 } from "../utils/academicCalendar";
 import { loadAcademicCalendar } from "../utils/academicCalendarService";
 
@@ -136,7 +180,8 @@ const questionTypeLabels = {
   multipleChoice: { label: "Multiple Choice", color: "brand" },
   checkboxes: { label: "Checkboxes (Multi-Select)", color: "purple" },
   identification: { label: "Identification", color: "teal" },
-  vocabulary: { label: "Vocabulary Match", color: "amber" },
+  matching: { label: "Matching Activity", color: "amber" },
+  vocabulary: { label: "Vocabulary (Legacy)", color: "amber" },
   essay: { label: "Essay", color: "indigo" },
   fileUpload: { label: "File / Link Upload", color: "emerald" },
   section: { label: "Section Header", color: "slate" },
@@ -581,8 +626,38 @@ export default function ClassDashboard() {
   const [taskMode, setTaskMode] = useState("external");
   const [taskExternalUrl, setTaskExternalUrl] = useState("");
   const [taskMaxScore, setTaskMaxScore] = useState(50);
+  const [taskReferenceFiles, setTaskReferenceFiles] = useState([]);
+  const [uploadingTaskRefFiles, setUploadingTaskRefFiles] = useState(false);
+  const [uploadingQuestionRefId, setUploadingQuestionRefId] = useState(null);
+  const [uploadingMatchingImgKey, setUploadingMatchingImgKey] = useState(null);
   const [taskQuestions, setTaskQuestions] = useState([]);
   const [activeTaskQuestionId, setActiveTaskQuestionId] = useState(null);
+  const initialEditMediaKeysRef = useRef(new Set());
+  const sessionUploadedMediaKeysRef = useRef(new Set());
+
+  const trackUploadedBuilderMedia = (items) => {
+    const list = Array.isArray(items) ? items : [items];
+    list.forEach((item) => {
+      const key = extractR2KeyFromUrlOrMeta(item);
+      if (key) sessionUploadedMediaKeysRef.current.add(key);
+    });
+  };
+
+  const cleanupRemovedBuilderMedia = (urlsOrMetas) => {
+    const list = Array.isArray(urlsOrMetas) ? urlsOrMetas : [urlsOrMetas];
+    const immediateDeletes = [];
+    list.forEach((item) => {
+      const key = extractR2KeyFromUrlOrMeta(item);
+      if (!key) return;
+      // Keys belonging to the live saved task are deferred until Publish so Cancel never breaks live tasks
+      if (initialEditMediaKeysRef.current.has(key)) return;
+      sessionUploadedMediaKeysRef.current.delete(key);
+      immediateDeletes.push(key);
+    });
+    if (immediateDeletes.length > 0) {
+      deleteMediaFromR2(immediateDeletes);
+    }
+  };
   const [isPreviewTaskModalOpen, setIsPreviewTaskModalOpen] = useState(false);
   const [previewTaskData, setPreviewTaskData] = useState(null);
   const [previewAnswers, setPreviewAnswers] = useState({});
@@ -626,9 +701,15 @@ export default function ClassDashboard() {
   const [selectedQuizSub, setSelectedQuizSub] = useState(null);
   const [manualQuizObjScores, setManualQuizObjScores] = useState({});
   const [manualQuizSubjScores, setManualQuizSubjScores] = useState({});
+  const [quizFileAnnotations, setQuizFileAnnotations] = useState({});
+  const [quizFileComments, setQuizFileComments] = useState({});
+  const [uploadingQuestionImageId, setUploadingQuestionImageId] = useState(null);
   const [isSavingQuizGrade, setIsSavingQuizGrade] = useState(false);
 
-  // Tasks Cards Quarter Filter & Quick Manual Score Recording State
+  // Tasks & Exams Cards Quarter Filters & Quick Manual Score Recording State
+  const [examsListQuarterFilter, setExamsListQuarterFilter] = useState(() =>
+    getActiveTermLabel(DEFAULT_ACADEMIC_CALENDAR, todayStr)
+  );
   const [tasksListQuarterFilter, setTasksListQuarterFilter] = useState(() =>
     getActiveTermLabel(DEFAULT_ACADEMIC_CALENDAR, todayStr)
   );
@@ -663,6 +744,15 @@ export default function ClassDashboard() {
   const [allClassVocabSubs, setAllClassVocabSubs] = useState([]);
   const [allClassDiaries, setAllClassDiaries] = useState([]);
   const [allClassSessions, setAllClassSessions] = useState([]);
+  const [hoveredEcrInsert, setHoveredEcrInsert] = useState(null); // "ww" | "pt" | null
+  const [ecrQuickAddCategory, setEcrQuickAddCategory] = useState(null); // "ww" | "pt" | null
+  const [ecrQuickAddTitle, setEcrQuickAddTitle] = useState("");
+  const [ecrQuickAddMaxScore, setEcrQuickAddMaxScore] = useState("20");
+  const [isCreatingEcrCol, setIsCreatingEcrCol] = useState(false);
+  const [ecrInlineDrafts, setEcrInlineDrafts] = useState({});
+  const [savingEcrCellKey, setSavingEcrCellKey] = useState(null);
+  const [editingEcrCol, setEditingEcrCol] = useState(null); // { id, title, maxScore }
+  const [isUpdatingEcrCol, setIsUpdatingEcrCol] = useState(false);
 
   useEffect(() => {
     setRecordWeightProfile(
@@ -676,6 +766,7 @@ export default function ClassDashboard() {
       const activeKey = getActiveTermKey(cal, todayStr);
       const activeLabel = getActiveTermLabel(cal, todayStr);
       setRecordTerm(activeKey);
+      setExamsListQuarterFilter(activeLabel);
       setTasksListQuarterFilter(activeLabel);
       setTasksArchiveQuarter(activeLabel);
       setTaskQuarter(activeLabel);
@@ -1301,8 +1392,11 @@ export default function ClassDashboard() {
 
       await updateDoc(docRef, {
         status: "graded",
-        sentences: modalSentences,
-        feedback: vocabFeedbackInput.trim(),
+        sentences: (modalSentences || []).map((s) => ({
+          ...s,
+          correction: isRichTextEmpty(s?.correction) ? "" : sanitizeRichHtml(s.correction)
+        })),
+        feedback: isRichTextEmpty(vocabFeedbackInput) ? "" : sanitizeRichHtml(vocabFeedbackInput),
         gradedAt: new Date().toISOString(),
         gradedBy: user.id
       });
@@ -1312,12 +1406,18 @@ export default function ClassDashboard() {
       invalidateCache(`class_graded_vocab_${tag}`);
       invalidateCache(`class_all_vocab_subs_${tag}`);
 
+      const cleanSentences = (modalSentences || []).map((s) => ({
+        ...s,
+        correction: isRichTextEmpty(s?.correction) ? "" : sanitizeRichHtml(s.correction)
+      }));
+      const cleanFeedback = isRichTextEmpty(vocabFeedbackInput) ? "" : sanitizeRichHtml(vocabFeedbackInput);
+
       const updatedSub = {
         ...selectedVocabSub,
         id: docId,
         status: "graded",
-        sentences: modalSentences,
-        feedback: vocabFeedbackInput.trim(),
+        sentences: cleanSentences,
+        feedback: cleanFeedback,
         gradedAt: new Date().toISOString(),
         gradedBy: user.id
       };
@@ -1433,10 +1533,7 @@ export default function ClassDashboard() {
   const handleOpenEditExamModal = (exam) => {
     setEditingExam(exam);
     setExamCategory(exam.category || "1st Monthly Exam");
-    const inferredLegacyTerm =
-      !exam.term && `${exam.category || ""} ${exam.title || ""}`.toLowerCase().includes("3rd monthly")
-        ? "Term 1"
-        : normalizeTermLabel(exam.term || exam.quarter, exam.createdAt || exam.date, academicCalendar);
+    const inferredLegacyTerm = resolveExamTermLabel(exam, academicCalendar);
     setExamQuarter(inferredLegacyTerm);
     setExamEcrSlot(exam.ecrSlot || "auto");
     setExamMaxScore(exam.maxScore ?? 50);
@@ -1907,14 +2004,23 @@ export default function ClassDashboard() {
     try {
       const taskId = taskToDelete.firestoreId || taskToDelete.id;
 
-      // Step A: Query task_submissions collection where taskId === taskId and delete each submission doc
+      // Step A: Collect all R2 keys from task + submissions, then delete submission docs
       const subsQ = query(collection(db, "task_submissions"), where("taskId", "==", taskId));
       const subsSnap = await getDocs(subsQ);
+      const r2KeySet = new Set(collectTaskMediaKeys(taskToDelete));
+      subsSnap.docs.forEach((docSnap) => {
+        collectSubmissionMediaKeys(docSnap.data()).forEach((key) => r2KeySet.add(key));
+      });
       const deletePromises = subsSnap.docs.map(docSnap => deleteDoc(doc(db, "task_submissions", docSnap.id)));
       await Promise.all(deletePromises);
 
       // Step B: Delete main task doc
       await deleteDoc(doc(db, "tasks", taskId));
+
+      // Step C: Delete collected media objects from R2 bucket
+      if (r2KeySet.size > 0) {
+        await deleteMediaFromR2([...r2KeySet]);
+      }
 
       const tag = `${user.id}_${classId}`;
       invalidateCache(`class_tasks_teacher_${tag}`);
@@ -2132,7 +2238,11 @@ export default function ClassDashboard() {
                 updatedAt: new Date().toISOString()
               });
             } else if (existingSub.status === "graded") {
+              const keysToDelete = collectSubmissionMediaKeys(existingSub);
               await deleteDoc(doc(db, "task_submissions", existingSubId));
+              if (keysToDelete.length > 0) {
+                await deleteMediaFromR2(keysToDelete);
+              }
             }
           }
           return;
@@ -2248,15 +2358,20 @@ export default function ClassDashboard() {
       setManualQuizSubjScores(initialSubj);
     }
 
-    // 2. Initialize Objective Scores (Supports editing auto-graded points)
-    if (sub.objScoresDetail) {
-      setManualQuizObjScores(sub.objScoresDetail);
-    } else {
+    setManualQuizObjScores(sub.objScoresDetail || {});
+    setQuizFileAnnotations(sub.fileAnnotations || {});
+    setQuizFileComments(sub.fileComments || {});
+
+    if (!sub.objScoresDetail) {
       const initialObj = {};
       questions.forEach(q => {
-        if (['multipleChoice', 'checkboxes', 'identification'].includes(q.type)) {
+        if (['multipleChoice', 'checkboxes', 'identification', 'matching'].includes(q.type)) {
           const pts = Number(q.points) || 1;
           const ans = sub.answers?.[q.id];
+          if (q.type === 'matching') {
+            initialObj[q.id] = gradeMatchingQuestion(q, ans).earnedPoints;
+            return;
+          }
           let isCorrect = false;
           if (q.type === 'multipleChoice') {
             isCorrect = Number(ans) === Number(q.correctOptionIndex);
@@ -2292,12 +2407,21 @@ export default function ClassDashboard() {
       );
       const totalFinalScore = calculatedObjScore + calculatedSubjScore;
 
+      const sanitizedFileComments = Object.fromEntries(
+        Object.entries(quizFileComments || {}).map(([k, v]) => [
+          k,
+          isRichTextEmpty(v) ? "" : sanitizeRichHtml(v)
+        ])
+      );
+
       const subDocId = selectedQuizSub.firestoreId || selectedQuizSub.id;
       await updateDoc(doc(db, "task_submissions", subDocId), {
         objScore: calculatedObjScore,
         objScoresDetail: manualQuizObjScores,
         subjScore: calculatedSubjScore,
         subjScoresDetail: manualQuizSubjScores,
+        fileAnnotations: quizFileAnnotations,
+        fileComments: sanitizedFileComments,
         score: totalFinalScore,
         status: "graded"
       });
@@ -2306,6 +2430,8 @@ export default function ClassDashboard() {
       setSelectedQuizSub(null);
       setManualQuizObjScores({});
       setManualQuizSubjScores({});
+      setQuizFileAnnotations({});
+      setQuizFileComments({});
       invalidateCache(`class_task_subs_teacher_${user.id}_${classId}`);
       fetchedTabsRef.current["record"] = false;
       loadTaskSubmissions(true);
@@ -2538,6 +2664,232 @@ export default function ClassDashboard() {
       ? eClassRecordModel.termSheets[recordTerm] || eClassRecordModel.termSheets["TERM 1"]
       : null;
 
+  const openEcrQuickAdd = (categoryType) => {
+    setEcrQuickAddCategory(categoryType);
+    setEcrQuickAddTitle("");
+    setEcrQuickAddMaxScore(categoryType === "ww" ? "20" : "50");
+  };
+
+  const handleQuickAddEcrColumn = async (e) => {
+    e.preventDefault();
+    const cleanTitle = String(ecrQuickAddTitle || "").trim();
+    const maxScoreNum = Number(ecrQuickAddMaxScore);
+    if (!cleanTitle) {
+      toast.warning("Please enter a column title.");
+      return;
+    }
+    if (!maxScoreNum || Number.isNaN(maxScoreNum) || maxScoreNum <= 0) {
+      toast.warning("Highest Possible Score must be greater than 0.");
+      return;
+    }
+
+    setIsCreatingEcrCol(true);
+    try {
+      const tag = `${user.id}_${classId}`;
+      const termLabel = termKeyToLabel(recordTerm === "SUMMARY" ? getActiveTermKey(academicCalendar, todayStr) : recordTerm);
+      const categoryLabel = ecrQuickAddCategory === "ww" ? "Written Task" : "Performance Task";
+
+      const newTaskPayload = {
+        classId: tag,
+        teacherId: user.id,
+        title: cleanTitle,
+        description: "",
+        category: categoryLabel,
+        term: termLabel,
+        quarter: termLabel,
+        mode: "manual",
+        status: "published",
+        maxScore: maxScoreNum,
+        totalPoints: maxScoreNum,
+        dueDate: todayStr,
+        academicYear: academicCalendar?.academicYear || CURRENT_ACADEMIC_YEAR,
+        createdAt: new Date().toISOString()
+      };
+
+      const docRef = await addDoc(collection(db, "tasks"), newTaskPayload);
+      const createdTask = { id: docRef.id, firestoreId: docRef.id, ...newTaskPayload };
+
+      setAllClassTasks((prev) => [...prev, createdTask]);
+      setTasks((prev) => [createdTask, ...prev]);
+      invalidateCache(`class_tasks_teacher_${tag}`);
+      setEcrQuickAddCategory(null);
+      setEcrQuickAddTitle("");
+      toast.success(`Added "${cleanTitle}" (${categoryLabel}) to Class Record!`);
+    } catch (err) {
+      toast.error("Failed to add column: " + err.message);
+    } finally {
+      setIsCreatingEcrCol(false);
+    }
+  };
+
+  const handleSaveEcrColMeta = async (e) => {
+    if (e) e.preventDefault();
+    if (!editingEcrCol) return;
+    const cleanTitle = String(editingEcrCol.title || "").trim();
+    const maxScoreNum = Number(editingEcrCol.maxScore);
+    if (!cleanTitle || !maxScoreNum || Number.isNaN(maxScoreNum) || maxScoreNum <= 0) {
+      toast.warning("Please enter a valid title and max score above 0.");
+      return;
+    }
+
+    setIsUpdatingEcrCol(true);
+    try {
+      const tag = `${user.id}_${classId}`;
+      await updateDoc(doc(db, "tasks", editingEcrCol.id), {
+        title: cleanTitle,
+        maxScore: maxScoreNum,
+        totalPoints: maxScoreNum,
+        updatedAt: new Date().toISOString()
+      });
+
+      const applyUpdate = (list) =>
+        list.map((t) =>
+          (t.firestoreId || t.id) === editingEcrCol.id
+            ? { ...t, title: cleanTitle, maxScore: maxScoreNum, totalPoints: maxScoreNum }
+            : t
+        );
+      setAllClassTasks(applyUpdate);
+      setTasks(applyUpdate);
+      invalidateCache(`class_tasks_teacher_${tag}`);
+      setEditingEcrCol(null);
+      toast.success("Column updated!");
+    } catch (err) {
+      toast.error("Failed to update column: " + err.message);
+    } finally {
+      setIsUpdatingEcrCol(false);
+    }
+  };
+
+  const handleDeleteEcrColumn = async (item) => {
+    if (!item?.id) return;
+    const confirmed = await confirmDialog({
+      title: `Delete "${item.title}"?`,
+      message: "This removes the column and all scores entered in it from both the Class Record and Tasks tab.",
+      confirmText: "Delete Column",
+      type: "danger"
+    });
+    if (!confirmed) return;
+
+    try {
+      const tag = `${user.id}_${classId}`;
+      const subsQ = query(collection(db, "task_submissions"), where("taskId", "==", item.id));
+      const subsSnap = await getDocs(subsQ);
+      await Promise.all(subsSnap.docs.map((d) => deleteDoc(doc(db, "task_submissions", d.id))));
+      await deleteDoc(doc(db, "tasks", item.id));
+
+      setAllClassTasks((prev) => prev.filter((t) => (t.firestoreId || t.id) !== item.id));
+      setTasks((prev) => prev.filter((t) => (t.firestoreId || t.id) !== item.id));
+      setAllClassTaskSubs((prev) => prev.filter((s) => s.taskId !== item.id));
+      setTaskSubmissions((prev) => prev.filter((s) => s.taskId !== item.id));
+      invalidateCache(`class_tasks_teacher_${tag}`);
+      invalidateCache(`class_task_subs_teacher_${tag}`);
+      toast.success(`Removed "${item.title}".`);
+    } catch (err) {
+      toast.error("Failed to delete column: " + err.message);
+    }
+  };
+
+  const handleSaveInlineEcrScore = async (item, row, rawValue) => {
+    const cellKey = `${item.id}::${row.studentId}`;
+    const trimmed = String(rawValue ?? "").trim();
+    const clearDraft = () =>
+      setEcrInlineDrafts((prev) => {
+        if (!(cellKey in prev)) return prev;
+        const copy = { ...prev };
+        delete copy[cellKey];
+        return copy;
+      });
+
+    const existingSub = (allClassTaskSubs || []).find(
+      (s) =>
+        (s.taskId === item.id || s.taskId === item.firestoreId) &&
+        (s.studentId === row.studentId ||
+          (row.student?.id && s.studentId === row.student.id) ||
+          (row.student?.uid && s.studentId === row.student.uid))
+    );
+
+    if (trimmed === "") {
+      clearDraft();
+      if (!existingSub) return;
+      if (existingSub.status === "graded" && (!existingSub.answers || Object.keys(existingSub.answers).length === 0)) {
+        setSavingEcrCellKey(cellKey);
+        try {
+          const existingId = existingSub.firestoreId || existingSub.id;
+          await deleteDoc(doc(db, "task_submissions", existingId));
+          const tag = `${user.id}_${classId}`;
+          setAllClassTaskSubs((prev) => prev.filter((s) => (s.firestoreId || s.id) !== existingId));
+          setTaskSubmissions((prev) => prev.filter((s) => (s.firestoreId || s.id) !== existingId));
+          invalidateCache(`class_task_subs_teacher_${tag}`);
+        } catch (err) {
+          toast.error("Failed to clear score: " + err.message);
+        } finally {
+          setSavingEcrCellKey(null);
+        }
+      }
+      return;
+    }
+
+    const maxScore = Number(item.maxScore) || 50;
+    const numericScore = Number(trimmed);
+    if (Number.isNaN(numericScore) || numericScore < 0 || numericScore > maxScore) {
+      toast.warning(`Score must be between 0 and ${maxScore}.`);
+      clearDraft();
+      return;
+    }
+
+    if (existingSub && Number(existingSub.score) === numericScore) {
+      clearDraft();
+      return;
+    }
+
+    setSavingEcrCellKey(cellKey);
+    try {
+      const tag = `${user.id}_${classId}`;
+      const termLabel = termKeyToLabel(recordTerm === "SUMMARY" ? getActiveTermKey(academicCalendar, todayStr) : recordTerm);
+      const sharedFields = {
+        score: numericScore,
+        maxScore,
+        status: "graded",
+        taskTitle: item.title || "",
+        quarter: termLabel,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (existingSub) {
+        const existingId = existingSub.firestoreId || existingSub.id;
+        await updateDoc(doc(db, "task_submissions", existingId), sharedFields);
+        const applySubUpdate = (list) =>
+          list.map((s) => ((s.firestoreId || s.id) === existingId ? { ...s, ...sharedFields } : s));
+        setAllClassTaskSubs(applySubUpdate);
+        setTaskSubmissions(applySubUpdate);
+      } else {
+        const subDocId = `${row.studentId}_${item.id}`;
+        const createdPayload = {
+          taskId: item.id,
+          classId: tag,
+          teacherId: user.id,
+          studentId: row.studentId,
+          studentName: row.studentName || "Student",
+          studentCode: row.studentCode || "",
+          ...sharedFields,
+          submittedAt: new Date().toISOString(),
+          gradedAt: new Date().toISOString()
+        };
+        await setDoc(doc(db, "task_submissions", subDocId), createdPayload);
+        const createdSub = { id: subDocId, firestoreId: subDocId, ...createdPayload };
+        setAllClassTaskSubs((prev) => [...prev, createdSub]);
+        setTaskSubmissions((prev) => [...prev, createdSub]);
+      }
+
+      invalidateCache(`class_task_subs_teacher_${tag}`);
+      clearDraft();
+    } catch (err) {
+      toast.error("Failed to save score: " + err.message);
+    } finally {
+      setSavingEcrCellKey(null);
+    }
+  };
+
   const handleExportDepEdExcel = async () => {
     if ((classStudents || []).length === 0) {
       toast.warning("No students enrolled to export.");
@@ -2704,6 +3056,12 @@ export default function ClassDashboard() {
       case "identification":
         newQ.correctAnswer = "";
         break;
+      case "matching":
+        newQ.matchingPairs = createDefaultMatchingPairs(3);
+        newQ.matchingDistractors = [];
+        newQ.points = 3;
+        newQ.pointsCustomized = false;
+        break;
       case "vocabulary":
         newQ.vocabularyPairs = [{ id: `t-vp-${Date.now()}`, word: "", definition: "" }];
         break;
@@ -2713,6 +3071,9 @@ export default function ClassDashboard() {
         break;
       case "fileUpload":
         newQ.points = 1;
+        newQ.uploadMode = "both";
+        newQ.maxFiles = MAX_SUBMISSION_FILES;
+        newQ.referenceFiles = [];
         break;
       case "section":
         newQ.title = "";
@@ -2757,6 +3118,10 @@ export default function ClassDashboard() {
   };
 
   const deleteTaskQuestion = (qId) => {
+    const targetQ = (taskQuestions || []).find((q) => q.id === qId);
+    if (targetQ) {
+      cleanupRemovedBuilderMedia(collectQuestionMediaKeys(targetQ));
+    }
     setTaskQuestions((prev) => (prev || []).filter((q) => q.id !== qId));
     if (activeTaskQuestionId === qId) {
       setActiveTaskQuestionId(null);
@@ -2964,6 +3329,207 @@ export default function ClassDashboard() {
     );
   };
 
+  // --- Matching Activity & Teacher Reference File Handlers ---
+  const addMatchingPair = (qId) => {
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        const currentPairs = q.matchingPairs || [];
+        if (currentPairs.length >= MAX_MATCHING_PAIRS) return q;
+        const newId = `mp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        const nextPairs = [
+          ...currentPairs,
+          { id: newId, leftText: "", leftImageUrl: "", rightText: "", rightImageUrl: "" }
+        ];
+        return {
+          ...q,
+          matchingPairs: nextPairs,
+          points: q.pointsCustomized ? q.points : nextPairs.length
+        };
+      })
+    );
+  };
+
+  const updateMatchingPair = (qId, pairId, field, value) => {
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        return {
+          ...q,
+          matchingPairs: (q.matchingPairs || []).map((p) =>
+            p.id === pairId ? { ...p, [field]: value } : p
+          )
+        };
+      })
+    );
+  };
+
+  const removeMatchingPair = (qId, pairId) => {
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        const currentPairs = q.matchingPairs || [];
+        if (currentPairs.length <= MIN_MATCHING_PAIRS) return q;
+        const nextPairs = currentPairs.filter((p) => p.id !== pairId);
+        return {
+          ...q,
+          matchingPairs: nextPairs,
+          points: q.pointsCustomized ? q.points : nextPairs.length
+        };
+      })
+    );
+  };
+
+  const addMatchingDistractor = (qId) => {
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        const current = q.matchingDistractors || [];
+        if (current.length >= MAX_MATCHING_DISTRACTORS) return q;
+        const newId = `md-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        return {
+          ...q,
+          matchingDistractors: [...current, { id: newId, text: "", imageUrl: "" }]
+        };
+      })
+    );
+  };
+
+  const updateMatchingDistractor = (qId, distractorId, field, value) => {
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        return {
+          ...q,
+          matchingDistractors: (q.matchingDistractors || []).map((d) =>
+            d.id === distractorId ? { ...d, [field]: value } : d
+          )
+        };
+      })
+    );
+  };
+
+  const removeMatchingDistractor = (qId, distractorId) => {
+    setTaskQuestions((prev) =>
+      (prev || []).map((q) => {
+        if (q.id !== qId) return q;
+        return {
+          ...q,
+          matchingDistractors: (q.matchingDistractors || []).filter((d) => d.id !== distractorId)
+        };
+      })
+    );
+  };
+
+  const handleUploadMatchingItemImage = async (qId, itemId, targetType, field, file) => {
+    if (!file) return;
+    if (!isMediaWorkerConfigured()) {
+      toast.error("Cloudflare Media Worker is not configured (VITE_MEDIA_WORKER_URL).");
+      return;
+    }
+    const uploadKey = `${qId}_${itemId}_${field}`;
+    setUploadingMatchingImgKey(uploadKey);
+    try {
+      const currentQ = (taskQuestions || []).find((q) => q.id === qId);
+      const currentItem = targetType === "distractor"
+        ? (currentQ?.matchingDistractors || []).find((d) => d.id === itemId)
+        : (currentQ?.matchingPairs || []).find((p) => p.id === itemId);
+      const prevImageUrl = currentItem?.[field] || "";
+
+      const uploaded = await uploadMediaToR2(file, {
+        category: "task-media",
+        calendar: academicCalendar
+      });
+      trackUploadedBuilderMedia(uploaded);
+      if (targetType === "distractor") {
+        updateMatchingDistractor(qId, itemId, field, uploaded.url);
+      } else {
+        updateMatchingPair(qId, itemId, field, uploaded.url);
+      }
+      if (prevImageUrl && prevImageUrl !== uploaded.url) {
+        cleanupRemovedBuilderMedia([prevImageUrl]);
+      }
+      toast.success("Image attached!");
+    } catch (err) {
+      toast.error(err.message || "Failed to upload image.");
+    } finally {
+      setUploadingMatchingImgKey(null);
+    }
+  };
+
+  const handleUploadTaskReferenceFiles = async (fileList) => {
+    const picked = Array.from(fileList || []);
+    if (picked.length === 0) return;
+    if (!isMediaWorkerConfigured()) {
+      toast.error("Cloudflare Media Worker is not configured (VITE_MEDIA_WORKER_URL).");
+      return;
+    }
+    const remaining = MAX_TASK_REFERENCE_FILES - taskReferenceFiles.length;
+    if (remaining <= 0) {
+      toast.warning(`Maximum of ${MAX_TASK_REFERENCE_FILES} reference files allowed.`);
+      return;
+    }
+    const toUpload = picked.slice(0, remaining);
+    if (picked.length > remaining) {
+      toast.warning(`Only uploading the first ${remaining} file(s).`);
+    }
+    setUploadingTaskRefFiles(true);
+    const added = [];
+    for (const f of toUpload) {
+      try {
+        const meta = await uploadMediaToR2(f, {
+          category: "task-media",
+          calendar: academicCalendar
+        });
+        trackUploadedBuilderMedia(meta);
+        added.push(meta);
+      } catch (err) {
+        toast.error(err.message || `Failed to upload ${f.name}`);
+      }
+    }
+    if (added.length > 0) {
+      setTaskReferenceFiles((prev) => [...prev, ...added]);
+      toast.success(`Attached ${added.length} reference file${added.length > 1 ? "s" : ""}!`);
+    }
+    setUploadingTaskRefFiles(false);
+  };
+
+  const handleUploadQuestionReferenceFiles = async (qId, fileList) => {
+    const picked = Array.from(fileList || []);
+    if (picked.length === 0) return;
+    if (!isMediaWorkerConfigured()) {
+      toast.error("Cloudflare Media Worker is not configured (VITE_MEDIA_WORKER_URL).");
+      return;
+    }
+    const targetQ = (taskQuestions || []).find((q) => q.id === qId);
+    const existing = Array.isArray(targetQ?.referenceFiles) ? targetQ.referenceFiles : [];
+    const remaining = MAX_QUESTION_REFERENCE_FILES - existing.length;
+    if (remaining <= 0) {
+      toast.warning(`Maximum of ${MAX_QUESTION_REFERENCE_FILES} files allowed for this question.`);
+      return;
+    }
+    const toUpload = picked.slice(0, remaining);
+    setUploadingQuestionRefId(qId);
+    const added = [];
+    for (const f of toUpload) {
+      try {
+        const meta = await uploadMediaToR2(f, {
+          category: "task-media",
+          calendar: academicCalendar
+        });
+        trackUploadedBuilderMedia(meta);
+        added.push(meta);
+      } catch (err) {
+        toast.error(err.message || `Failed to upload ${f.name}`);
+      }
+    }
+    if (added.length > 0) {
+      updateTaskQuestion(qId, "referenceFiles", [...existing, ...added]);
+      toast.success(`Attached ${added.length} question file${added.length > 1 ? "s" : ""}!`);
+    }
+    setUploadingQuestionRefId(null);
+  };
+
   const handleOpenEditTask = (task) => {
     if (!task) return;
     if (task.mode === "manual") {
@@ -2980,8 +3546,11 @@ export default function ClassDashboard() {
     setTaskMode(task.mode || "external");
     setTaskExternalUrl(task.externalUrl || "");
     setTaskMaxScore(task.maxScore || task.totalPoints || 50);
+    setTaskReferenceFiles(Array.isArray(task.referenceFiles) ? task.referenceFiles : []);
     setTaskQuestions(task.questions || []);
     setActiveTaskQuestionId(task.questions && task.questions.length > 0 ? task.questions[0].id : null);
+    initialEditMediaKeysRef.current = new Set(collectTaskMediaKeys(task));
+    sessionUploadedMediaKeysRef.current = new Set();
     setIsBuildingTask(true);
   };
 
@@ -2993,6 +3562,24 @@ export default function ClassDashboard() {
       if (!taskExternalUrl.trim()) { toast.warning("Please enter the external Google Form/Doc URL."); return; }
     } else if (taskMode === "inApp") {
       if (taskQuestions.length === 0) { toast.warning("Please add at least one question to the quiz."); return; }
+      for (const q of taskQuestions) {
+        if (q.type === "matching") {
+          const pairs = q.matchingPairs || [];
+          if (pairs.length < MIN_MATCHING_PAIRS) {
+            toast.warning(`Matching Activity questions need at least ${MIN_MATCHING_PAIRS} pairs.`);
+            return;
+          }
+          const hasIncompletePair = pairs.some(
+            (p) =>
+              (!String(p.leftText || "").trim() && !String(p.leftImageUrl || "").trim()) ||
+              (!String(p.rightText || "").trim() && !String(p.rightImageUrl || "").trim())
+          );
+          if (hasIncompletePair) {
+            toast.warning("Each Matching Activity pair needs text or an image on both Left and Right sides.");
+            return;
+          }
+        }
+      }
     } else if (taskMode === "manual") {
       if (!taskMaxScore || Number(taskMaxScore) <= 0) { toast.warning("Please enter a valid max score (greater than 0)."); return; }
     }
@@ -3018,6 +3605,10 @@ export default function ClassDashboard() {
         status: "published",
         updatedAt: new Date().toISOString()
       };
+
+      if (taskMode !== "manual") {
+        payload.referenceFiles = taskReferenceFiles;
+      }
 
       if (taskMode === "external") {
         payload.externalUrl = taskExternalUrl.trim();
@@ -3060,8 +3651,26 @@ export default function ClassDashboard() {
         savedTaskId = docRef.id;
       }
 
+      const keptKeys = new Set(
+        collectTaskMediaKeys({
+          referenceFiles: taskReferenceFiles,
+          questions: taskQuestions
+        })
+      );
+      const orphanedKeys = new Set();
+      initialEditMediaKeysRef.current.forEach((key) => {
+        if (!keptKeys.has(key)) orphanedKeys.add(key);
+      });
+      sessionUploadedMediaKeysRef.current.forEach((key) => {
+        if (!keptKeys.has(key)) orphanedKeys.add(key);
+      });
+      initialEditMediaKeysRef.current.clear();
+      sessionUploadedMediaKeysRef.current.clear();
       setLastPublishedTaskId(savedMode === "manual" ? null : savedTaskId);
       resetTaskBuilder();
+      if (orphanedKeys.size > 0) {
+        deleteMediaFromR2([...orphanedKeys]);
+      }
       setTaskPublishSuccess(true);
       setTimeout(() => {
         setTaskPublishSuccess(false);
@@ -3091,6 +3700,11 @@ export default function ClassDashboard() {
   };
 
   const resetTaskBuilder = () => {
+    if (sessionUploadedMediaKeysRef.current.size > 0) {
+      deleteMediaFromR2([...sessionUploadedMediaKeysRef.current]);
+      sessionUploadedMediaKeysRef.current.clear();
+    }
+    initialEditMediaKeysRef.current.clear();
     setIsBuildingTask(false);
     setEditingTaskId(null);
     setTaskTitle("");
@@ -3101,6 +3715,7 @@ export default function ClassDashboard() {
     setTaskMode("external");
     setTaskExternalUrl("");
     setTaskMaxScore(50);
+    setTaskReferenceFiles([]);
     setTaskQuestions([]);
     setActiveTaskQuestionId(null);
   };
@@ -3118,6 +3733,7 @@ export default function ClassDashboard() {
         mode: taskMode,
         externalUrl: taskExternalUrl,
         maxScore: taskMaxScore,
+        referenceFiles: taskReferenceFiles,
         questions: taskQuestions || []
       });
     }
@@ -4120,21 +4736,21 @@ export default function ClassDashboard() {
                         </div>
                       </div>
 
-                      <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
-                        "{item?.sentence || ""}"
-                      </p>
+                      <div className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+                        <RichTextDisplay content={item?.sentence || ""} />
+                      </div>
 
                       {item?.status === "needs_review" && (
                         <div className="pt-1 space-y-1">
                           <label className="block text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">
                             Specific Correction / Hint:
                           </label>
-                          <textarea
-                            rows={2}
+                          <RichTextInput
+                            variant="compact"
+                            minHeight={64}
                             value={item?.correction || ""}
-                            onChange={(e) => handleCorrectionChange(idx, e.target.value)}
+                            onChange={(val) => handleCorrectionChange(idx, val)}
                             placeholder="Enter specific correction or hint..."
-                            className="w-full text-xs font-medium bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-amber-900 dark:text-amber-100 placeholder-amber-400/80 rounded-xl p-2.5 outline-none focus:border-amber-400 transition-colors"
                           />
                         </div>
                       )}
@@ -4142,8 +4758,10 @@ export default function ClassDashboard() {
                   ))}
                 </div>
               ) : (
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                  {typeof selectedVocabSub?.sentences === "string" ? selectedVocabSub.sentences : formatSentencesText(selectedVocabSub?.sentences)}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                  <RichTextDisplay
+                    content={typeof selectedVocabSub?.sentences === "string" ? selectedVocabSub.sentences : formatSentencesText(selectedVocabSub?.sentences)}
+                  />
                 </div>
               )}
             </div>
@@ -4153,12 +4771,12 @@ export default function ClassDashboard() {
                 <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
                   Teacher Feedback & Comments
                 </label>
-                <textarea
-                  rows={3}
+                <RichTextInput
+                  variant="compact"
+                  minHeight={84}
                   value={vocabFeedbackInput}
-                  onChange={(e) => setVocabFeedbackInput(e.target.value)}
+                  onChange={setVocabFeedbackInput}
                   placeholder="Great use of target vocabulary words! Watch out for minor punctuation..."
-                  className="w-full text-xs font-medium text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-2xl p-3 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
                 />
               </div>
 
@@ -4201,7 +4819,7 @@ export default function ClassDashboard() {
           )}
 
           {/* Header Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 font-heading">
                 Exams & Assessments
@@ -4211,7 +4829,31 @@ export default function ClassDashboard() {
               </p>
             </div>
 
-            <div className="flex items-center space-x-2.5 shrink-0">
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <div className="inline-flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                {[...TRIMESTER_TERM_LABELS, "All"].map((lbl) => {
+                  const isSelected = examsListQuarterFilter === lbl;
+                  const isCurrent = lbl === activeTermLabel;
+                  return (
+                    <button
+                      key={lbl}
+                      type="button"
+                      onClick={() => setExamsListQuarterFilter(lbl)}
+                      className={`inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-2xs"
+                          : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      {isCurrent && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
+                      )}
+                      <span>{lbl === "All" ? "All Terms" : lbl}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
               <button
                 type="button"
                 onClick={() => loadExams(true)}
@@ -4234,9 +4876,44 @@ export default function ClassDashboard() {
           {/* Exam Cards Grid */}
           {isExamsLoading ? (
             <div className="py-16 text-center text-slate-400 text-sm">Loading exams...</div>
-          ) : exams.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {exams.map((exam) => {
+          ) : (() => {
+            const filteredExams = examsListQuarterFilter === "All"
+              ? exams
+              : exams.filter((exam) => {
+                  const resolvedTerm = resolveExamTermLabel(exam, academicCalendar);
+                  return doesTermMatchFilter(resolvedTerm, examsListQuarterFilter);
+                });
+
+            if (filteredExams.length === 0) {
+              return (
+                <div className="py-16 text-center space-y-2.5 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
+                  <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                    {exams.length === 0
+                      ? "No Exams Added Yet"
+                      : `No exams recorded for ${examsListQuarterFilter} yet`}
+                  </p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
+                    {exams.length === 0
+                      ? 'Click "Add Exam" to select a category and start entering student scores.'
+                      : "Create a new exam for this term or view all previous terms."}
+                  </p>
+                  {exams.length > 0 && examsListQuarterFilter !== "All" && (
+                    <button
+                      type="button"
+                      onClick={() => setExamsListQuarterFilter("All")}
+                      className="inline-flex items-center px-3.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      View All Terms
+                    </button>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredExams.map((exam) => {
                 const examDocId = exam.firestoreId || exam.id;
                 const subsForThisExam = examSubmissions.filter(sub => sub.examId === examDocId || sub.examId === exam.id);
                 const gradedSubs = subsForThisExam.filter(s => s.status === "graded");
@@ -4251,9 +4928,7 @@ export default function ClassDashboard() {
                           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{exam.title}</h3>
                           <div className="flex items-center space-x-2 mt-1 flex-wrap gap-y-1">
                             <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
-                              {!exam.term && `${exam.category || ""} ${exam.title || ""}`.toLowerCase().includes("3rd monthly")
-                                ? "Term 1"
-                                : normalizeTermLabel(exam.term || exam.quarter, exam.createdAt || exam.date, academicCalendar)}
+                              {resolveExamTermLabel(exam, academicCalendar)}
                             </span>
                             <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800">
                               {exam.category || "Exam"}
@@ -4317,15 +4992,10 @@ export default function ClassDashboard() {
                     </div>
                   </div>
                 );
-              })}
-            </div>
-          ) : (
-            <div className="py-16 text-center space-y-2 bg-white dark:bg-slate-900 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-              <ListChecks className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Exams Added Yet</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">Click "Add Exam" to select a category and start entering student scores.</p>
-            </div>
-          )}
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -5060,6 +5730,94 @@ export default function ClassDashboard() {
                       className="w-full text-sm font-medium border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
                     />
                   </div>
+
+                  {taskMode !== "manual" && (
+                    <div className="pt-2 space-y-2.5 border-t border-slate-100 dark:border-slate-800">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                            Reference Materials / Worksheets (Optional — PDF, DOCX, Images)
+                          </label>
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                            Up to {MAX_TASK_REFERENCE_FILES} files. Stored permanently in R2 so you can reuse worksheets across terms.
+                          </p>
+                        </div>
+                        <label
+                          className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold hover:bg-indigo-100 transition-colors cursor-pointer ${
+                            uploadingTaskRefFiles || taskReferenceFiles.length >= MAX_TASK_REFERENCE_FILES
+                              ? "opacity-50 pointer-events-none"
+                              : ""
+                          }`}
+                        >
+                          {uploadingTaskRefFiles ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Paperclip className="h-3.5 w-3.5" />
+                          )}
+                          <span>
+                            {uploadingTaskRefFiles
+                              ? "Uploading..."
+                              : `Attach Reference (${taskReferenceFiles.length}/${MAX_TASK_REFERENCE_FILES})`}
+                          </span>
+                          <input
+                            type="file"
+                            multiple
+                            accept={TEACHER_REFERENCE_ACCEPT_ATTR}
+                            disabled={uploadingTaskRefFiles || taskReferenceFiles.length >= MAX_TASK_REFERENCE_FILES}
+                            onChange={(e) => {
+                              handleUploadTaskReferenceFiles(e.target.files);
+                              e.target.value = "";
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      {taskReferenceFiles.length > 0 && (
+                        <div className="space-y-1.5">
+                          {taskReferenceFiles.map((f, fIdx) => (
+                            <div
+                              key={f.key || f.url || fIdx}
+                              className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs"
+                            >
+                              <div className="flex items-center space-x-2 min-w-0">
+                                <FileText className="h-4 w-4 text-indigo-500 shrink-0" />
+                                <span className="font-bold text-slate-700 dark:text-slate-200 truncate">
+                                  {f.name || `Reference ${fIdx + 1}`}
+                                </span>
+                                {f.size && (
+                                  <span className="text-[10px] text-slate-400 shrink-0">
+                                    ({formatFileSize(f.size)})
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center space-x-2 shrink-0">
+                                <a
+                                  href={isDocxAttachment(f) ? `${f.url}?download=1` : f.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline"
+                                >
+                                  {isDocxAttachment(f) ? "Download" : "Open"}
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    cleanupRemovedBuilderMedia([rf]);
+                                    setTaskReferenceFiles((prev) => prev.filter((_, idx) => idx !== fIdx));
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"
+                                  title="Remove reference file"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -5113,7 +5871,7 @@ export default function ClassDashboard() {
                         <span>In-App Quiz / Worksheet</span>
                       </div>
                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                        Build an interactive in-app quiz with Multiple Choice, Identification, Vocabulary Match, or Essays.
+                        Build an interactive in-app quiz with Multiple Choice, Identification, Matching Activity, File Uploads, or Essays.
                       </p>
                     </div>
                   </div>
@@ -5366,7 +6124,57 @@ export default function ClassDashboard() {
                                     {typeInfo.label}
                                   </span>
                                 </div>
-                                <div className="flex items-center space-x-3">
+                                <div className="flex items-center space-x-2">
+                                  {!['section', 'info'].includes(q.type) && (
+                                    <label
+                                      onClick={(e) => e.stopPropagation()}
+                                      title="Attach diagram or photo to this question"
+                                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 hover:border-brand-300 transition-colors cursor-pointer ${
+                                        uploadingQuestionImageId === q.id ? "opacity-50 pointer-events-none" : ""
+                                      }`}
+                                    >
+                                      {uploadingQuestionImageId === q.id ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-500" />
+                                      ) : (
+                                        <ImagePlus className="h-3.5 w-3.5 text-brand-500" />
+                                      )}
+                                      <span className="hidden sm:inline">{q.imageUrl ? "Change Image" : "Add Image"}</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        disabled={uploadingQuestionImageId === q.id}
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          e.target.value = "";
+                                          if (!file) return;
+                                          if (!isMediaWorkerConfigured()) {
+                                            toast.error("Cloudflare Media Worker is not configured (VITE_MEDIA_WORKER_URL).");
+                                            return;
+                                          }
+                                          setUploadingQuestionImageId(q.id);
+                                          try {
+                                            const prevDiagramUrl = q.imageUrl;
+                                            const uploaded = await uploadMediaToR2(file, {
+                                              category: "task-media",
+                                              calendar: academicCalendar
+                                            });
+                                            trackUploadedBuilderMedia(uploaded);
+                                            updateTaskQuestion(q.id, "imageUrl", uploaded.url);
+                                            updateTaskQuestion(q.id, "imageName", uploaded.name);
+                                            if (prevDiagramUrl && prevDiagramUrl !== uploaded.url) {
+                                              cleanupRemovedBuilderMedia([prevDiagramUrl]);
+                                            }
+                                            toast.success("Question image attached!");
+                                          } catch (err) {
+                                            toast.error(err.message || "Failed to attach image.");
+                                          } finally {
+                                            setUploadingQuestionImageId(null);
+                                          }
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                  )}
                                   {!['section', 'info'].includes(q.type) && (
                                     <div className="flex items-center space-x-1.5">
                                       <label className="text-[10px] font-bold text-slate-400 uppercase">PTS</label>
@@ -5374,7 +6182,20 @@ export default function ClassDashboard() {
                                         type="number"
                                         min="1"
                                         value={q.points}
-                                        onChange={(e) => updateTaskQuestion(q.id, "points", parseInt(e.target.value) || 1)}
+                                        onChange={(e) => {
+                                          const parsed = parseInt(e.target.value) || 1;
+                                          if (q.type === "matching") {
+                                            setTaskQuestions((prev) =>
+                                              (prev || []).map((item) =>
+                                                item.id === q.id
+                                                  ? { ...item, points: parsed, pointsCustomized: true }
+                                                  : item
+                                              )
+                                            );
+                                          } else {
+                                            updateTaskQuestion(q.id, "points", parsed);
+                                          }
+                                        }}
                                         className="w-14 text-xs font-bold text-center border border-slate-200 dark:border-slate-700 rounded-lg py-1 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
                                       />
                                     </div>
@@ -5405,6 +6226,30 @@ export default function ClassDashboard() {
                                   placeholder="Question"
                                 />
                               </div>
+
+                              {/* Attached Question Diagram / Image Preview */}
+                              {q.imageUrl && (
+                                <div className="relative inline-flex items-start gap-2 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                                  <img
+                                    src={q.imageUrl}
+                                    alt={q.imageName || "Question Diagram"}
+                                    className="max-h-44 w-auto rounded-xl object-contain"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      cleanupRemovedBuilderMedia([q.imageUrl]);
+                                      updateTaskQuestion(q.id, "imageUrl", "");
+                                      updateTaskQuestion(q.id, "imageName", "");
+                                    }}
+                                    title="Remove image"
+                                    className="p-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 cursor-pointer"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              )}
 
                               {/* Type-Specific Fields */}
                               {q.type === "multipleChoice" && (
@@ -5552,6 +6397,275 @@ export default function ClassDashboard() {
                                 </div>
                               )}
 
+                              {q.type === "matching" && (
+                                <div className="space-y-4">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                                      Matching Pairs (Column A ↔ Column B — Text, Image, or Both • Auto-Shuffled for Students)
+                                    </label>
+                                    <span className="text-[10.5px] font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/60">
+                                      100% Auto-Graded (Partial Credit)
+                                    </span>
+                                  </div>
+
+                                  <div className="space-y-3">
+                                    {(q.matchingPairs || []).map((pair, pIdx) => {
+                                      const leftUploadKey = `${q.id}_${pair.id}_leftImageUrl`;
+                                      const rightUploadKey = `${q.id}_${pair.id}_rightImageUrl`;
+                                      return (
+                                        <div
+                                          key={pair.id}
+                                          className="p-3 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700 space-y-2.5"
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                                              Pair #{pIdx + 1}
+                                            </span>
+                                            {(q.matchingPairs || []).length > MIN_MATCHING_PAIRS && (
+                                              <button
+                                                type="button"
+                                                onClick={() => removeMatchingPair(q.id, pair.id)}
+                                                className="p-1 text-slate-400 hover:text-red-500 cursor-pointer"
+                                                title="Remove pair"
+                                              >
+                                                <X className="h-3.5 w-3.5" />
+                                              </button>
+                                            )}
+                                          </div>
+
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {/* Left Side */}
+                                            <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Column A (Prompt)</span>
+                                                <label
+                                                  className={`inline-flex items-center space-x-1 text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer ${
+                                                    uploadingMatchingImgKey === leftUploadKey ? "opacity-50 pointer-events-none" : ""
+                                                  }`}
+                                                >
+                                                  {uploadingMatchingImgKey === leftUploadKey ? (
+                                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                                  ) : (
+                                                    <ImagePlus className="h-3 w-3" />
+                                                  )}
+                                                  <span>{pair.leftImageUrl ? "Change Image" : "Add Image"}</span>
+                                                  <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    disabled={uploadingMatchingImgKey === leftUploadKey}
+                                                    onChange={(e) => {
+                                                      const f = e.target.files?.[0];
+                                                      e.target.value = "";
+                                                      handleUploadMatchingItemImage(q.id, pair.id, "pair", "leftImageUrl", f);
+                                                    }}
+                                                    className="hidden"
+                                                  />
+                                                </label>
+                                              </div>
+                                              <input
+                                                type="text"
+                                                value={pair.leftText || ""}
+                                                onChange={(e) => updateMatchingPair(q.id, pair.id, "leftText", e.target.value)}
+                                                placeholder="Prompt word/phrase (or leave blank if image-only)"
+                                                className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                              />
+                                              {pair.leftImageUrl && (
+                                                <div className="relative inline-flex items-start gap-1.5">
+                                                  <img
+                                                    src={pair.leftImageUrl}
+                                                    alt="Left item"
+                                                    className="h-16 w-auto rounded-lg border border-slate-200 dark:border-slate-700 object-contain bg-white"
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      cleanupRemovedBuilderMedia([pair.leftImageUrl]);
+                                                      updateMatchingPair(q.id, pair.id, "leftImageUrl", "");
+                                                    }}
+                                                    className="p-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 cursor-pointer"
+                                                    title="Remove image"
+                                                  >
+                                                    <X className="h-3 w-3" />
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            {/* Right Side */}
+                                            <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Column B (Correct Match)</span>
+                                                <label
+                                                  className={`inline-flex items-center space-x-1 text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer ${
+                                                    uploadingMatchingImgKey === rightUploadKey ? "opacity-50 pointer-events-none" : ""
+                                                  }`}
+                                                >
+                                                  {uploadingMatchingImgKey === rightUploadKey ? (
+                                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                                  ) : (
+                                                    <ImagePlus className="h-3 w-3" />
+                                                  )}
+                                                  <span>{pair.rightImageUrl ? "Change Image" : "Add Image"}</span>
+                                                  <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    disabled={uploadingMatchingImgKey === rightUploadKey}
+                                                    onChange={(e) => {
+                                                      const f = e.target.files?.[0];
+                                                      e.target.value = "";
+                                                      handleUploadMatchingItemImage(q.id, pair.id, "pair", "rightImageUrl", f);
+                                                    }}
+                                                    className="hidden"
+                                                  />
+                                                </label>
+                                              </div>
+                                              <input
+                                                type="text"
+                                                value={pair.rightText || ""}
+                                                onChange={(e) => updateMatchingPair(q.id, pair.id, "rightText", e.target.value)}
+                                                placeholder="Correct match word/answer (or image-only)"
+                                                className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                              />
+                                              {pair.rightImageUrl && (
+                                                <div className="relative inline-flex items-start gap-1.5">
+                                                  <img
+                                                    src={pair.rightImageUrl}
+                                                    alt="Right match"
+                                                    className="h-16 w-auto rounded-lg border border-slate-200 dark:border-slate-700 object-contain bg-white"
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      cleanupRemovedBuilderMedia([pair.rightImageUrl]);
+                                                      updateMatchingPair(q.id, pair.id, "rightImageUrl", "");
+                                                    }}
+                                                    className="p-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 cursor-pointer"
+                                                    title="Remove image"
+                                                  >
+                                                    <X className="h-3 w-3" />
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    {(q.matchingPairs || []).length < MAX_MATCHING_PAIRS ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => addMatchingPair(q.id)}
+                                        className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                                      >
+                                        + Add Pair ({(q.matchingPairs || []).length}/{MAX_MATCHING_PAIRS})
+                                      </button>
+                                    ) : (
+                                      <span className="text-[11px] font-semibold text-slate-400">
+                                        Max {MAX_MATCHING_PAIRS} pairs reached
+                                      </span>
+                                    )}
+
+                                    {(q.matchingDistractors || []).length < MAX_MATCHING_DISTRACTORS && (
+                                      <button
+                                        type="button"
+                                        onClick={() => addMatchingDistractor(q.id)}
+                                        className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 hover:underline cursor-pointer"
+                                      >
+                                        + Add Right-Column Distractor ({(q.matchingDistractors || []).length}/{MAX_MATCHING_DISTRACTORS})
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {(q.matchingDistractors || []).length > 0 && (
+                                    <div className="p-3 rounded-2xl bg-slate-100/80 dark:bg-slate-800/70 border border-dashed border-slate-300 dark:border-slate-700 space-y-2.5">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                          Extra Distractors (Unmatched Decoy Choices in Column B)
+                                        </span>
+                                      </div>
+                                      {(q.matchingDistractors || []).map((dist, dIdx) => {
+                                        const distUploadKey = `${q.id}_${dist.id}_imageUrl`;
+                                        return (
+                                          <div
+                                            key={dist.id}
+                                            className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2"
+                                          >
+                                            <div className="flex items-center justify-between gap-2">
+                                              <span className="text-[10px] font-bold text-slate-400">
+                                                Distractor #{dIdx + 1}
+                                              </span>
+                                              <div className="flex items-center space-x-2">
+                                                <label
+                                                  className={`inline-flex items-center space-x-1 text-[10px] font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer ${
+                                                    uploadingMatchingImgKey === distUploadKey ? "opacity-50 pointer-events-none" : ""
+                                                  }`}
+                                                >
+                                                  {uploadingMatchingImgKey === distUploadKey ? (
+                                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                                  ) : (
+                                                    <ImagePlus className="h-3 w-3" />
+                                                  )}
+                                                  <span>{dist.imageUrl ? "Change Image" : "Add Image"}</span>
+                                                  <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    disabled={uploadingMatchingImgKey === distUploadKey}
+                                                    onChange={(e) => {
+                                                      const f = e.target.files?.[0];
+                                                      e.target.value = "";
+                                                      handleUploadMatchingItemImage(q.id, dist.id, "distractor", "imageUrl", f);
+                                                    }}
+                                                    className="hidden"
+                                                  />
+                                                </label>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => removeMatchingDistractor(q.id, dist.id)}
+                                                  className="p-0.5 text-slate-400 hover:text-red-500 cursor-pointer"
+                                                  title="Remove distractor"
+                                                >
+                                                  <X className="h-3.5 w-3.5" />
+                                                </button>
+                                              </div>
+                                            </div>
+                                            <input
+                                              type="text"
+                                              value={dist.text || ""}
+                                              onChange={(e) => updateMatchingDistractor(q.id, dist.id, "text", e.target.value)}
+                                              placeholder="Extra decoy option text (or image-only)"
+                                              className="w-full text-xs font-medium border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                            />
+                                            {dist.imageUrl && (
+                                              <div className="relative inline-flex items-start gap-1.5">
+                                                <img
+                                                  src={dist.imageUrl}
+                                                  alt="Distractor"
+                                                  className="h-14 w-auto rounded-lg border border-slate-200 dark:border-slate-700 object-contain bg-white"
+                                                />
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    cleanupRemovedBuilderMedia([dist.imageUrl]);
+                                                    updateMatchingDistractor(q.id, dist.id, "imageUrl", "");
+                                                  }}
+                                                  className="p-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-red-500 cursor-pointer"
+                                                  title="Remove distractor image"
+                                                >
+                                                  <X className="h-3 w-3" />
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
                               {q.type === "vocabulary" && (
                                 <div className="space-y-3">
                                   <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Word / Definition Pairs</label>
@@ -5596,12 +6710,150 @@ export default function ClassDashboard() {
                                 </div>
                               )}
 
-                              {q.type === "fileUpload" && (
-                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 font-semibold flex items-center space-x-2.5">
-                                  <Paperclip className="h-4 w-4 text-emerald-500 shrink-0" />
-                                  <span>Student preview: A URL / Link input box will be rendered for students to paste their project link. (Manually Graded)</span>
-                                </div>
-                              )}
+                              {q.type === "fileUpload" && (() => {
+                                const expDate = getTermFileExpirationDate(academicCalendar, taskQuarter);
+                                return (
+                                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 space-y-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                      <div>
+                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                          Submission Input Mode
+                                        </label>
+                                        <select
+                                          value={q.uploadMode || "both"}
+                                          onChange={(e) => updateTaskQuestion(q.id, "uploadMode", e.target.value)}
+                                          className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                        >
+                                          <option value="both">Photos / PDF / DOCX + Optional Link</option>
+                                          <option value="files">Photos / PDF / DOCX Only</option>
+                                          <option value="link">URL Link Only (Legacy)</option>
+                                        </select>
+                                      </div>
+
+                                      {(q.uploadMode || "both") !== "link" && (
+                                        <div>
+                                          <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                                            Max Files Allowed
+                                          </label>
+                                          <select
+                                            value={q.maxFiles || MAX_SUBMISSION_FILES}
+                                            onChange={(e) => updateTaskQuestion(q.id, "maxFiles", parseInt(e.target.value) || MAX_SUBMISSION_FILES)}
+                                            className="w-full text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                                          >
+                                            {[1, 2, 3, 4, 5].map((n) => (
+                                              <option key={n} value={n}>Up to {n} file{n > 1 ? "s" : ""}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                      {(q.uploadMode || "both") !== "link" && (
+                                        <div className="flex items-start space-x-2 text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/50 rounded-xl p-2.5">
+                                          <Archive className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                                          <span>
+                                            <strong>Free-Tier Storage Notice:</strong> Student uploads for <strong>{taskQuarter}</strong> auto-delete on{" "}
+                                            <strong>{formatShortDateUtc(expDate)}</strong> ({DEFAULT_MEDIA_GRACE_DAYS} days after term end). Input/save scores before then — grades &amp; E-Class Records stay permanently.
+                                          </span>
+                                        </div>
+                                      )}
+
+                                      {/* Teacher Worksheet / Reference Files inside File Upload Question */}
+                                      <div className="pt-2 border-t border-slate-200/80 dark:border-slate-700 space-y-2">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                              Teacher Worksheet / Reference Files (Optional — PDF, DOCX, Images)
+                                            </label>
+                                            <p className="text-[10.5px] text-slate-400 dark:text-slate-500">
+                                              Stored permanently in R2 so students can view/download worksheets anytime.
+                                            </p>
+                                          </div>
+                                          <label
+                                            className={`inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:border-indigo-300 transition-colors cursor-pointer ${
+                                              uploadingQuestionRefId === q.id || (q.referenceFiles || []).length >= MAX_QUESTION_REFERENCE_FILES
+                                                ? "opacity-50 pointer-events-none"
+                                                : ""
+                                            }`}
+                                          >
+                                            {uploadingQuestionRefId === q.id ? (
+                                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            ) : (
+                                              <Paperclip className="h-3.5 w-3.5" />
+                                            )}
+                                            <span>
+                                              {uploadingQuestionRefId === q.id
+                                                ? "Uploading..."
+                                                : `Attach Worksheet (${(q.referenceFiles || []).length}/${MAX_QUESTION_REFERENCE_FILES})`}
+                                            </span>
+                                            <input
+                                              type="file"
+                                              multiple
+                                              accept={TEACHER_REFERENCE_ACCEPT_ATTR}
+                                              disabled={
+                                                uploadingQuestionRefId === q.id ||
+                                                (q.referenceFiles || []).length >= MAX_QUESTION_REFERENCE_FILES
+                                              }
+                                              onChange={(e) => {
+                                                handleUploadQuestionReferenceFiles(q.id, e.target.files);
+                                                e.target.value = "";
+                                              }}
+                                              className="hidden"
+                                            />
+                                          </label>
+                                        </div>
+
+                                        {(q.referenceFiles || []).length > 0 && (
+                                          <div className="space-y-1.5">
+                                            {(q.referenceFiles || []).map((f, fIdx) => (
+                                              <div
+                                                key={f.key || f.url || fIdx}
+                                                className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs"
+                                              >
+                                                <div className="flex items-center space-x-2 min-w-0">
+                                                  <FileText className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                                                  <span className="font-bold text-slate-700 dark:text-slate-200 truncate">
+                                                    {f.name || `Worksheet ${fIdx + 1}`}
+                                                  </span>
+                                                  {f.size && (
+                                                    <span className="text-[10px] text-slate-400 shrink-0">
+                                                      ({formatFileSize(f.size)})
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                <div className="flex items-center space-x-2 shrink-0">
+                                                  <a
+                                                    href={isDocxAttachment(f) ? `${f.url}?download=1` : f.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline"
+                                                  >
+                                                    {isDocxAttachment(f) ? "Download" : "Open"}
+                                                  </a>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      cleanupRemovedBuilderMedia([rf]);
+                                                      updateTaskQuestion(
+                                                        q.id,
+                                                        "referenceFiles",
+                                                        (q.referenceFiles || []).filter((_, idx) => idx !== fIdx)
+                                                      );
+                                                    }}
+                                                    className="p-0.5 text-slate-400 hover:text-red-500 cursor-pointer"
+                                                    title="Remove file"
+                                                  >
+                                                    <X className="h-3.5 w-3.5" />
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
 
                               {/* Universal Question Settings (Bottom of Card) */}
                               <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-3">
@@ -5658,8 +6910,8 @@ export default function ClassDashboard() {
                       <button onClick={() => addTaskQuestion("identification")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 border border-teal-100 dark:border-teal-800 text-xs font-bold hover:bg-teal-100 transition-colors cursor-pointer w-full">
                         <Plus className="h-3.5 w-3.5" /><span>Identification</span>
                       </button>
-                      <button onClick={() => addTaskQuestion("vocabulary")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer w-full">
-                        <Plus className="h-3.5 w-3.5" /><span>Vocabulary Match</span>
+                      <button onClick={() => addTaskQuestion("matching")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800 text-xs font-bold hover:bg-amber-100 transition-colors cursor-pointer w-full">
+                        <Plus className="h-3.5 w-3.5" /><span>Matching Activity</span>
                       </button>
                       <button onClick={() => addTaskQuestion("essay")} className="inline-flex items-center space-x-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800 text-xs font-bold hover:bg-indigo-100 transition-colors cursor-pointer w-full">
                         <Plus className="h-3.5 w-3.5" /><span>Essay</span>
@@ -5709,14 +6961,14 @@ export default function ClassDashboard() {
                   <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
                     <Table className="h-6 w-6 text-brand-600 dark:text-brand-400" />
                     <h2 className="text-xl font-extrabold text-slate-900 dark:text-white font-heading">
-                      Consolidated E-Class Record
+                      Class Record
                     </h2>
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800">
                       DepEd Order No. 15, s. 2026
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Trimester ECR ({activeWeightConfig.shortLabel}): Written/Oral Works {Math.round(activeWeightConfig.ww * 100)}% • Performance Tasks {Math.round(activeWeightConfig.pt * 100)}% • Summative &amp; Term Exams {Math.round(activeWeightConfig.stTe * 100)}%.
+                    {activeWeightConfig.shortLabel}: Written {Math.round(activeWeightConfig.ww * 100)}% • Performance {Math.round(activeWeightConfig.pt * 100)}% • Exams {Math.round(activeWeightConfig.stTe * 100)}%. Hover the circled + before Total to insert a column.
                   </p>
                 </div>
 
@@ -5886,9 +7138,116 @@ export default function ClassDashboard() {
                       <div className="flex items-center space-x-2 text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 px-4 py-2.5 rounded-2xl">
                         <AlertCircle className="h-4 w-4 shrink-0" />
                         <span>
-                          Mid-term running calculation active ({recordTerm}): missing components or exam slots are normalized cleanly until all term components are recorded.
+                          Running grade active ({recordTerm}): updates automatically as more scores are added.
                         </span>
                       </div>
+                    )}
+
+                    {/* Quick-Add Grade Column Inline Bar (Triggered by + button before WW / PT TOTAL) */}
+                    {ecrQuickAddCategory && (
+                      <form
+                        onSubmit={handleQuickAddEcrColumn}
+                        className={`p-3.5 rounded-2xl border flex flex-wrap items-end gap-3 shadow-sm animate-fade-in ${
+                          ecrQuickAddCategory === "ww"
+                            ? "bg-blue-50/80 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
+                            : "bg-purple-50/80 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800"
+                        }`}
+                      >
+                        <div className="flex-1 min-w-[180px]">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                            New {ecrQuickAddCategory === "ww" ? "Written / Oral Work" : "Performance Task"} Column Title
+                          </label>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={ecrQuickAddTitle}
+                            onChange={(e) => setEcrQuickAddTitle(e.target.value)}
+                            placeholder={ecrQuickAddCategory === "ww" ? "e.g., Quiz #3 or Seatwork" : "e.g., Group Project or Recitation"}
+                            className="w-full text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                          />
+                        </div>
+                        <div className="w-28">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                            Max Score
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={ecrQuickAddMaxScore}
+                            onChange={(e) => setEcrQuickAddMaxScore(e.target.value)}
+                            className="w-full text-xs font-bold font-mono text-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="submit"
+                            disabled={isCreatingEcrCol}
+                            className="inline-flex items-center space-x-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60"
+                          >
+                            {isCreatingEcrCol ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                            <span>{isCreatingEcrCol ? "Adding..." : "Add Column"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEcrQuickAddCategory(null)}
+                            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* Inline Column Meta Editor Bar */}
+                    {editingEcrCol && (
+                      <form
+                        onSubmit={handleSaveEcrColMeta}
+                        className="p-3.5 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 flex flex-wrap items-end gap-3 shadow-sm animate-fade-in"
+                      >
+                        <div className="flex-1 min-w-[180px]">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-1">
+                            Edit Column Title
+                          </label>
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingEcrCol.title}
+                            onChange={(e) => setEditingEcrCol((prev) => ({ ...prev, title: e.target.value }))}
+                            className="w-full text-xs font-bold rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 px-3 py-2 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                          />
+                        </div>
+                        <div className="w-28">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-1">
+                            Max Score
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={editingEcrCol.maxScore}
+                            onChange={(e) => setEditingEcrCol((prev) => ({ ...prev, maxScore: e.target.value }))}
+                            className="w-full text-xs font-bold font-mono text-center rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 px-3 py-2 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="submit"
+                            disabled={isUpdatingEcrCol}
+                            className="inline-flex items-center space-x-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 text-xs font-bold shadow-xs cursor-pointer disabled:opacity-60"
+                          >
+                            <Save className="h-3.5 w-3.5" />
+                            <span>{isUpdatingEcrCol ? "Saving..." : "Save"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingEcrCol(null)}
+                            className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
                     )}
 
                     <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
@@ -5923,30 +7282,198 @@ export default function ClassDashboard() {
                               <th className="p-3 sticky left-0 z-20 bg-slate-100 dark:bg-slate-800">Student Info</th>
 
                               {/* WW columns */}
-                              {activeTermSheet.wwItems.map((item, idx) => (
-                                <th key={`ww-head-${item.id || idx}`} className="p-2.5 text-center min-w-[105px] bg-blue-50/50 dark:bg-blue-950/20">
-                                  <span className="block text-[9px] text-slate-400">WW #{idx + 1}</span>
-                                  <span className="block truncate max-w-[115px] mx-auto" title={item.title}>{item.title}</span>
-                                </th>
-                              ))}
+                              {activeTermSheet.wwItems.map((item, idx) => {
+                                const isLastWw = idx === activeTermSheet.wwItems.length - 1;
+                                const isGlowing = isLastWw && hoveredEcrInsert === "ww";
+                                return (
+                                  <th
+                                    key={`ww-head-${item.id || idx}`}
+                                    className={`group/ecrcol relative overflow-visible p-2.5 text-center min-w-[110px] bg-blue-50/50 dark:bg-blue-950/20 transition-all ${
+                                      isGlowing
+                                        ? "!border-r-2 !border-r-blue-400 shadow-[inset_-2px_0_0_rgba(59,130,246,0.9),2px_0_10px_rgba(59,130,246,0.45)]"
+                                        : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-center gap-1">
+                                      <span className="text-[9px] text-slate-400">WW #{idx + 1}</span>
+                                      {item.isManual && (
+                                        <span className="opacity-0 group-hover/ecrcol:opacity-100 inline-flex items-center gap-0.5 transition-opacity">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setEditingEcrCol({
+                                                id: item.id,
+                                                title: item.title,
+                                                maxScore: String(item.maxScore || 20)
+                                              })
+                                            }
+                                            title="Rename / edit max score"
+                                            className="p-0.5 rounded text-slate-400 hover:text-blue-600 cursor-pointer"
+                                          >
+                                            <Pencil className="h-2.5 w-2.5" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteEcrColumn(item)}
+                                            title="Delete column"
+                                            className="p-0.5 rounded text-slate-400 hover:text-rose-600 cursor-pointer"
+                                          >
+                                            <Trash2 className="h-2.5 w-2.5" />
+                                          </button>
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span
+                                      onClick={() =>
+                                        item.isManual &&
+                                        setEditingEcrCol({
+                                          id: item.id,
+                                          title: item.title,
+                                          maxScore: String(item.maxScore || 20)
+                                        })
+                                      }
+                                      className={`block truncate max-w-[115px] mx-auto ${
+                                        item.isManual ? "cursor-pointer hover:text-blue-600 dark:hover:text-blue-300" : ""
+                                      }`}
+                                      title={item.isManual ? `${item.title} (click to edit)` : item.title}
+                                    >
+                                      {item.title}
+                                    </span>
+
+                                    {isLastWw && (
+                                      <button
+                                        type="button"
+                                        onMouseEnter={() => setHoveredEcrInsert("ww")}
+                                        onMouseLeave={() => setHoveredEcrInsert(null)}
+                                        onClick={() => openEcrQuickAdd("ww")}
+                                        title="Add Written Work column"
+                                        className="absolute -right-[11px] top-1/2 -translate-y-1/2 z-30 h-5 w-5 rounded-full bg-white dark:bg-slate-800 border-2 border-blue-400 dark:border-blue-500 text-blue-600 dark:text-blue-300 hover:bg-blue-600 hover:text-white hover:scale-115 shadow-sm flex items-center justify-center transition-all cursor-pointer"
+                                      >
+                                        <Plus className="h-3 w-3 stroke-[3]" />
+                                      </button>
+                                    )}
+                                  </th>
+                                );
+                              })}
                               {activeTermSheet.wwItems.length === 0 && (
-                                <th className="p-2.5 text-center italic text-slate-400 bg-blue-50/30 min-w-[95px]">No WW</th>
+                                <th
+                                  className={`relative overflow-visible p-2.5 text-center italic text-slate-400 bg-blue-50/30 min-w-[95px] transition-all ${
+                                    hoveredEcrInsert === "ww"
+                                      ? "!border-r-2 !border-r-blue-400 shadow-[inset_-2px_0_0_rgba(59,130,246,0.9),2px_0_10px_rgba(59,130,246,0.45)]"
+                                      : ""
+                                  }`}
+                                >
+                                  <span>No WW</span>
+                                  <button
+                                    type="button"
+                                    onMouseEnter={() => setHoveredEcrInsert("ww")}
+                                    onMouseLeave={() => setHoveredEcrInsert(null)}
+                                    onClick={() => openEcrQuickAdd("ww")}
+                                    title="Add Written Work column"
+                                    className="absolute -right-[11px] top-1/2 -translate-y-1/2 z-30 h-5 w-5 rounded-full bg-white dark:bg-slate-800 border-2 border-blue-400 dark:border-blue-500 text-blue-600 dark:text-blue-300 hover:bg-blue-600 hover:text-white hover:scale-115 shadow-sm flex items-center justify-center transition-all cursor-pointer"
+                                  >
+                                    <Plus className="h-3 w-3 stroke-[3]" />
+                                  </button>
+                                </th>
                               )}
                               <th className="p-2.5 text-center bg-blue-100/60 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 font-extrabold min-w-[65px]">Total</th>
                               <th className="p-2.5 text-center bg-blue-100/80 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-extrabold min-w-[65px]">PS</th>
                               <th className="p-2.5 text-center bg-blue-200/70 dark:bg-blue-900/60 text-blue-900 dark:text-blue-200 font-extrabold min-w-[65px]">WS</th>
 
                               {/* PT columns */}
-                              {activeTermSheet.ptItems.map((item, idx) => (
-                                <th key={`pt-head-${item.id || idx}`} className="p-2.5 text-center min-w-[105px] bg-purple-50/50 dark:bg-purple-950/20">
-                                  <span className="block text-[9px] text-slate-400">PT #{idx + 1}</span>
-                                  <span className={`block truncate max-w-[115px] mx-auto ${
-                                    item.source === "vocab" ? "text-amber-600 dark:text-amber-400" : item.source === "diary" ? "text-teal-600 dark:text-teal-400" : ""
-                                  }`} title={item.title}>{item.title}</span>
-                                </th>
-                              ))}
+                              {activeTermSheet.ptItems.map((item, idx) => {
+                                const isLastPt = idx === activeTermSheet.ptItems.length - 1;
+                                const isGlowing = isLastPt && hoveredEcrInsert === "pt";
+                                return (
+                                  <th
+                                    key={`pt-head-${item.id || idx}`}
+                                    className={`group/ecrcol relative overflow-visible p-2.5 text-center min-w-[110px] bg-purple-50/50 dark:bg-purple-950/20 transition-all ${
+                                      isGlowing
+                                        ? "!border-r-2 !border-r-purple-400 shadow-[inset_-2px_0_0_rgba(168,85,247,0.9),2px_0_10px_rgba(168,85,247,0.45)]"
+                                        : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-center gap-1">
+                                      <span className="text-[9px] text-slate-400">PT #{idx + 1}</span>
+                                      {item.isManual && (
+                                        <span className="opacity-0 group-hover/ecrcol:opacity-100 inline-flex items-center gap-0.5 transition-opacity">
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setEditingEcrCol({
+                                                id: item.id,
+                                                title: item.title,
+                                                maxScore: String(item.maxScore || 50)
+                                              })
+                                            }
+                                            title="Rename / edit max score"
+                                            className="p-0.5 rounded text-slate-400 hover:text-purple-600 cursor-pointer"
+                                          >
+                                            <Pencil className="h-2.5 w-2.5" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteEcrColumn(item)}
+                                            title="Delete column"
+                                            className="p-0.5 rounded text-slate-400 hover:text-rose-600 cursor-pointer"
+                                          >
+                                            <Trash2 className="h-2.5 w-2.5" />
+                                          </button>
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span
+                                      onClick={() =>
+                                        item.isManual &&
+                                        setEditingEcrCol({
+                                          id: item.id,
+                                          title: item.title,
+                                          maxScore: String(item.maxScore || 50)
+                                        })
+                                      }
+                                      className={`block truncate max-w-[115px] mx-auto ${
+                                        item.source === "vocab" ? "text-amber-600 dark:text-amber-400" : item.source === "diary" ? "text-teal-600 dark:text-teal-400" : ""
+                                      } ${item.isManual ? "cursor-pointer hover:text-purple-600 dark:hover:text-purple-300" : ""}`}
+                                      title={item.isManual ? `${item.title} (click to edit)` : item.title}
+                                    >
+                                      {item.title}
+                                    </span>
+
+                                    {isLastPt && (
+                                      <button
+                                        type="button"
+                                        onMouseEnter={() => setHoveredEcrInsert("pt")}
+                                        onMouseLeave={() => setHoveredEcrInsert(null)}
+                                        onClick={() => openEcrQuickAdd("pt")}
+                                        title="Add Performance Task column"
+                                        className="absolute -right-[11px] top-1/2 -translate-y-1/2 z-30 h-5 w-5 rounded-full bg-white dark:bg-slate-800 border-2 border-purple-400 dark:border-purple-500 text-purple-600 dark:text-purple-300 hover:bg-purple-600 hover:text-white hover:scale-115 shadow-sm flex items-center justify-center transition-all cursor-pointer"
+                                      >
+                                        <Plus className="h-3 w-3 stroke-[3]" />
+                                      </button>
+                                    )}
+                                  </th>
+                                );
+                              })}
                               {activeTermSheet.ptItems.length === 0 && (
-                                <th className="p-2.5 text-center italic text-slate-400 bg-purple-50/30 min-w-[95px]">No PT</th>
+                                <th
+                                  className={`relative overflow-visible p-2.5 text-center italic text-slate-400 bg-purple-50/30 min-w-[95px] transition-all ${
+                                    hoveredEcrInsert === "pt"
+                                      ? "!border-r-2 !border-r-purple-400 shadow-[inset_-2px_0_0_rgba(168,85,247,0.9),2px_0_10px_rgba(168,85,247,0.45)]"
+                                      : ""
+                                  }`}
+                                >
+                                  <span>No PT</span>
+                                  <button
+                                    type="button"
+                                    onMouseEnter={() => setHoveredEcrInsert("pt")}
+                                    onMouseLeave={() => setHoveredEcrInsert(null)}
+                                    onClick={() => openEcrQuickAdd("pt")}
+                                    title="Add Performance Task column"
+                                    className="absolute -right-[11px] top-1/2 -translate-y-1/2 z-30 h-5 w-5 rounded-full bg-white dark:bg-slate-800 border-2 border-purple-400 dark:border-purple-500 text-purple-600 dark:text-purple-300 hover:bg-purple-600 hover:text-white hover:scale-115 shadow-sm flex items-center justify-center transition-all cursor-pointer"
+                                  >
+                                    <Plus className="h-3 w-3 stroke-[3]" />
+                                  </button>
+                                </th>
                               )}
                               <th className="p-2.5 text-center bg-purple-100/60 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 font-extrabold min-w-[65px]">Total</th>
                               <th className="p-2.5 text-center bg-purple-100/80 dark:bg-purple-900/40 text-purple-800 dark:text-purple-300 font-extrabold min-w-[65px]">PS</th>
@@ -5985,22 +7512,86 @@ export default function ClassDashboard() {
                               <td className="p-2.5 sticky left-0 z-20 bg-slate-50 dark:bg-slate-800 text-right uppercase tracking-wider text-[9px] text-slate-500">
                                 Highest Possible Score
                               </td>
-                              {activeTermSheet.wwItems.map((item, idx) => (
-                                <td key={`ww-hps-${idx}`} className="p-2 text-center font-mono text-blue-700 dark:text-blue-300">
-                                  {Number(item.maxScore)}
+                              {activeTermSheet.wwItems.map((item, idx) => {
+                                const isLastWw = idx === activeTermSheet.wwItems.length - 1;
+                                const isGlowing = isLastWw && hoveredEcrInsert === "ww";
+                                return (
+                                  <td
+                                    key={`ww-hps-${idx}`}
+                                    onClick={() =>
+                                      item.isManual &&
+                                      setEditingEcrCol({
+                                        id: item.id,
+                                        title: item.title,
+                                        maxScore: String(item.maxScore || 20)
+                                      })
+                                    }
+                                    title={item.isManual ? "Click to edit Max Score" : undefined}
+                                    className={`p-2 text-center font-mono text-blue-700 dark:text-blue-300 transition-all ${
+                                      item.isManual ? "cursor-pointer hover:underline" : ""
+                                    } ${
+                                      isGlowing
+                                        ? "!border-r-2 !border-r-blue-400 shadow-[inset_-2px_0_0_rgba(59,130,246,0.9),2px_0_10px_rgba(59,130,246,0.45)]"
+                                        : ""
+                                    }`}
+                                  >
+                                    {Number(item.maxScore)}
+                                  </td>
+                                );
+                              })}
+                              {activeTermSheet.wwItems.length === 0 && (
+                                <td
+                                  className={`p-2 text-center text-slate-400 transition-all ${
+                                    hoveredEcrInsert === "ww"
+                                      ? "!border-r-2 !border-r-blue-400 shadow-[inset_-2px_0_0_rgba(59,130,246,0.9),2px_0_10px_rgba(59,130,246,0.45)]"
+                                      : ""
+                                  }`}
+                                >
+                                  —
                                 </td>
-                              ))}
-                              {activeTermSheet.wwItems.length === 0 && <td className="p-2 text-center text-slate-400">—</td>}
+                              )}
                               <td className="p-2 text-center font-mono bg-blue-50/70 dark:bg-blue-950/30">{activeTermSheet.wwHpsTotal || "—"}</td>
                               <td className="p-2 text-center font-mono">100</td>
                               <td className="p-2 text-center font-mono bg-blue-100/50 dark:bg-blue-900/40">{Math.round(activeTermSheet.weights.ww * 100)}%</td>
 
-                              {activeTermSheet.ptItems.map((item, idx) => (
-                                <td key={`pt-hps-${idx}`} className="p-2 text-center font-mono text-purple-700 dark:text-purple-300">
-                                  {Number(item.maxScore)}
+                              {activeTermSheet.ptItems.map((item, idx) => {
+                                const isLastPt = idx === activeTermSheet.ptItems.length - 1;
+                                const isGlowing = isLastPt && hoveredEcrInsert === "pt";
+                                return (
+                                  <td
+                                    key={`pt-hps-${idx}`}
+                                    onClick={() =>
+                                      item.isManual &&
+                                      setEditingEcrCol({
+                                        id: item.id,
+                                        title: item.title,
+                                        maxScore: String(item.maxScore || 50)
+                                      })
+                                    }
+                                    title={item.isManual ? "Click to edit Max Score" : undefined}
+                                    className={`p-2 text-center font-mono text-purple-700 dark:text-purple-300 transition-all ${
+                                      item.isManual ? "cursor-pointer hover:underline" : ""
+                                    } ${
+                                      isGlowing
+                                        ? "!border-r-2 !border-r-purple-400 shadow-[inset_-2px_0_0_rgba(168,85,247,0.9),2px_0_10px_rgba(168,85,247,0.45)]"
+                                        : ""
+                                    }`}
+                                  >
+                                    {Number(item.maxScore)}
+                                  </td>
+                                );
+                              })}
+                              {activeTermSheet.ptItems.length === 0 && (
+                                <td
+                                  className={`p-2 text-center text-slate-400 transition-all ${
+                                    hoveredEcrInsert === "pt"
+                                      ? "!border-r-2 !border-r-purple-400 shadow-[inset_-2px_0_0_rgba(168,85,247,0.9),2px_0_10px_rgba(168,85,247,0.45)]"
+                                      : ""
+                                  }`}
+                                >
+                                  —
                                 </td>
-                              ))}
-                              {activeTermSheet.ptItems.length === 0 && <td className="p-2 text-center text-slate-400">—</td>}
+                              )}
                               <td className="p-2 text-center font-mono bg-purple-50/70 dark:bg-purple-950/30">{activeTermSheet.ptHpsTotal || "—"}</td>
                               <td className="p-2 text-center font-mono">100</td>
                               <td className="p-2 text-center font-mono bg-purple-100/50 dark:bg-purple-900/40">{Math.round(activeTermSheet.weights.pt * 100)}%</td>
@@ -6046,12 +7637,75 @@ export default function ClassDashboard() {
                                   </td>
 
                                   {/* WW Scores */}
-                                  {row.wwScores.map((sc, idx) => (
-                                    <td key={`ww-val-${idx}`} className="p-2.5 text-center font-mono text-slate-700 dark:text-slate-200">
-                                      {sc}
+                                  {row.wwScores.map((sc, idx) => {
+                                    const item = activeTermSheet.wwItems[idx];
+                                    const isLastWw = idx === activeTermSheet.wwItems.length - 1;
+                                    const isGlowing = isLastWw && hoveredEcrInsert === "ww";
+                                    const cellKey = item ? `${item.id}::${row.studentId}` : "";
+                                    const existingSub = item?.isManual
+                                      ? (allClassTaskSubs || []).find(
+                                          (s) =>
+                                            (s.taskId === item.id || s.taskId === item.firestoreId) &&
+                                            (s.studentId === row.studentId ||
+                                              (row.student?.id && s.studentId === row.student.id) ||
+                                              (row.student?.uid && s.studentId === row.student.uid))
+                                        )
+                                      : null;
+                                    const displayVal =
+                                      cellKey in ecrInlineDrafts
+                                        ? ecrInlineDrafts[cellKey]
+                                        : existingSub
+                                        ? String(existingSub.score ?? sc ?? 0)
+                                        : "";
+                                    return (
+                                      <td
+                                        key={`ww-val-${idx}`}
+                                        className={`p-1.5 text-center font-mono text-slate-700 dark:text-slate-200 transition-all ${
+                                          isGlowing
+                                            ? "!border-r-2 !border-r-blue-400 shadow-[inset_-2px_0_0_rgba(59,130,246,0.9),2px_0_10px_rgba(59,130,246,0.45)]"
+                                            : ""
+                                        }`}
+                                      >
+                                        {item?.isManual ? (
+                                          <input
+                                            type="number"
+                                            step="0.5"
+                                            min="0"
+                                            max={item.maxScore}
+                                            value={displayVal}
+                                            placeholder="0"
+                                            disabled={savingEcrCellKey === cellKey}
+                                            onChange={(e) =>
+                                              setEcrInlineDrafts((prev) => ({
+                                                ...prev,
+                                                [cellKey]: e.target.value
+                                              }))
+                                            }
+                                            onBlur={(e) => handleSaveInlineEcrScore(item, row, e.target.value)}
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter") {
+                                                e.currentTarget.blur();
+                                              }
+                                            }}
+                                            className="w-16 text-center font-mono text-xs font-bold rounded-lg px-1.5 py-1 bg-blue-50/40 dark:bg-blue-950/20 border border-transparent hover:border-blue-300 dark:hover:border-blue-700 focus:border-blue-500 focus:bg-white dark:focus:bg-slate-900 outline-none transition-colors"
+                                          />
+                                        ) : (
+                                          <span className="inline-block py-1">{sc}</span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                  {activeTermSheet.wwItems.length === 0 && (
+                                    <td
+                                      className={`p-2.5 text-center text-slate-400 transition-all ${
+                                        hoveredEcrInsert === "ww"
+                                          ? "!border-r-2 !border-r-blue-400 shadow-[inset_-2px_0_0_rgba(59,130,246,0.9),2px_0_10px_rgba(59,130,246,0.45)]"
+                                          : ""
+                                      }`}
+                                    >
+                                      —
                                     </td>
-                                  ))}
-                                  {activeTermSheet.wwItems.length === 0 && <td className="p-2.5 text-center text-slate-400">—</td>}
+                                  )}
                                   <td className="p-2.5 text-center font-mono font-bold text-blue-700 dark:text-blue-400 bg-blue-50/30 dark:bg-blue-950/20">
                                     {row.wwTotal !== null ? row.wwTotal : "—"}
                                   </td>
@@ -6063,12 +7717,75 @@ export default function ClassDashboard() {
                                   </td>
 
                                   {/* PT Scores */}
-                                  {row.ptScores.map((sc, idx) => (
-                                    <td key={`pt-val-${idx}`} className="p-2.5 text-center font-mono text-slate-700 dark:text-slate-200">
-                                      {sc}
+                                  {row.ptScores.map((sc, idx) => {
+                                    const item = activeTermSheet.ptItems[idx];
+                                    const isLastPt = idx === activeTermSheet.ptItems.length - 1;
+                                    const isGlowing = isLastPt && hoveredEcrInsert === "pt";
+                                    const cellKey = item ? `${item.id}::${row.studentId}` : "";
+                                    const existingSub = item?.isManual
+                                      ? (allClassTaskSubs || []).find(
+                                          (s) =>
+                                            (s.taskId === item.id || s.taskId === item.firestoreId) &&
+                                            (s.studentId === row.studentId ||
+                                              (row.student?.id && s.studentId === row.student.id) ||
+                                              (row.student?.uid && s.studentId === row.student.uid))
+                                        )
+                                      : null;
+                                    const displayVal =
+                                      cellKey in ecrInlineDrafts
+                                        ? ecrInlineDrafts[cellKey]
+                                        : existingSub
+                                        ? String(existingSub.score ?? sc ?? 0)
+                                        : "";
+                                    return (
+                                      <td
+                                        key={`pt-val-${idx}`}
+                                        className={`p-1.5 text-center font-mono text-slate-700 dark:text-slate-200 transition-all ${
+                                          isGlowing
+                                            ? "!border-r-2 !border-r-purple-400 shadow-[inset_-2px_0_0_rgba(168,85,247,0.9),2px_0_10px_rgba(168,85,247,0.45)]"
+                                            : ""
+                                        }`}
+                                      >
+                                        {item?.isManual ? (
+                                          <input
+                                            type="number"
+                                            step="0.5"
+                                            min="0"
+                                            max={item.maxScore}
+                                            value={displayVal}
+                                            placeholder="0"
+                                            disabled={savingEcrCellKey === cellKey}
+                                            onChange={(e) =>
+                                              setEcrInlineDrafts((prev) => ({
+                                                ...prev,
+                                                [cellKey]: e.target.value
+                                              }))
+                                            }
+                                            onBlur={(e) => handleSaveInlineEcrScore(item, row, e.target.value)}
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter") {
+                                                e.currentTarget.blur();
+                                              }
+                                            }}
+                                            className="w-16 text-center font-mono text-xs font-bold rounded-lg px-1.5 py-1 bg-purple-50/40 dark:bg-purple-950/20 border border-transparent hover:border-purple-300 dark:hover:border-purple-700 focus:border-purple-500 focus:bg-white dark:focus:bg-slate-900 outline-none transition-colors"
+                                          />
+                                        ) : (
+                                          <span className="inline-block py-1">{sc}</span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                  {activeTermSheet.ptItems.length === 0 && (
+                                    <td
+                                      className={`p-2.5 text-center text-slate-400 transition-all ${
+                                        hoveredEcrInsert === "pt"
+                                          ? "!border-r-2 !border-r-purple-400 shadow-[inset_-2px_0_0_rgba(168,85,247,0.9),2px_0_10px_rgba(168,85,247,0.45)]"
+                                          : ""
+                                      }`}
+                                    >
+                                      —
                                     </td>
-                                  ))}
-                                  {activeTermSheet.ptItems.length === 0 && <td className="p-2.5 text-center text-slate-400">—</td>}
+                                  )}
                                   <td className="p-2.5 text-center font-mono font-bold text-purple-700 dark:text-purple-400 bg-purple-50/30 dark:bg-purple-950/20">
                                     {row.ptTotal !== null ? row.ptTotal : "—"}
                                   </td>
@@ -6258,6 +7975,11 @@ export default function ClassDashboard() {
                 const targetTask = tasks.find(t => t.firestoreId === selectedQuizSub.taskId || t.id === selectedQuizSub.taskId);
                 const questions = targetTask?.questions || [];
                 const studentAnswers = selectedQuizSub.answers || {};
+                const taskTermLabel = normalizeTermLabel(targetTask?.term || targetTask?.quarter, targetTask?.dueDate || targetTask?.createdAt, academicCalendar);
+                const hasUploadedFiles = questions.some(
+                  (q) => q.type === "fileUpload" && normalizeFileUploadAnswer(studentAnswers[q.id]).files.length > 0
+                );
+                const expDate = getTermFileExpirationDate(academicCalendar, taskTermLabel);
 
                 if (questions.length === 0) {
                   return (
@@ -6269,7 +7991,19 @@ export default function ClassDashboard() {
 
                 let questionCounter = 1;
 
-                return questions.map((q, idx) => {
+                return (
+                  <>
+                    {hasUploadedFiles && expDate && (
+                      <div className="flex items-start space-x-2.5 p-3.5 rounded-2xl bg-amber-50/90 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-200">
+                        <Archive className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                        <span>
+                          <strong>Storage Saver Reminder:</strong> Student-uploaded files for <strong>{taskTermLabel}</strong> auto-delete on{" "}
+                          <strong>{formatShortDateUtc(expDate)}</strong>. Make sure your annotations, comments, and scores are saved!
+                        </span>
+                      </div>
+                    )}
+
+                    {questions.map((q, idx) => {
                   if (q.type === "section") {
                     return (
                       <div key={q.id || idx} className="p-5 rounded-2xl border-2 border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30 space-y-2">
@@ -6525,44 +8259,138 @@ export default function ClassDashboard() {
                         </div>
                       )}
 
-                      {/* 4. File / Link Upload */}
-                      {q.type === "fileUpload" && (
-                        <div className="space-y-3 pt-1">
-                          <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Submitted Project Link / URL</span>
-                            {studentAnswers[q.id] ? (
-                              <a
-                                href={studentAnswers[q.id].startsWith("http") ? studentAnswers[q.id] : `https://${studentAnswers[q.id]}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center space-x-1.5 text-brand-600 dark:text-brand-400 font-bold underline hover:text-brand-700 cursor-pointer"
-                              >
-                                <Paperclip className="h-4 w-4 shrink-0 text-emerald-500" />
-                                <span>{studentAnswers[q.id]} ↗</span>
-                              </a>
-                            ) : (
-                              <span className="text-slate-400 italic">No link provided.</span>
-                            )}
-                          </div>
+                      {/* 4. File / Photo / PDF / DOCX Upload + Teacher Annotation Canvas */}
+                      {q.type === "fileUpload" && (() => {
+                        const uploadVal = normalizeFileUploadAnswer(studentAnswers[q.id]);
+                        const qAnnotationsMap = quizFileAnnotations[q.id] || {};
+                        const taskTermLabel = normalizeTermLabel(targetTask?.term || targetTask?.quarter, targetTask?.dueDate || targetTask?.createdAt, academicCalendar);
 
-                          <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              Award Project / File Points (Max: {pts} pts):
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              max={pts}
-                              value={manualQuizSubjScores[q.id] ?? 0}
-                              onChange={(e) => {
-                                const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
-                                setManualQuizSubjScores(prev => ({ ...prev, [q.id]: val }));
-                              }}
-                              className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
-                            />
+                        return (
+                          <div className="space-y-3 pt-1">
+                            {uploadVal.files.length > 0 && (
+                              <div className="space-y-3">
+                                {uploadVal.files.map((fileMeta, fIdx) => {
+                                  const fileKey = fileMeta.key || fileMeta.url || String(fIdx);
+                                  if (isImageAttachment(fileMeta)) {
+                                    return (
+                                      <ImageAnnotationCanvas
+                                        key={fileKey}
+                                        mode="edit"
+                                        imageUrl={fileMeta.url}
+                                        fileName={fileMeta.name || `Image ${fIdx + 1}`}
+                                        expiresAt={fileMeta.expiresAt}
+                                        termLabel={taskTermLabel}
+                                        annotations={qAnnotationsMap[fileKey] || qAnnotationsMap[fileMeta.url] || []}
+                                        onChange={(nextAnns) => {
+                                          setQuizFileAnnotations((prev) => ({
+                                            ...prev,
+                                            [q.id]: {
+                                              ...(prev[q.id] || {}),
+                                              [fileKey]: nextAnns
+                                            }
+                                          }));
+                                        }}
+                                      />
+                                    );
+                                  }
+
+                                  const isPdf = isPdfAttachment(fileMeta);
+                                  const isDocx = isDocxAttachment(fileMeta);
+                                  const expired = isMediaExpired(fileMeta.expiresAt);
+
+                                  return (
+                                    <div key={fileKey} className="p-3.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2.5">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center space-x-2 min-w-0">
+                                          <FileText className="h-4 w-4 text-brand-500 shrink-0" />
+                                          <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                                            {fileMeta.name || (isPdf ? "Submission.pdf" : "Submission.docx")}
+                                          </span>
+                                          {fileMeta.size && (
+                                            <span className="text-[10px] text-slate-400 shrink-0">({formatFileSize(fileMeta.size)})</span>
+                                          )}
+                                        </div>
+                                        {expired ? (
+                                          <span className="text-[11px] font-semibold text-slate-400 italic">Cleared after {taskTermLabel}</span>
+                                        ) : (
+                                          <a
+                                            href={isDocx ? `${fileMeta.url}?download=1` : fileMeta.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center space-x-1 text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline shrink-0"
+                                          >
+                                            <span>{isDocx ? "Download .docx" : "Open PDF ↗"}</span>
+                                          </a>
+                                        )}
+                                      </div>
+
+                                      {isPdf && !expired && fileMeta.url && (
+                                        <iframe
+                                          src={fileMeta.url}
+                                          title={fileMeta.name || "PDF Preview"}
+                                          className="w-full h-72 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50"
+                                        />
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {uploadVal.link.trim() && (
+                              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Submitted Project Link / URL</span>
+                                <a
+                                  href={uploadVal.link.startsWith("http") ? uploadVal.link : `https://${uploadVal.link}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center space-x-1.5 text-brand-600 dark:text-brand-400 font-bold underline hover:text-brand-700 cursor-pointer"
+                                >
+                                  <Paperclip className="h-4 w-4 shrink-0 text-emerald-500" />
+                                  <span>{uploadVal.link} ↗</span>
+                                </a>
+                              </div>
+                            )}
+
+                            {uploadVal.files.length === 0 && !uploadVal.link.trim() && (
+                              <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-400 italic">
+                                No file or link submitted.
+                              </div>
+                            )}
+
+                            <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-1.5">
+                              <label className="flex items-center space-x-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                <MessageSquare className="h-3.5 w-3.5 text-brand-500" />
+                                <span>Teacher Comment on Uploaded Work (Optional)</span>
+                              </label>
+                              <RichTextInput
+                                variant="compact"
+                                minHeight={72}
+                                value={quizFileComments[q.id] || ""}
+                                onChange={(val) => setQuizFileComments((prev) => ({ ...prev, [q.id]: val }))}
+                                placeholder="Write feedback on the student's uploaded photo, PDF, or DOCX..."
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                Award Project / File Points (Max: {pts} pts):
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                max={pts}
+                                value={manualQuizSubjScores[q.id] ?? 0}
+                                onChange={(e) => {
+                                  const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                  setManualQuizSubjScores(prev => ({ ...prev, [q.id]: val }));
+                                }}
+                                className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                              />
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {/* 5. Essay */}
                       {q.type === "essay" && (
@@ -6596,7 +8424,83 @@ export default function ClassDashboard() {
                         </div>
                       )}
 
-                      {/* 6. Vocabulary */}
+                      {/* 6. Matching Activity Comparison */}
+                      {q.type === "matching" && (() => {
+                        const mRes = gradeMatchingQuestion(q, studentAnswers[q.id]);
+                        const currentScore = manualQuizObjScores[q.id] ?? mRes.earnedPoints;
+                        const isFull = currentScore >= pts;
+                        return (
+                          <div className="space-y-3 pt-1">
+                            <div className="p-3.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-medium space-y-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                  Matching Activity Pairs ({mRes.correctCount}/{mRes.totalPairs} Correct)
+                                </span>
+                                {isFull ? (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    ✓ Correct ({currentScore}/{pts} pts)
+                                  </span>
+                                ) : currentScore > 0 ? (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                    Partial Credit ({currentScore}/{pts} pts)
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                                    ✕ Incorrect (0 pts)
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="space-y-1.5">
+                                {mRes.breakdown.map((row) => (
+                                  <div
+                                    key={row.pairId}
+                                    className={`flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg border text-xs ${
+                                      row.isCorrect
+                                        ? "bg-emerald-50/60 dark:bg-emerald-950/25 border-emerald-200 dark:border-emerald-800/50"
+                                        : "bg-rose-50/60 dark:bg-rose-950/25 border-rose-200 dark:border-rose-800/50"
+                                    }`}
+                                  >
+                                    <span className="font-bold text-slate-800 dark:text-slate-100">
+                                      {row.pairNumber}. {row.leftLabel}
+                                    </span>
+                                    <span
+                                      className={`font-bold ${
+                                        row.isCorrect
+                                          ? "text-emerald-700 dark:text-emerald-300"
+                                          : "text-rose-700 dark:text-rose-300"
+                                      }`}
+                                    >
+                                      → {row.selectedLabel} {row.isCorrect ? "✓" : `✕ (Expected: ${row.expectedLabel})`}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-1.5">
+                                <span>Award Matching Points (Max: {pts} pts):</span>
+                                <span className="text-[10px] font-normal text-slate-400">(Partial credit auto-graded, editable)</span>
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max={pts}
+                                value={manualQuizObjScores[q.id] ?? mRes.earnedPoints}
+                                onChange={(e) => {
+                                  const val = Math.min(pts, Math.max(0, Number(e.target.value) || 0));
+                                  setManualQuizObjScores((prev) => ({ ...prev, [q.id]: val }));
+                                }}
+                                className="w-20 text-xs font-extrabold text-center border border-slate-300 dark:border-slate-600 rounded-lg py-1.5 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* 7. Vocabulary (Legacy) */}
                       {q.type === "vocabulary" && (
                         <div className="space-y-3 pt-1">
                           <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
@@ -6632,7 +8536,9 @@ export default function ClassDashboard() {
                       )}
                     </div>
                   );
-                });
+                })}
+                  </>
+                );
               })()}
             </div>
 
@@ -6698,6 +8604,8 @@ export default function ClassDashboard() {
                 task={previewTaskData}
                 isPreview={true}
                 studentAnswers={previewAnswers}
+                academicCalendar={academicCalendar}
+                taskTerm={taskQuarter}
                 onAnswerChange={(qId, val) => {
                   setPreviewAnswers((prev) => ({
                     ...prev,

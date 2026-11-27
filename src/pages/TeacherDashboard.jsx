@@ -7,6 +7,24 @@ import { useAuth } from "../context/AuthContext";
 import { toast } from "../context/FeedbackContext";
 import { formatStudentName, formatTime12Hour, formatScheduleString } from "../utils/helpers";
 import ActiveTermBadge from "../components/ActiveTermBadge";
+import ProfileSettingsModal from "../components/ProfileSettingsModal";
+import RichTextInput from "../components/RichTextInput";
+import RichTextDisplay from "../components/RichTextDisplay";
+import ImageAnnotationCanvas from "../components/ImageAnnotationCanvas";
+import {
+  isRichTextEmpty,
+  richTextToPlainPreview,
+  sanitizeRichHtml
+} from "../utils/richTextUtils";
+import { isMediaExpired } from "../utils/mediaUtils";
+import {
+  DEFAULT_ACADEMIC_CALENDAR,
+  getTodayManilaYmd,
+  getActiveTermKey,
+  getActiveTermLabel
+} from "../utils/academicCalendar";
+import { loadAcademicCalendar } from "../utils/academicCalendarService";
+import { computeTeacherAttendanceMetrics } from "../utils/teacherMetricsUtils";
 import {
   Users,
   Calendar,
@@ -23,25 +41,38 @@ import {
   FileText,
   Bell,
   CheckSquare,
-  RefreshCw
+  RefreshCw,
+  Camera
 } from "lucide-react";
 
 export default function TeacherDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [teacherClasses, setTeacherClasses] = useState([]);
-  const [atRiskStudents, setAtRiskStudents] = useState([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
+  const [academicCalendar, setAcademicCalendar] = useState(DEFAULT_ACADEMIC_CALENDAR);
+  const [attendanceScope, setAttendanceScope] = useState("TERM"); // "TERM" | "ALL"
+  const [rawSessions, setRawSessions] = useState([]);
+  const [rawEnrolledStudents, setRawEnrolledStudents] = useState([]);
+  const [classNameMapState, setClassNameMapState] = useState({});
   const [stats, setStats] = useState({
     totalClasses: 0,
     totalStudents: 0,
-    averageAttendance: 0,
     pendingToday: 0
   });
 
   const [todaySessions, setTodaySessions] = useState([]);
-  const todayStr = new Date().toLocaleDateString("en-CA");
+  const todayStr = getTodayManilaYmd();
   const todayWeekday = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  const activeTermKey = getActiveTermKey(academicCalendar, todayStr);
+  const activeTermLabel = getActiveTermLabel(academicCalendar, todayStr);
+
+  useEffect(() => {
+    loadAcademicCalendar().then((cal) => {
+      setAcademicCalendar(cal);
+    });
+  }, []);
 
   // Real-time Pending Submissions by Class States
   const [pendingVocabsByClass, setPendingVocabsByClass] = useState({});
@@ -254,8 +285,11 @@ export default function TeacherDashboard() {
   const handleOpenDiaryModal = (diary) => {
     setSelectedDiary(diary);
     setDiaryFeedbackText(diary.feedback || "");
+    setDiaryImageAnnotations(diary.imageAnnotations || {});
     setIsDiaryModalOpen(true);
   };
+
+  const [diaryImageAnnotations, setDiaryImageAnnotations] = useState({});
 
   const handleGradeDiarySubmit = async (e) => {
     e.preventDefault();
@@ -265,10 +299,14 @@ export default function TeacherDashboard() {
     try {
       const docId = selectedDiary.id || `${selectedDiary.studentId}-${selectedDiary.date}`;
       const docRef = doc(db, "diaries", docId);
+      const cleanFeedback = isRichTextEmpty(diaryFeedbackText)
+        ? ""
+        : sanitizeRichHtml(diaryFeedbackText);
 
       await updateDoc(docRef, {
         status: "graded",
-        feedback: diaryFeedbackText.trim()
+        feedback: cleanFeedback,
+        imageAnnotations: diaryImageAnnotations
       });
 
       const currentTeacherUid = user?.id || user?.uid;
@@ -279,7 +317,8 @@ export default function TeacherDashboard() {
         ...selectedDiary,
         id: docId,
         status: "graded",
-        feedback: diaryFeedbackText.trim()
+        feedback: cleanFeedback,
+        imageAnnotations: diaryImageAnnotations
       };
       setRawGradedDiaries((prev) => [
         updatedDiary,
@@ -290,6 +329,7 @@ export default function TeacherDashboard() {
       setIsDiaryModalOpen(false);
       setSelectedDiary(null);
       setDiaryFeedbackText("");
+      setDiaryImageAnnotations({});
     } catch (err) {
       toast.error("Failed to grade diary: " + err.message);
     } finally {
@@ -305,10 +345,11 @@ export default function TeacherDashboard() {
         setStats({
           totalClasses: 0,
           totalStudents: 0,
-          averageAttendance: 100,
           pendingToday: 0
         });
-        setAtRiskStudents([]);
+        setRawSessions([]);
+        setRawEnrolledStudents([]);
+        setClassNameMapState({});
         return;
       }
 
@@ -406,131 +447,15 @@ export default function TeacherDashboard() {
           return !hasSession;
         }).length;
 
-        // Sort sessions chronologically (oldest to newest)
-        const sortedSessions = [...allSessions].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-
-        // Helper to extract student record from session
-        const getStudentRec = (session, stId) => {
-          if (Array.isArray(session.records)) {
-            return session.records.find(r => r.studentId === stId || r.id === stId);
-          }
-          if (session.attendance && typeof session.attendance === "object") {
-            const val = session.attendance[stId];
-            if (typeof val === "object" && val !== null) return val;
-            if (typeof val === "string") return { status: val, minutesLate: 0 };
-          }
-          return null;
-        };
-
-        // 4. Calculate overall attendance rate
-        let totalPresentExcused = 0;
-        let totalRosterSize = 0;
-
-        sortedSessions.forEach(session => {
-          allStudents.forEach(s => {
-            const rec = getStudentRec(session, s.id);
-            if (rec) {
-              const status = typeof rec === "object" ? rec.status : rec;
-              if (status === "present" || status === "excused" || status === "late") {
-                totalPresentExcused++;
-              }
-              totalRosterSize++;
-            }
-          });
-        });
-
-        const averageRate = totalRosterSize > 0
-          ? Math.round((totalPresentExcused / totalRosterSize) * 100)
-          : 95;
+        setRawSessions(allSessions);
+        setRawEnrolledStudents(allStudents);
+        setClassNameMapState(classNameMap);
 
         setStats({
           totalClasses: teacherClasses.length,
           totalStudents: allStudents.length,
-          averageAttendance: averageRate,
           pendingToday: pendingClassesCount
         });
-
-        // 5. Calculate At-Risk Students & Truancy Alerts
-        const atRiskList = [];
-
-        allStudents.forEach(student => {
-          let totalClasses = 0;
-          let presentCount = 0;
-          let lateCount = 0;
-          let excusedCount = 0;
-          let absentCount = 0;
-          let consecutiveAbsences = 0;
-          let maxConsecutiveAbsences = 0;
-
-          sortedSessions.forEach(session => {
-            const rec = getStudentRec(session, student.id);
-            if (rec) {
-              totalClasses++;
-              const status = typeof rec === "object" ? rec.status : rec;
-
-              if (status === "present") {
-                presentCount++;
-                consecutiveAbsences = 0;
-              } else if (status === "late") {
-                lateCount++;
-                consecutiveAbsences = 0;
-              } else if (status === "excused") {
-                excusedCount++;
-                consecutiveAbsences = 0;
-              } else if (status === "absent") {
-                absentCount++;
-                consecutiveAbsences++;
-                if (consecutiveAbsences > maxConsecutiveAbsences) {
-                  maxConsecutiveAbsences = consecutiveAbsences;
-                }
-              }
-            }
-          });
-
-          const attended = presentCount + lateCount + excusedCount;
-          const rate = totalClasses > 0 ? Math.round((attended / totalClasses) * 100) : 100;
-
-          let isAtRisk = false;
-          let reasonText = "";
-          let badgeType = "warning";
-
-          if (totalClasses > 0 && rate < 85) {
-            isAtRisk = true;
-            if (rate < 70 || rate === 0) {
-              reasonText = `${rate}% - Critical`;
-              badgeType = "critical";
-            } else {
-              reasonText = `${rate}% - Warning`;
-              badgeType = "warning";
-            }
-          } else if (maxConsecutiveAbsences >= 3) {
-            isAtRisk = true;
-            reasonText = `3+ Consecutive Absences`;
-            badgeType = "warning";
-          }
-
-          if (isAtRisk) {
-            const sGrade = student.gradeLevel || student.grade || "Student";
-            const sClass = classNameMap[student.classId] || sGrade;
-
-            atRiskList.push({
-              studentId: student.id,
-              name: formatStudentName(student),
-              className: sClass,
-              grade: sGrade,
-              classId: student.classId || "",
-              enrolledClasses: student.enrolledClasses || [],
-              attendanceRate: rate,
-              streak: maxConsecutiveAbsences,
-              reason: reasonText,
-              badgeType: badgeType,
-              communityCenter: student.communityName || student.communityCenter || ""
-            });
-          }
-        });
-
-        atRiskList.sort((a, b) => a.attendanceRate - b.attendanceRate);
-        setAtRiskStudents(atRiskList);
 
       } catch (err) {
         console.error("Error loading dashboard metrics:", err);
@@ -541,6 +466,23 @@ export default function TeacherDashboard() {
 
     fetchDashboardState();
   }, [teacherClasses.length, todayStr]);
+
+  const {
+    averageAttendance,
+    atRiskStudents
+  } = useMemo(
+    () =>
+      computeTeacherAttendanceMetrics({
+        sessions: rawSessions,
+        students: rawEnrolledStudents,
+        classNameMap: classNameMapState,
+        scope: attendanceScope,
+        activeTermKey,
+        calendar: academicCalendar,
+        formatName: formatStudentName
+      }),
+    [rawSessions, rawEnrolledStudents, classNameMapState, attendanceScope, activeTermKey, academicCalendar]
+  );
 
   const norm = (s) => (s || "").toString().toLowerCase().trim();
 
@@ -566,13 +508,30 @@ export default function TeacherDashboard() {
     <div className="space-y-8 animate-fade-in">
       {/* Header section */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-heading transition-colors">
-            Good day, {user?.name || "Teacher"}
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 transition-colors">
-            Here is your daily schedule, classroom assessments, and academic overview.
-          </p>
+        <div className="flex items-center space-x-4">
+          <button
+            type="button"
+            onClick={() => setIsProfileModalOpen(true)}
+            title="Update Profile Photo & Settings"
+            className="relative group shrink-0 cursor-pointer"
+          >
+            <img
+              src={user?.photoURL || user?.avatar}
+              alt={user?.name || "Teacher"}
+              className="h-14 w-14 rounded-2xl object-cover border-2 border-brand-200 dark:border-brand-700/70 bg-white dark:bg-slate-900 shadow-sm group-hover:border-brand-500 transition-colors"
+            />
+            <span className="absolute -bottom-1 -right-1 p-1.5 rounded-full bg-brand-600 text-white border-2 border-white dark:border-slate-950 shadow-md group-hover:scale-110 transition-transform">
+              <Camera className="h-3 w-3" />
+            </span>
+          </button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white font-heading transition-colors">
+              Good day, {user?.name || "Teacher"}
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 transition-colors">
+              Here is your daily schedule, classroom assessments, and academic overview.
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <ActiveTermBadge variant="hero" />
@@ -603,7 +562,7 @@ export default function TeacherDashboard() {
               }`}
           >
             <BookOpen className="h-4 w-4 text-brand-400" />
-            <span>Diary/Essay Review Portal</span>
+            <span>Diary Review</span>
             {pendingDiaries.length > 0 && (
               <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
                 {pendingDiaries.length}
@@ -619,60 +578,73 @@ export default function TeacherDashboard() {
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
-                Global Student Daily Diary/Essay Review
+                Student Daily Diaries
               </h2>
               <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                As a Math instructor, review and provide feedback on global daily student diary or essay submissions.
+                Read student entries, annotate drawings or photos, and send feedback.
               </p>
             </div>
             <span className="text-xs font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-3.5 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800 shrink-0">
-              {pendingDiaries.length} Pending Review
+              {pendingDiaries.length} Pending
             </span>
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">
             {isPendingDiariesLoading ? (
               <div className="py-16 text-center text-slate-400 text-xs">
-                Loading pending diary/essay entries...
+                Loading pending diaries...
               </div>
             ) : pendingDiaries.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                      <th className="px-6 py-3">Student Name</th>
-                      <th className="px-6 py-3">Submission Date</th>
-                      <th className="px-6 py-3">Diary/Essay Entry Preview</th>
+                      <th className="px-6 py-3">Student</th>
+                      <th className="px-6 py-3">Date</th>
+                      <th className="px-6 py-3">Entry Preview</th>
                       <th className="px-6 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-semibold text-slate-700 dark:text-slate-200">
-                    {pendingDiaries.map((diary) => (
-                      <tr key={diary.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/30">
-                        <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">{diary.studentName}</td>
-                        <td className="px-6 py-4 font-mono text-slate-500">{diary.date}</td>
-                        <td className="px-6 py-4 text-slate-600 dark:text-slate-300 line-clamp-1 italic max-w-md">
-                          "{diary.text}"
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => handleOpenDiaryModal(diary)}
-                            className="inline-flex items-center space-x-1.5 px-4 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                            <span>Review Diary/Essay</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {pendingDiaries.map((diary) => {
+                      const imgCount = Array.isArray(diary.images) ? diary.images.length : 0;
+                      const preview = richTextToPlainPreview(diary.text, 90);
+                      return (
+                        <tr key={diary.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/30">
+                          <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">{diary.studentName}</td>
+                          <td className="px-6 py-4 font-mono text-slate-500">{diary.date}</td>
+                          <td className="px-6 py-4 text-slate-600 dark:text-slate-300 max-w-md">
+                            <div className="flex items-center gap-2">
+                              <span className="truncate italic">
+                                {preview || (imgCount > 0 ? "Photo / drawing attached" : "—")}
+                              </span>
+                              {imgCount > 0 && (
+                                <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800">
+                                  {imgCount} img
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              onClick={() => handleOpenDiaryModal(diary)}
+                              className="inline-flex items-center space-x-1.5 px-4 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                              <span>Review</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             ) : (
               <div className="py-16 text-center text-slate-400 text-sm flex flex-col items-center justify-center space-y-2">
                 <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-                <span className="font-bold text-slate-700 dark:text-slate-300">All student diaries/essays reviewed!</span>
-                <span className="text-xs text-slate-400">There are no pending diary/essay submissions awaiting grading.</span>
+                <span className="font-bold text-slate-700 dark:text-slate-300">All diaries reviewed!</span>
+                <span className="text-xs text-slate-400">No pending diary entries right now.</span>
               </div>
             )}
           </div>
@@ -682,10 +654,10 @@ export default function TeacherDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-heading">
-                  Graded Diaries/Essays Archive
+                  Checked Diaries
                 </h2>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                  View previously reviewed student daily diaries/essays and edit teacher feedback.
+                  Review past entries or update your feedback.
                 </p>
               </div>
 
@@ -740,11 +712,11 @@ export default function TeacherDashboard() {
                       <tr key={diary.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/30">
                         <td className="px-6 py-4 font-bold text-slate-800 dark:text-slate-100">{diary.studentName}</td>
                         <td className="px-6 py-4 font-mono text-slate-500">{diary.date}</td>
-                        <td className="px-6 py-4 text-slate-600 dark:text-slate-300 line-clamp-1 italic max-w-xs">
-                          "{diary.text}"
+                        <td className="px-6 py-4 text-slate-600 dark:text-slate-300 max-w-xs truncate italic">
+                          {richTextToPlainPreview(diary.text, 80) || (Array.isArray(diary.images) && diary.images.length > 0 ? `${diary.images.length} photo/drawing` : "—")}
                         </td>
                         <td className="px-6 py-4 text-emerald-700 dark:text-emerald-300 max-w-xs truncate">
-                          "{diary.feedback || "No feedback"}"
+                          {richTextToPlainPreview(diary.feedback, 80) || "No feedback"}
                         </td>
                         <td className="px-6 py-4 text-right">
                           <button
@@ -792,13 +764,46 @@ export default function TeacherDashboard() {
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center space-x-4 transition-colors">
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl transition-colors">
-                <TrendingUp className="h-6 w-6" />
+            <div className="bg-white dark:bg-slate-900 p-6 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-sm flex items-center justify-between gap-3 transition-colors">
+              <div className="flex items-center space-x-4 min-w-0">
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded-xl transition-colors shrink-0">
+                  <TrendingUp className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Avg Attendance</p>
+                  <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">
+                    {averageAttendance !== null ? `${averageAttendance}%` : "—"}
+                  </h3>
+                  {averageAttendance === null && !isDataLoading && (
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 truncate">
+                      {attendanceScope === "TERM" ? `No logs yet in ${activeTermLabel}` : "No attendance logs yet"}
+                    </p>
+                  )}
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider transition-colors">Avg Attendance</p>
-                <h3 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mt-1 transition-colors">{stats.averageAttendance}%</h3>
+              <div className="inline-flex flex-col rounded-xl bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200 dark:border-slate-700 shrink-0 self-start">
+                <button
+                  type="button"
+                  onClick={() => setAttendanceScope("TERM")}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    attendanceScope === "TERM"
+                      ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-2xs"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                  }`}
+                >
+                  {activeTermLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAttendanceScope("ALL")}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                    attendanceScope === "ALL"
+                      ? "bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 shadow-2xs"
+                      : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                  }`}
+                >
+                  All Year
+                </button>
               </div>
             </div>
 
@@ -1050,8 +1055,32 @@ export default function TeacherDashboard() {
 
             {/* Right Side: At Risk Students (1/3 width) */}
             <div className="space-y-5">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100 font-heading transition-colors">⚠️ At-Risk Students</h2>
+                <div className="inline-flex rounded-xl bg-slate-100 dark:bg-slate-800 p-0.5 border border-slate-200 dark:border-slate-700 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setAttendanceScope("TERM")}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      attendanceScope === "TERM"
+                        ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-2xs"
+                        : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    {activeTermLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAttendanceScope("ALL")}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      attendanceScope === "ALL"
+                        ? "bg-white dark:bg-slate-900 text-brand-600 dark:text-brand-400 shadow-2xs"
+                        : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    All Year
+                  </button>
+                </div>
               </div>
 
               <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4 transition-colors">
@@ -1062,7 +1091,9 @@ export default function TeacherDashboard() {
                 ) : atRiskStudents.length > 0 ? (
                   <div className="space-y-3.5 max-h-[460px] overflow-y-auto pr-1">
                     {atRiskStudents.map((student, index) => {
-                      const isCritical = student.reason.startsWith("Critical");
+                      const isCritical =
+                        student.badgeType === "critical" ||
+                        String(student.reason || "").toLowerCase().includes("critical");
                       return (
                         <div
                           key={index}
@@ -1117,7 +1148,7 @@ export default function TeacherDashboard() {
                   </div>
                 ) : (
                   <div className="py-12 text-center text-slate-400 text-xs">
-                    No students flagged as at-risk. All systems clear!
+                    All students are on track in {attendanceScope === "TERM" ? activeTermLabel : "All Year"}.
                   </div>
                 )}
               </div>
@@ -1129,7 +1160,7 @@ export default function TeacherDashboard() {
       {/* Modal: Math Teacher Diary Review */}
       {isDiaryModalOpen && selectedDiary && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 animate-fade-in">
-          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up space-y-5">
+          <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl shadow-2xl p-6 sm:p-8 animate-scale-up space-y-5">
             <button
               onClick={() => setIsDiaryModalOpen(false)}
               className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -1143,34 +1174,73 @@ export default function TeacherDashboard() {
               </div>
               <div>
                 <h3 className="text-xl font-bold text-slate-950 dark:text-white font-heading">
-                  Review Student Daily Diary/Essay
+                  Review Student Diary
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Student: {selectedDiary.studentName} ({selectedDiary.date})
+                  {selectedDiary.studentName} • {selectedDiary.date}
                 </p>
               </div>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                Student Diary/Essay Entry
-              </label>
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap max-h-60 overflow-y-auto">
-                {selectedDiary.text}
+            {!isRichTextEmpty(selectedDiary.text) && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                  Student Entry
+                </label>
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed max-h-60 overflow-y-auto">
+                  <RichTextDisplay content={selectedDiary.text} />
+                </div>
               </div>
-            </div>
+            )}
+
+            {Array.isArray(selectedDiary.images) && selectedDiary.images.length > 0 && (
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                  Photos & Drawings ({selectedDiary.images.length}) — Click Expand or draw directly to annotate
+                </label>
+                <div className="space-y-3">
+                  {selectedDiary.images.map((img, iIdx) => {
+                    const imgKey = img.key || img.url || `img-${iIdx}`;
+                    if (isMediaExpired(img.expiresAt)) {
+                      return (
+                        <div key={imgKey} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-300 dark:border-slate-700 text-xs text-slate-400">
+                          Image cleared after {selectedDiary.term || "term end"}.
+                        </div>
+                      );
+                    }
+                    return (
+                      <ImageAnnotationCanvas
+                        key={imgKey}
+                        imageUrl={img.url}
+                        fileName={img.name || `Diary Image #${iIdx + 1}`}
+                        expiresAt={img.expiresAt || ""}
+                        termLabel={selectedDiary.term || ""}
+                        annotations={diaryImageAnnotations[imgKey] || diaryImageAnnotations[img.url] || []}
+                        onChange={(nextAnns) =>
+                          setDiaryImageAnnotations((prev) => ({
+                            ...prev,
+                            [imgKey]: nextAnns
+                          }))
+                        }
+                        mode="edit"
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleGradeDiarySubmit} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
-                  Teacher Feedback & Grade Comments
+                  Teacher Feedback
                 </label>
-                <textarea
-                  rows={3}
+                <RichTextInput
+                  variant="compact"
+                  minHeight={96}
                   value={diaryFeedbackText}
-                  onChange={(e) => setDiaryFeedbackText(e.target.value)}
-                  placeholder="Insightful reflections! Keep up the great effort in class..."
-                  className="w-full text-xs font-medium text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-2xl p-3 bg-white dark:bg-slate-800 outline-none focus:border-brand-500 transition-colors"
+                  onChange={setDiaryFeedbackText}
+                  placeholder="Write encouraging feedback or corrections..."
                 />
               </div>
 
@@ -1194,6 +1264,11 @@ export default function TeacherDashboard() {
           </div>
         </div>
       )}
+      {/* Profile & Photo Settings Modal */}
+      <ProfileSettingsModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
     </div>
   );
 }

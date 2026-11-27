@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { toast, confirmDialog } from "../context/FeedbackContext";
@@ -6,6 +6,31 @@ import { db } from "../firebase/config";
 import { collection, getDocs, doc, getDoc, setDoc, deleteDoc, query, where, addDoc, serverTimestamp } from "firebase/firestore";
 import { cachedQuery, invalidateCache } from "../utils/firestoreCache";
 import { formatStudentName } from "../utils/helpers";
+import {
+  DEFAULT_ACADEMIC_CALENDAR,
+  TRIMESTER_TERM_LABELS,
+  getTodayManilaYmd,
+  getActiveTermKey,
+  getActiveTermLabel,
+  normalizeTermLabel,
+  normalizeExamCategory,
+  doesTermMatchFilter,
+  termKeyToLabel,
+  resolveTermKeyFromDate
+} from "../utils/academicCalendar";
+import {
+  loadAcademicCalendar,
+  subscribeAcademicCalendar
+} from "../utils/academicCalendarService";
+import { getExamTerm } from "../utils/eClassRecordUtils";
+import {
+  formatStudentClassTitle,
+  computeClassTermProgress,
+  extractRecentLessons
+} from "../utils/studentPortalUtils";
+import RichTextInput from "../components/RichTextInput";
+import RichTextDisplay from "../components/RichTextDisplay";
+import { isRichTextEmpty, sanitizeRichHtml } from "../utils/richTextUtils";
 import { 
   ArrowLeft,
   BookOpen, 
@@ -24,7 +49,11 @@ import {
   ExternalLink,
   Eye,
   Check,
-  RefreshCw
+  RefreshCw,
+  ChevronDown,
+  ChevronUp,
+  TrendingUp,
+  Calendar
 } from "lucide-react";
 
 const CURRENT_ACADEMIC_YEAR = "SY 2026-2027";
@@ -43,7 +72,11 @@ export default function StudentClassDashboard() {
     return [];
   };
 
-  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
+  const todayStr = getTodayManilaYmd();
+
+  const [academicCalendar, setAcademicCalendar] = useState(DEFAULT_ACADEMIC_CALENDAR);
+  const activeTermKey = getActiveTermKey(academicCalendar, todayStr);
+  const activeTermLabel = getActiveTermLabel(academicCalendar, todayStr);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const getInitialTab = () => {
@@ -76,6 +109,7 @@ export default function StudentClassDashboard() {
   };
 
   const [teacherName, setTeacherName] = useState("");
+  const [allClassSessions, setAllClassSessions] = useState([]);
   const [vocabSessions, setVocabSessions] = useState([]);
   const [vocabSubmissionsMap, setVocabSubmissionsMap] = useState({});
   const [vocabSubmissionsList, setVocabSubmissionsList] = useState([]);
@@ -83,20 +117,45 @@ export default function StudentClassDashboard() {
   const [isSubmittingVocab, setIsSubmittingVocab] = useState({});
   const [vocabSuccessMsg, setVocabSuccessMsg] = useState({});
   const [isLoading, setIsLoading] = useState(true);
+  const [isOverviewExpandedMobile, setIsOverviewExpandedMobile] = useState(false);
+  const [showAllRecentLessons, setShowAllRecentLessons] = useState(false);
 
   // Exams State (Tab 4)
   const [examsList, setExamsList] = useState([]);
   const [examSubmissionsMap, setExamSubmissionsMap] = useState({});
   const [examSubmissionsList, setExamSubmissionsList] = useState([]);
   const [isExamsLoading, setIsExamsLoading] = useState(true);
+  const [selectedExamTerm, setSelectedExamTerm] = useState(() =>
+    getActiveTermLabel(DEFAULT_ACADEMIC_CALENDAR, todayStr)
+  );
 
   // Tasks State (Tab 3)
   const [tasksList, setTasksList] = useState([]);
   const [taskSubmissionsMap, setTaskSubmissionsMap] = useState({});
   const [isTasksLoading, setIsTasksLoading] = useState(false);
   const [isMarkingDone, setIsMarkingDone] = useState({});
-  const [taskArchiveQuarter, setTaskArchiveQuarter] = useState("1st Quarter");
+  const [selectedTaskTerm, setSelectedTaskTerm] = useState(() =>
+    getActiveTermLabel(DEFAULT_ACADEMIC_CALENDAR, todayStr)
+  );
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    loadAcademicCalendar().then((cal) => {
+      if (!mounted) return;
+      setAcademicCalendar(cal);
+      const activeLabel = getActiveTermLabel(cal, todayStr);
+      setSelectedExamTerm(activeLabel);
+      setSelectedTaskTerm(activeLabel);
+    });
+    const unsub = subscribeAcademicCalendar((updated) => {
+      if (mounted) setAcademicCalendar(updated);
+    });
+    return () => {
+      mounted = false;
+      unsub();
+    };
+  }, [todayStr]);
 
   const targetClassTag = decodeURIComponent(rawClassParam || "");
   let extractedTeacherId = "";
@@ -108,14 +167,7 @@ export default function StudentClassDashboard() {
     extractedClassId = parts[1];
   }
 
-  // Format clean title (e.g. "grade8-math" -> "Grade 8 - Math")
-  const formatTitle = (slug) => {
-    if (!slug) return "Classroom Portal";
-    const parts = slug.split("-");
-    return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
-  };
-
-  const displayTitle = formatTitle(extractedClassId);
+  const displayTitle = formatStudentClassTitle(targetClassTag);
   const userRef = useRef(user);
   userRef.current = user;
   const studentUid = user?.id || user?.uid;
@@ -256,16 +308,19 @@ export default function StudentClassDashboard() {
 
         setTeacherName(loadedTeacherName);
 
-        const relevantSessions = rawSessions.filter((s) => {
+        const teacherMatchedSessions = (rawSessions || [])
+          .filter((s) => !s.teacherId || s.teacherId === extractedTeacherId)
+          .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+        setAllClassSessions(teacherMatchedSessions);
+
+        const relevantSessions = teacherMatchedSessions.filter((s) => {
           const hasVocab =
             s.vocabularyWords &&
             (Array.isArray(s.vocabularyWords)
               ? s.vocabularyWords.length > 0
               : typeof s.vocabularyWords === "string" && s.vocabularyWords.trim().length > 0);
-          const matchesTeacher = !s.teacherId || s.teacherId === extractedTeacherId;
-          return hasVocab && matchesTeacher;
+          return hasVocab;
         });
-        relevantSessions.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
         setVocabSessions(relevantSessions);
 
         setVocabSubmissionsList(vocabList);
@@ -380,12 +435,12 @@ export default function StudentClassDashboard() {
       }
       return {
         word,
-        sentence: sentText.trim(),
+        sentence: isRichTextEmpty(sentText) ? "" : sanitizeRichHtml(sentText),
         status: "pending"
       };
     });
 
-    const isAnyEmpty = sentencesArray.some(s => !s.sentence);
+    const isAnyEmpty = sentencesArray.some((s) => isRichTextEmpty(s.sentence));
     if (isAnyEmpty) {
       toast.warning("Please write a complete sentence for every assigned vocabulary word before submitting.");
       return;
@@ -470,14 +525,73 @@ export default function StudentClassDashboard() {
     }
   };
 
-  // Active / pending tasks count (strictly open, non-missed & unsubmitted)
-  const pendingActiveTasksCount = (tasksList || []).filter(task => {
+  // Active / pending tasks count (strictly open, non-missed, non-manual & unsubmitted)
+  const pendingActiveTasksCount = (tasksList || []).filter((task) => {
+    if (task.mode === "manual") return false;
     const taskId = task.firestoreId || task.id;
     const sub = taskSubmissionsMap[taskId];
     const isSubmitted = !!sub;
     const isPastDue = !!task.dueDate && task.dueDate < todayStr;
     return !isSubmitted && !isPastDue;
   }).length;
+
+  const termProgress = useMemo(
+    () =>
+      computeClassTermProgress({
+        sessions: allClassSessions,
+        vocabSubs: vocabSubmissionsList,
+        tasks: tasksList,
+        taskSubsMap: taskSubmissionsMap,
+        exams: examsList,
+        examSubsMap: examSubmissionsMap,
+        studentUid,
+        termKey: activeTermKey,
+        calendar: academicCalendar,
+        classTag: targetClassTag,
+        extractedClassId
+      }),
+    [
+      allClassSessions,
+      vocabSubmissionsList,
+      tasksList,
+      taskSubmissionsMap,
+      examsList,
+      examSubmissionsMap,
+      studentUid,
+      activeTermKey,
+      academicCalendar,
+      targetClassTag,
+      extractedClassId
+    ]
+  );
+
+  const allRecentLessons = useMemo(
+    () => extractRecentLessons(allClassSessions, 0),
+    [allClassSessions]
+  );
+
+  const visibleRecentLessons = useMemo(
+    () => (showAllRecentLessons ? allRecentLessons.slice(0, 12) : allRecentLessons.slice(0, 4)),
+    [allRecentLessons, showAllRecentLessons]
+  );
+
+  const filteredExamsList = useMemo(() => {
+    if (selectedExamTerm === "ALL") return examsList;
+    return examsList.filter(
+      (ex) => termKeyToLabel(getExamTerm(ex, academicCalendar)) === selectedExamTerm
+    );
+  }, [examsList, selectedExamTerm, academicCalendar]);
+
+  const filteredTasksList = useMemo(() => {
+    if (selectedTaskTerm === "ALL") return tasksList;
+    return tasksList.filter((task) => {
+      const taskTerm =
+        task.term ||
+        task.quarter ||
+        termKeyToLabel(resolveTermKeyFromDate(task.dueDate || task.createdAt, academicCalendar));
+      return doesTermMatchFilter(taskTerm, selectedTaskTerm);
+    });
+  }, [tasksList, selectedTaskTerm, academicCalendar]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -524,11 +638,149 @@ export default function StudentClassDashboard() {
         </div>
       </div>
 
+      {/* Term Progress Snapshot & Recent Lessons Catch-Up Strip */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4 transition-colors">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white font-heading">
+                {activeTermLabel} Progress & Recent Lessons
+              </h2>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                Your completion summary and recent logged topics for {displayTitle}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsOverviewExpandedMobile((prev) => !prev)}
+            className="md:hidden inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold cursor-pointer"
+          >
+            <span>{isOverviewExpandedMobile ? "Hide" : "Show"}</span>
+            {isOverviewExpandedMobile ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+
+        <div className={`${isOverviewExpandedMobile ? "block" : "hidden"} md:block space-y-4`}>
+          {/* 4 Progress Metric Tiles */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Vocab ({activeTermLabel})
+              </div>
+              <div className="flex items-baseline justify-between mt-1">
+                <span className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  {termProgress.vocabRate !== null ? `${termProgress.vocabRate}%` : "—"}
+                </span>
+                <span className="text-[11px] font-bold text-brand-600 dark:text-brand-400">
+                  {termProgress.vocabCompleted}/{termProgress.vocabExpected} done
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Tasks ({activeTermLabel})
+              </div>
+              <div className="flex items-baseline justify-between mt-1">
+                <span className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  {termProgress.tasksRate !== null ? `${termProgress.tasksRate}%` : "—"}
+                </span>
+                <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                  {termProgress.tasksCompleted}/{termProgress.tasksTotal} turned in
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Exam Avg ({activeTermLabel})
+              </div>
+              <div className="flex items-baseline justify-between mt-1">
+                <span className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  {termProgress.examAverage !== null ? `${termProgress.examAverage}%` : "—"}
+                </span>
+                <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400">
+                  {termProgress.examGradedCount}/{termProgress.examTotalCount} graded
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Attendance ({activeTermLabel})
+              </div>
+              <div className="flex items-baseline justify-between mt-1">
+                <span className="text-lg font-extrabold text-slate-900 dark:text-white">
+                  {termProgress.attendanceRate !== null ? `${termProgress.attendanceRate}%` : "—"}
+                </span>
+                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                  {termProgress.attendanceSessions} session{termProgress.attendanceSessions === 1 ? "" : "s"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Lessons & Catch-Up Strip */}
+          <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <BookOpen className="h-3.5 w-3.5 text-brand-500" />
+                <span>Recent Lessons &amp; Study Catch-Up</span>
+              </div>
+              {allRecentLessons.length > 4 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllRecentLessons((prev) => !prev)}
+                  className="text-[11px] font-bold text-brand-600 dark:text-brand-400 hover:underline cursor-pointer"
+                >
+                  {showAllRecentLessons ? "Show Less" : `Show All (${Math.min(allRecentLessons.length, 12)})`}
+                </button>
+              )}
+            </div>
+
+            {visibleRecentLessons.length === 0 ? (
+              <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+                No lesson topics or textbook pages logged yet.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                {visibleRecentLessons.map((lesson) => (
+                  <div
+                    key={lesson.id}
+                    className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/30 border border-slate-200/70 dark:border-slate-700/60 space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-slate-400 dark:text-slate-500">
+                      <span className="inline-flex items-center space-x-1">
+                        <Calendar className="h-3 w-3 text-brand-500" />
+                        <span>{lesson.date}</span>
+                      </span>
+                      {lesson.pages && (
+                        <span className="px-1.5 py-0.5 rounded bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800/50 truncate max-w-[90px]">
+                          pp. {lesson.pages}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs font-bold text-slate-800 dark:text-slate-200 line-clamp-2 leading-snug">
+                      {lesson.topic || "Textbook Pages Assigned"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Tabs Menu */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6">
+      <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-6 overflow-x-auto">
         <button
           onClick={() => handleTabChange("vocab")}
-          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
+          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer shrink-0 ${
             activeTab === "vocab"
               ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
               : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -540,7 +792,7 @@ export default function StudentClassDashboard() {
 
         <button
           onClick={() => handleTabChange("exams")}
-          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
+          className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all cursor-pointer shrink-0 ${
             activeTab === "exams"
               ? "border-brand-600 dark:border-brand-400 text-brand-600 dark:text-brand-400"
               : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -548,9 +800,9 @@ export default function StudentClassDashboard() {
         >
           <BookOpen className="h-4 w-4" />
           <span>Exams & Assessments</span>
-          {examsList.length > 0 && (
+          {filteredExamsList.length > 0 && (
             <span className="ml-1.5 px-2 py-0.5 text-xs rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold">
-              {examsList.length}
+              {filteredExamsList.length}
             </span>
           )}
         </button>
@@ -746,19 +998,17 @@ export default function StudentClassDashboard() {
                                       )
                                     )}
                                   </div>
-                                  <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                                    "{item?.sentence || ""}"
-                                  </p>
+                                  <div className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                                    <RichTextDisplay content={item?.sentence || ""} />
+                                  </div>
 
-                                  {isNeedsReview && item?.correction && (
+                                  {isNeedsReview && item?.correction && !isRichTextEmpty(item.correction) && (
                                     <div className="mt-2.5 p-3 rounded-xl bg-amber-100/80 dark:bg-amber-900/50 border border-amber-300/80 dark:border-amber-700/80 text-amber-900 dark:text-amber-100 space-y-1">
                                       <div className="flex items-center space-x-1.5 text-xs font-bold text-amber-800 dark:text-amber-200">
                                         <Lightbulb className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                                         <span>Teacher Note / Correction:</span>
                                       </div>
-                                      <p className="text-xs font-medium pl-5 leading-relaxed">
-                                        "{item.correction}"
-                                      </p>
+                                      <RichTextDisplay content={item.correction} className="text-xs pl-5" />
                                     </div>
                                   )}
                                 </div>
@@ -766,21 +1016,19 @@ export default function StudentClassDashboard() {
                             })}
                           </div>
                         ) : (
-                          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                            {submission.sentences}
+                          <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                            <RichTextDisplay content={submission.sentences || ""} />
                           </div>
                         )}
                       </div>
 
-                      {submission.feedback ? (
+                      {submission.feedback && !isRichTextEmpty(submission.feedback) ? (
                         <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 space-y-2">
                           <div className="flex items-center space-x-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
                             <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                             <span>Teacher Feedback:</span>
                           </div>
-                          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-200 pl-6 leading-relaxed">
-                            "{submission.feedback}"
-                          </p>
+                          <RichTextDisplay content={submission.feedback} className="text-xs text-emerald-700 dark:text-emerald-200 pl-6" />
                         </div>
                       ) : (
                         <p className="text-xs text-slate-400 italic">No feedback provided yet. Your teacher will review your sentences shortly.</p>
@@ -814,11 +1062,11 @@ export default function StudentClassDashboard() {
                                 Target Word: <strong className="text-brand-600 dark:text-brand-400 font-extrabold text-sm ml-1">{word}</strong>
                               </span>
                             </div>
-                            <textarea
-                              rows={2}
+                            <RichTextInput
+                              variant="compact"
+                              minHeight={72}
                               value={vocabInputs[sessionKey]?.[word] || ""}
-                              onChange={(e) => {
-                                const val = e.target.value;
+                              onChange={(val) => {
                                 setVocabInputs((prev) => ({
                                   ...prev,
                                   [sessionKey]: {
@@ -827,8 +1075,7 @@ export default function StudentClassDashboard() {
                                   }
                                 }));
                               }}
-                              placeholder={`Write a sentence using the word "${word}"...`}
-                              className="w-full text-xs font-medium text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-800/50 outline-none focus:border-brand-500 transition-colors placeholder:text-slate-400"
+                              placeholder={`Write a sentence using "${word}"...`}
                             />
                           </div>
                         ))}
@@ -840,7 +1087,7 @@ export default function StudentClassDashboard() {
                           onClick={() => handleSubmitVocab(session)}
                           disabled={
                             isSubmittingVocab[sessionKey] ||
-                            wordsList.some((w) => !(vocabInputs[sessionKey]?.[w] || "").trim())
+                            wordsList.some((w) => isRichTextEmpty(vocabInputs[sessionKey]?.[w] || ""))
                           }
                           className="inline-flex items-center space-x-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white px-5 py-2.5 text-xs font-bold shadow-md transition-all cursor-pointer disabled:opacity-50"
                         >
@@ -887,7 +1134,7 @@ export default function StudentClassDashboard() {
       {activeTab === "exams" && (
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
           {/* Header */}
-          <div className="border-b border-slate-100 dark:border-slate-800 pb-4 flex items-center justify-between">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center space-x-3">
               <div className="p-3 bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 rounded-2xl">
                 <BookOpen className="h-6 w-6" />
@@ -901,16 +1148,45 @@ export default function StudentClassDashboard() {
                 </p>
               </div>
             </div>
+
+            <div className="flex items-center space-x-2 shrink-0">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Term
+              </label>
+              <select
+                value={selectedExamTerm}
+                onChange={(e) => setSelectedExamTerm(e.target.value)}
+                className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
+              >
+                {TRIMESTER_TERM_LABELS.map((lbl) => (
+                  <option key={lbl} value={lbl}>
+                    {lbl}{lbl === activeTermLabel ? " (Current)" : ""}
+                  </option>
+                ))}
+                <option value="ALL">All Terms</option>
+              </select>
+            </div>
           </div>
 
           {isExamsLoading ? (
             <div className="py-12 text-center text-slate-400 text-sm">Loading available exams...</div>
-          ) : examsList.length > 0 ? (
+          ) : filteredExamsList.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {examsList.map((ex) => {
+              {filteredExamsList.map((ex) => {
                 const examDocId = ex.firestoreId || ex.id;
                 const mySubmission = examSubmissionsMap[examDocId] || examSubmissionsMap[ex.id];
                 const isGraded = mySubmission?.status === "graded" || mySubmission?.status === "Graded" || (mySubmission && (mySubmission.objScore !== undefined || mySubmission.subjScore !== undefined));
+                const normalizedTerm = termKeyToLabel(getExamTerm(ex, academicCalendar));
+                const normalizedCat = normalizeExamCategory(ex.category) || "Exam";
+                const score = isGraded ? (Number(mySubmission.objScore) || 0) + (Number(mySubmission.subjScore) || 0) : 0;
+                const maxScore = Number(ex.maxScore) || 100;
+                const pct = isGraded && maxScore > 0 ? Math.min(100, Math.round((score / maxScore) * 100)) : 0;
+                const barColor =
+                  pct >= 80
+                    ? "bg-emerald-500"
+                    : pct >= 60
+                    ? "bg-brand-500"
+                    : "bg-amber-500";
 
                 return (
                   <div
@@ -924,12 +1200,12 @@ export default function StudentClassDashboard() {
                           <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 font-heading">
                             {ex.title}
                           </h3>
-                          <div className="flex items-center space-x-2 mt-1">
+                          <div className="flex items-center space-x-2 mt-1 flex-wrap gap-y-1">
                             <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-100 dark:border-brand-800">
-                              {ex.quarter || "1st Quarter"}
+                              {normalizedTerm}
                             </span>
                             <span className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-100 dark:border-purple-800">
-                              {ex.category || "Exam"}
+                              {normalizedCat}
                             </span>
                           </div>
                         </div>
@@ -938,7 +1214,7 @@ export default function StudentClassDashboard() {
                         {isGraded ? (
                           <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-800">
                             <CheckCircle className="h-3.5 w-3.5" />
-                            <span>✅ Graded</span>
+                            <span>Graded</span>
                           </span>
                         ) : (
                           <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold shrink-0 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-blue-800">
@@ -950,21 +1226,29 @@ export default function StudentClassDashboard() {
                     </div>
 
                     {/* Action Area / Score Display */}
-                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
                       {isGraded ? (
-                        <div className="flex items-center justify-between w-full">
-                          <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                            Final Score:
+                        <>
+                          <div className="flex items-center justify-between w-full">
+                            <div className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                              Final Score:
+                            </div>
+                            <div className="text-sm font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+                              {score} / {maxScore} pts <span className="text-xs opacity-90">({pct}%)</span>
+                            </div>
                           </div>
-                          <div className="text-sm font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
-                            Score: {(Number(mySubmission.objScore) || 0) + (Number(mySubmission.subjScore) || 0)} / {ex.maxScore || 100} pts
+                          <div className="w-full h-1.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${barColor}`}
+                              style={{ width: `${pct}%` }}
+                            />
                           </div>
-                        </div>
+                        </>
                       ) : (
                         <div className="flex items-center justify-between w-full text-xs font-semibold text-slate-500 dark:text-slate-400">
                           <span className="inline-flex items-center space-x-1.5 text-slate-600 dark:text-slate-400 font-medium">
                             <Clock className="h-3.5 w-3.5 text-slate-400" />
-                            <span>Max Score: <strong className="font-bold text-slate-700 dark:text-slate-300">{ex.maxScore || 100} pts</strong></span>
+                            <span>Max Score: <strong className="font-bold text-slate-700 dark:text-slate-300">{maxScore} pts</strong></span>
                           </span>
                           <span className="text-slate-400 dark:text-slate-500 text-xs">Awaiting Teacher Grading</span>
                         </div>
@@ -975,10 +1259,25 @@ export default function StudentClassDashboard() {
               })}
             </div>
           ) : (
-            <div className="py-12 text-center space-y-2">
+            <div className="py-12 text-center space-y-3">
               <BookOpen className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto" />
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No Active Exams</p>
-              <p className="text-xs text-slate-400">No active exams assigned for this class.</p>
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                {selectedExamTerm === "ALL" ? "No Active Exams" : `No Exams Recorded for ${selectedExamTerm} Yet`}
+              </p>
+              <p className="text-xs text-slate-400">
+                {selectedExamTerm !== "ALL" && examsList.length > 0
+                  ? `You have ${examsList.length} exam${examsList.length > 1 ? "s" : ""} in other terms.`
+                  : "No active exams assigned for this class."}
+              </p>
+              {selectedExamTerm !== "ALL" && examsList.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedExamTerm("ALL")}
+                  className="inline-flex items-center px-3.5 py-2 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-800 text-xs font-bold hover:bg-brand-100 cursor-pointer"
+                >
+                  View All Terms ({examsList.length})
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -989,18 +1288,38 @@ export default function StudentClassDashboard() {
         <div className="space-y-6">
           {/* ── Active Tasks Section (Top) ── */}
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 transition-colors">
-            <div className="border-b border-slate-100 dark:border-slate-800 pb-4">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
-                Active Assignments & Tasks
-              </h2>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                Complete pending written tasks, performance tasks, external Google Forms, and in-app worksheets.
-              </p>
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 font-heading">
+                  Active Assignments & Tasks
+                </h2>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                  Complete pending written tasks, performance tasks, external Google Forms, and in-app worksheets.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2 shrink-0">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  Term
+                </label>
+                <select
+                  value={selectedTaskTerm}
+                  onChange={(e) => setSelectedTaskTerm(e.target.value)}
+                  className="text-xs font-bold border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 cursor-pointer"
+                >
+                  {TRIMESTER_TERM_LABELS.map((lbl) => (
+                    <option key={lbl} value={lbl}>
+                      {lbl}{lbl === activeTermLabel ? " (Current)" : ""}
+                    </option>
+                  ))}
+                  <option value="ALL">All Terms</option>
+                </select>
+              </div>
             </div>
 
             {(() => {
               // Active tasks: strictly unsubmitted & not past due, OR submitted awaiting teacher grade (excludes offline/manual tasks)
-              const activeTasks = (tasksList || []).filter((task) => {
+              const activeTasks = (filteredTasksList || []).filter((task) => {
                 if (task.mode === "manual") return false;
                 const taskId = task.firestoreId || task.id;
                 const sub = taskSubmissionsMap[taskId];
@@ -1021,8 +1340,10 @@ export default function StudentClassDashboard() {
                 return (
                   <div className="py-12 text-center space-y-2 bg-slate-50/50 dark:bg-slate-800/30 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
                     <CheckCircle className="h-10 w-10 text-emerald-400 dark:text-emerald-500 mx-auto" />
-                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">You have no active assignments.</p>
-                    <p className="text-xs text-slate-400">All assigned tasks for this classroom are completed or up to date.</p>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                      {selectedTaskTerm === "ALL" ? "You have no active assignments." : `No active assignments for ${selectedTaskTerm}.`}
+                    </p>
+                    <p className="text-xs text-slate-400">All assigned tasks for this view are completed or up to date.</p>
                   </div>
                 );
               }
@@ -1033,6 +1354,11 @@ export default function StudentClassDashboard() {
                     const taskId = task.firestoreId || task.id;
                     const sub = taskSubmissionsMap[taskId];
                     const isSubmitted = !!sub;
+                    const normalizedTaskTerm = normalizeTermLabel(
+                      task.term || task.quarter,
+                      task.dueDate || task.createdAt,
+                      academicCalendar
+                    );
 
                     return (
                       <div
@@ -1052,7 +1378,7 @@ export default function StudentClassDashboard() {
                                   {task.category || "Written Task"}
                                 </span>
                                 <span className="inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                  {task.quarter || "1st Quarter"}
+                                  {normalizedTaskTerm}
                                 </span>
                               </div>
                             </div>
@@ -1141,7 +1467,7 @@ export default function StudentClassDashboard() {
 
           {/* ── Missed Tasks Section ── */}
           {(() => {
-            const missedTasks = (tasksList || []).filter((task) => {
+            const missedTasks = (filteredTasksList || []).filter((task) => {
               if (task.mode === "manual") return false;
               const taskId = task.firestoreId || task.id;
               const sub = taskSubmissionsMap[taskId];
@@ -1178,6 +1504,11 @@ export default function StudentClassDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {missedTasks.map((task) => {
                     const taskId = task.firestoreId || task.id;
+                    const normalizedMissedTerm = normalizeTermLabel(
+                      task.term || task.quarter,
+                      task.dueDate || task.createdAt,
+                      academicCalendar
+                    );
 
                     return (
                       <div
@@ -1197,7 +1528,7 @@ export default function StudentClassDashboard() {
                                   {task.category || "Written Task"}
                                 </span>
                                 <span className="inline-flex px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                                  {task.quarter || "1st Quarter"}
+                                  {normalizedMissedTerm}
                                 </span>
                               </div>
                             </div>

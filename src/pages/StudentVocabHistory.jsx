@@ -4,6 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import { db } from "../firebase/config";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { cachedQuery } from "../utils/firestoreCache";
+import RichTextDisplay from "../components/RichTextDisplay";
+import { isRichTextEmpty } from "../utils/richTextUtils";
 import { 
   ArrowLeft, 
   History, 
@@ -147,19 +149,17 @@ function HistoryCardItem({ session, submission, wordsList, sessionDate }) {
                               )
                             )}
                           </div>
-                          <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
-                            "{item?.sentence || ""}"
-                          </p>
+                          <div className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                            <RichTextDisplay content={item?.sentence || ""} />
+                          </div>
 
-                          {isNeedsReview && item?.correction && (
+                          {isNeedsReview && item?.correction && !isRichTextEmpty(item.correction) && (
                             <div className="mt-2.5 p-3 rounded-xl bg-amber-100/80 dark:bg-amber-900/50 border border-amber-300/80 dark:border-amber-700/80 text-amber-900 dark:text-amber-100 space-y-1">
                               <div className="flex items-center space-x-1.5 text-xs font-bold text-amber-800 dark:text-amber-200">
                                 <Lightbulb className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
                                 <span>Teacher Note / Correction:</span>
                               </div>
-                              <p className="text-xs font-medium pl-5 leading-relaxed">
-                                "{item.correction}"
-                              </p>
+                              <RichTextDisplay content={item.correction} className="text-xs pl-5" />
                             </div>
                           )}
                         </div>
@@ -167,21 +167,19 @@ function HistoryCardItem({ session, submission, wordsList, sessionDate }) {
                     })}
                   </div>
                 ) : (
-                  <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
-                    {submission.sentences}
+                  <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed">
+                    <RichTextDisplay content={submission.sentences || ""} />
                   </div>
                 )}
               </div>
 
-              {submission.feedback ? (
+              {submission.feedback && !isRichTextEmpty(submission.feedback) ? (
                 <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-800/50 space-y-2">
                   <div className="flex items-center space-x-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
                     <MessageSquare className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                     <span>Teacher Feedback:</span>
                   </div>
-                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-200 pl-6 leading-relaxed">
-                    "{submission.feedback}"
-                  </p>
+                  <RichTextDisplay content={submission.feedback} className="text-xs text-emerald-700 dark:text-emerald-200 pl-6" />
                 </div>
               ) : (
                 <p className="text-xs text-slate-400 italic">No feedback provided yet. Your teacher will review your sentences shortly.</p>

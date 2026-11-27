@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Patrick+Hand&display=swap');
 
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
@@ -8,6 +8,7 @@
 @theme {
   --font-sans: 'Inter', sans-serif;
   --font-heading: 'Outfit', sans-serif;
+  --font-handwriting: 'Patrick Hand', cursive;
   
   --color-brand-50: #f4f6fc;
   --color-brand-100: #e9ecf8;
@@ -444,5 +445,184 @@ sub {
 
 .animate-modal {
   animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ==========================================================================
+   Handwriting Font, Notebook Paper Surface & Rich-Text Editors
+   ========================================================================== */
+.font-handwriting {
+  font-family: var(--font-handwriting);
+  letter-spacing: 0.01em;
+}
+
+.notebook-paper {
+  position: relative;
+  background-color: #fffdf6;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 31px,
+    rgba(148, 163, 184, 0.22) 31px,
+    rgba(148, 163, 184, 0.22) 32px
+  );
+  background-position: 0 18px;
+}
+
+.dark .notebook-paper {
+  background-color: #111827;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 31px,
+    rgba(148, 163, 184, 0.1) 31px,
+    rgba(148, 163, 184, 0.1) 32px
+  );
+}
+
+.notebook-paper-margin {
+  position: relative;
+}
+
+@media (min-width: 640px) {
+  .notebook-paper-margin::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 2.25rem;
+    width: 1.5px;
+    background-color: rgba(244, 63, 94, 0.25);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .dark .notebook-paper-margin::before {
+    background-color: rgba(244, 63, 94, 0.2);
+  }
+}
+
+.notebook-quill-wrapper,
+.compact-quill-wrapper {
+  border-radius: 1rem;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.notebook-quill-wrapper {
+  background-color: rgba(255, 255, 255, 0.55);
+  border-color: rgba(226, 232, 240, 0.85);
+}
+
+.dark .notebook-quill-wrapper {
+  background-color: rgba(15, 23, 42, 0.5);
+  border-color: rgba(51, 65, 85, 0.75);
+}
+
+.compact-quill-wrapper {
+  background-color: #f8fafc;
+}
+
+.dark .compact-quill-wrapper {
+  background-color: rgba(15, 23, 42, 0.7);
+  border-color: #334155;
+}
+
+.notebook-quill-wrapper:focus-within,
+.compact-quill-wrapper:focus-within {
+  border-color: #4964c2;
+  box-shadow: 0 0 0 3px rgba(73, 100, 194, 0.12);
+}
+
+.notebook-quill-wrapper .ql-toolbar.ql-snow,
+.compact-quill-wrapper .ql-toolbar.ql-snow {
+  border: none !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.85) !important;
+  padding: 5px 8px !important;
+  background: rgba(248, 250, 252, 0.75) !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 2px !important;
+}
+
+.dark .notebook-quill-wrapper .ql-toolbar.ql-snow,
+.dark .compact-quill-wrapper .ql-toolbar.ql-snow {
+  border-bottom-color: rgba(51, 65, 85, 0.75) !important;
+  background: rgba(30, 41, 59, 0.65) !important;
+}
+
+.notebook-quill-wrapper .ql-container.ql-snow,
+.compact-quill-wrapper .ql-container.ql-snow {
+  border: none !important;
+  font-family: inherit !important;
+}
+
+.notebook-quill-wrapper .ql-editor,
+.compact-quill-wrapper .ql-editor {
+  min-height: var(--rt-min-height, 96px) !important;
+  padding: 12px 14px !important;
+  font-size: 0.92rem !important;
+  line-height: 1.65 !important;
+  color: #1e293b !important;
+}
+
+.notebook-quill-wrapper.rt-handwriting .ql-editor,
+.compact-quill-wrapper.rt-handwriting .ql-editor {
+  font-family: var(--font-handwriting) !important;
+  font-size: 1.15rem !important;
+  line-height: 1.55 !important;
+}
+
+.dark .notebook-quill-wrapper .ql-editor,
+.dark .compact-quill-wrapper .ql-editor {
+  color: #f1f5f9 !important;
+}
+
+.notebook-quill-wrapper .ql-editor.ql-blank::before,
+.compact-quill-wrapper .ql-editor.ql-blank::before {
+  color: #94a3b8 !important;
+  font-style: normal !important;
+  left: 14px !important;
+  right: 14px !important;
+}
+
+.notebook-quill-wrapper .ql-snow .ql-stroke,
+.compact-quill-wrapper .ql-snow .ql-stroke {
+  stroke: #64748b !important;
+}
+
+.dark .notebook-quill-wrapper .ql-snow .ql-stroke,
+.dark .compact-quill-wrapper .ql-snow .ql-stroke {
+  stroke: #94a3b8 !important;
+}
+
+.notebook-quill-wrapper .ql-snow .ql-fill,
+.compact-quill-wrapper .ql-snow .ql-fill {
+  fill: #64748b !important;
+}
+
+.dark .notebook-quill-wrapper .ql-snow .ql-fill,
+.dark .compact-quill-wrapper .ql-snow .ql-fill {
+  fill: #94a3b8 !important;
+}
+
+.notebook-quill-wrapper .ql-snow button:hover .ql-stroke,
+.notebook-quill-wrapper .ql-snow button.ql-active .ql-stroke,
+.compact-quill-wrapper .ql-snow button:hover .ql-stroke,
+.compact-quill-wrapper .ql-snow button.ql-active .ql-stroke {
+  stroke: #4964c2 !important;
+}
+
+.dark .notebook-quill-wrapper .ql-snow button:hover .ql-stroke,
+.dark .notebook-quill-wrapper .ql-snow button.ql-active .ql-stroke,
+.dark .compact-quill-wrapper .ql-snow button:hover .ql-stroke,
+.dark .compact-quill-wrapper .ql-snow button.ql-active .ql-stroke {
+  stroke: #818cf8 !important;
+}
+
+.dark .notebook-quill-wrapper .ql-snow .ql-picker-options,
+.dark .compact-quill-wrapper .ql-snow .ql-picker-options {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
 }
 

@@ -6,6 +6,8 @@
 import {
   DEFAULT_ACADEMIC_CALENDAR,
   resolveTermKeyFromDate,
+  resolveExamTermLabel,
+  labelToTermKey,
   toYmdDate
 } from "./academicCalendar.js";
 
@@ -127,54 +129,7 @@ export function mapQuarterToTerm(
 }
 
 export function getExamTerm(exam, calendar = DEFAULT_ACADEMIC_CALENDAR) {
-  if (!exam) return "TERM 1";
-
-  // Priority 1: Explicit new Trimester field saved on exam
-  if (exam.term) {
-    return mapQuarterToTerm(exam.term, exam.createdAt || exam.date, calendar);
-  }
-
-  const catAndTitle = `${exam.category || ""} ${exam.title || ""}`.toLowerCase();
-
-  // Priority 2: Legacy "3rd Monthly Exam" belongs to Term 1 unless explicitly assigned a Term
-  if (catAndTitle.includes("3rd monthly")) {
-    return "TERM 1";
-  }
-
-  // Priority 3: Legacy quarter field
-  if (exam.quarter) {
-    return mapQuarterToTerm(exam.quarter, exam.createdAt || exam.date, calendar);
-  }
-
-  // Priority 4: Category/title inference
-  if (
-    catAndTitle.includes("1st monthly") ||
-    catAndTitle.includes("2nd monthly") ||
-    catAndTitle.includes("1st quarterly") ||
-    catAndTitle.includes("term 1")
-  ) {
-    return "TERM 1";
-  }
-  if (
-    catAndTitle.includes("4th monthly") ||
-    catAndTitle.includes("5th monthly") ||
-    catAndTitle.includes("2nd quarterly") ||
-    catAndTitle.includes("term 2")
-  ) {
-    return "TERM 2";
-  }
-  if (
-    catAndTitle.includes("6th monthly") ||
-    catAndTitle.includes("7th monthly") ||
-    catAndTitle.includes("8th monthly") ||
-    catAndTitle.includes("3rd quarterly") ||
-    catAndTitle.includes("4th quarterly") ||
-    catAndTitle.includes("term 3")
-  ) {
-    return "TERM 3";
-  }
-
-  return getTermFromDate(exam.createdAt || exam.date, calendar);
+  return labelToTermKey(resolveExamTermLabel(exam, calendar));
 }
 
 export function transmuteGrade(initialGrade) {
@@ -452,7 +407,9 @@ export function buildTermGradeSheet({
       firestoreId: t.firestoreId || t.id,
       title: t.title || "Written Task",
       maxScore: Number(t.maxScore ?? t.totalPoints) || 50,
-      source: "task"
+      source: "task",
+      mode: t.mode || "interactive",
+      isManual: t.mode === "manual"
     }));
 
   const ptItems = termTasks
@@ -465,7 +422,9 @@ export function buildTermGradeSheet({
       firestoreId: t.firestoreId || t.id,
       title: t.title || "Performance Task",
       maxScore: Number(t.maxScore ?? t.totalPoints) || 50,
-      source: "task"
+      source: "task",
+      mode: t.mode || "interactive",
+      isManual: t.mode === "manual"
     }));
 
   // Optional Vocabulary & Diary PT items strictly scoped to this term's calendar dates
