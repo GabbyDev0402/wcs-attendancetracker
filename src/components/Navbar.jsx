@@ -2,13 +2,16 @@ import React, { useState, useRef } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import ActiveTermBadge from "./ActiveTermBadge";
-import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, Users, BookOpen, Sun, Moon, ChevronLeft, ChevronRight, FileSpreadsheet } from "lucide-react";
+import ProfileSettingsModal from "./ProfileSettingsModal";
+import { Menu, X, CalendarCheck, BarChart3, ClipboardCheck, LogOut, Users, BookOpen, Sun, Moon, ChevronLeft, ChevronRight, FileSpreadsheet, Camera } from "lucide-react";
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const navContainerRef = useRef(null);
+  const canEditProfile = user?.role === "teacher" || user?.role === "admin";
 
   const [theme, setTheme] = useState(() => {
     if (typeof window !== "undefined") {
@@ -53,6 +56,7 @@ export default function Navbar() {
     : [];
 
   return (
+    <>
     <nav className="sticky top-0 z-50 w-full border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md transition-colors duration-200 print:hidden">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 justify-between items-center gap-2">
@@ -135,21 +139,49 @@ export default function Navbar() {
                   {theme === "light" ? <Moon className="h-4 w-4 lg:h-5 lg:w-5" /> : <Sun className="h-4 w-4 lg:h-5 lg:w-5" />}
                 </button>
 
-                <div className="flex items-center space-x-2 lg:space-x-2.5 border-r border-slate-100 dark:border-slate-800 pr-2 lg:pr-3">
-                  <img
-                    src={user.photoURL || user.avatar}
-                    alt={user.name}
-                    className="h-7 w-7 lg:h-8 lg:w-8 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 shrink-0 object-cover"
-                  />
-                  <div className="hidden xl:flex flex-col text-left">
-                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-none whitespace-nowrap transition-colors">
-                      {user.name}
-                    </span>
-                    <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 capitalize whitespace-nowrap mt-0.5">
-                      {user.role} Account
-                    </span>
+                {canEditProfile ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsProfileModalOpen(true)}
+                    title="Update Profile Photo & Settings"
+                    className="group flex items-center space-x-2 lg:space-x-2.5 border-r border-slate-100 dark:border-slate-800 pr-2 lg:pr-3 rounded-xl py-1 px-1.5 hover:bg-slate-100/80 dark:hover:bg-slate-800/70 transition-colors cursor-pointer"
+                  >
+                    <div className="relative shrink-0">
+                      <img
+                        src={user.photoURL || user.avatar}
+                        alt={user.name}
+                        className="h-7 w-7 lg:h-8 lg:w-8 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 object-cover"
+                      />
+                      <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-brand-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-xs">
+                        <Camera className="h-2 w-2" />
+                      </span>
+                    </div>
+                    <div className="hidden xl:flex flex-col text-left">
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-none whitespace-nowrap transition-colors group-hover:text-brand-600 dark:group-hover:text-brand-400">
+                        {user.name}
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 capitalize whitespace-nowrap mt-0.5">
+                        {user.role} • Edit Profile
+                      </span>
+                    </div>
+                  </button>
+                ) : (
+                  <div className="flex items-center space-x-2 lg:space-x-2.5 border-r border-slate-100 dark:border-slate-800 pr-2 lg:pr-3">
+                    <img
+                      src={user.photoURL || user.avatar}
+                      alt={user.name}
+                      className="h-7 w-7 lg:h-8 lg:w-8 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 shrink-0 object-cover"
+                    />
+                    <div className="hidden xl:flex flex-col text-left">
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-none whitespace-nowrap transition-colors">
+                        {user.name}
+                      </span>
+                      <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 capitalize whitespace-nowrap mt-0.5">
+                        {user.role} Account
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
                 <button
                   onClick={handleLogout}
                   className="flex items-center space-x-1 rounded-xl border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 transition-all hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white whitespace-nowrap shrink-0"
@@ -219,21 +251,46 @@ export default function Navbar() {
                 );
               })}
               <div className="border-t border-slate-100 dark:border-slate-800 mt-4 pt-4 px-4 flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <img
-                    src={user.avatar}
-                    alt={user.name}
-                    className="h-9 w-9 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
-                  />
-                  <div className="flex flex-col text-left">
-                    <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                      {user.name}
-                    </span>
-                    <span className="text-xs font-medium text-slate-400 dark:text-slate-500 capitalize">
-                      {user.role}
-                    </span>
+                {canEditProfile ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      setIsProfileModalOpen(true);
+                    }}
+                    className="flex items-center space-x-3 text-left rounded-xl p-1 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    <img
+                      src={user.photoURL || user.avatar}
+                      alt={user.name}
+                      className="h-9 w-9 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 object-cover"
+                    />
+                    <div className="flex flex-col text-left">
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                        {user.name}
+                      </span>
+                      <span className="text-xs font-medium text-brand-600 dark:text-brand-400 capitalize">
+                        Edit Profile &amp; Photo
+                      </span>
+                    </div>
+                  </button>
+                ) : (
+                  <div className="flex items-center space-x-3">
+                    <img
+                      src={user.photoURL || user.avatar}
+                      alt={user.name}
+                      className="h-9 w-9 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 object-cover"
+                    />
+                    <div className="flex flex-col text-left">
+                      <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                        {user.name}
+                      </span>
+                      <span className="text-xs font-medium text-slate-400 dark:text-slate-500 capitalize">
+                        {user.role}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={toggleTheme}
@@ -272,5 +329,12 @@ export default function Navbar() {
         </div>
       )}
     </nav>
+    {canEditProfile && (
+      <ProfileSettingsModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+      />
+    )}
+    </>
   );
 }

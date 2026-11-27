@@ -1,9 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { auth, db } from "../firebase/config";
 import { updateProfile, updatePassword } from "firebase/auth";
 import { doc, updateDoc } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { X, Settings, Camera, Key, User, CheckCircle2, AlertCircle, Sparkles } from "lucide-react";
+import { isMediaWorkerConfigured, uploadMediaToR2, deleteMediaFromR2 } from "../utils/mediaUploadService";
+import { extractR2KeyFromUrlOrMeta } from "../utils/mediaUtils";
 
 /**
  * Base64 Image Compression Canvas Pipeline
@@ -52,6 +54,17 @@ export default function ProfileSettingsModal({ isOpen, onClose }) {
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  useEffect(() => {
+    if (isOpen) {
+      setDisplayName(user?.name || user?.displayName || "");
+      setPreviewPhoto(user?.photoURL || user?.avatar || "");
+      setSelectedFile(null);
+      setNewPassword("");
+      setErrorMsg("");
+      setSuccessMsg("");
+    }
+  }, [isOpen, user?.name, user?.displayName, user?.photoURL, user?.avatar]);
+
   if (!isOpen) return null;
 
   const handleImageFileChange = (e) => {
@@ -83,11 +96,17 @@ export default function ProfileSettingsModal({ isOpen, onClose }) {
     setIsSaving(true);
 
     try {
-      let finalBase64Photo = user?.photoURL || user?.avatar || "";
+      const previousPhotoUrl = user?.photoURL || user?.avatar || "";
+      let finalPhotoUrl = previousPhotoUrl;
 
-      // Convert and compress file if a new file was uploaded
+      // Upload to Cloudflare R2 if configured, otherwise fallback to compressed Base64 in Firestore
       if (selectedFile) {
-        finalBase64Photo = await compressImageToBase64(selectedFile, 200, 0.7);
+        if (isMediaWorkerConfigured()) {
+          const uploaded = await uploadMediaToR2(selectedFile, { category: "avatar" });
+          finalPhotoUrl = uploaded.url;
+        } else {
+          finalPhotoUrl = await compressImageToBase64(selectedFile, 200, 0.7);
+        }
       }
 
       const updatedName = displayName.trim() || user?.name || "User";
@@ -95,17 +114,23 @@ export default function ProfileSettingsModal({ isOpen, onClose }) {
       // 1. Update Firebase Auth user profile
       await updateProfile(currentUser, {
         displayName: updatedName,
-        photoURL: finalBase64Photo
+        photoURL: finalPhotoUrl
       });
 
       // 2. Update Firestore user document
       const userRef = doc(db, "users", currentUser.uid);
       await updateDoc(userRef, {
         name: updatedName,
-        photoURL: finalBase64Photo,
-        avatar: finalBase64Photo,
+        photoURL: finalPhotoUrl,
+        avatar: finalPhotoUrl,
         updatedAt: new Date().toISOString()
       });
+
+      const oldAvatarKey = extractR2KeyFromUrlOrMeta(previousPhotoUrl);
+      const newAvatarKey = extractR2KeyFromUrlOrMeta(finalPhotoUrl);
+      if (selectedFile && oldAvatarKey && oldAvatarKey !== newAvatarKey) {
+        deleteMediaFromR2([oldAvatarKey]);
+      }
 
       // 3. Update password if filled
       if (newPassword && newPassword.trim().length > 0) {
@@ -220,7 +245,7 @@ export default function ProfileSettingsModal({ isOpen, onClose }) {
                 required
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Admin Name"
+                placeholder="Your Display Name"
                 className="w-full text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 outline-none focus:border-brand-500 transition-colors"
               />
             </div>
