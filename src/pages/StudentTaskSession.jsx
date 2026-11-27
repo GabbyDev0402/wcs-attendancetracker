@@ -6,6 +6,10 @@ import { db } from "../firebase/config";
 import { doc, getDoc, collection, addDoc, query, where, getDocs } from "firebase/firestore";
 import { invalidateCache } from "../utils/firestoreCache";
 import { formatStudentName } from "../utils/helpers";
+import { DEFAULT_ACADEMIC_CALENDAR, getTodayManilaYmd } from "../utils/academicCalendar";
+import { loadAcademicCalendar } from "../utils/academicCalendarService";
+import { hasFileUploadAnswerContent } from "../utils/mediaUtils";
+import { isMatchingAnswerComplete, gradeMatchingQuestion } from "../utils/matchingUtils";
 import { ArrowLeft, Lock, ExternalLink, CheckCircle, Calendar } from "lucide-react";
 import TaskStudentView from "../components/TaskStudentView";
 
@@ -16,11 +20,16 @@ export default function StudentTaskSession() {
 
   const [task, setTask] = useState(null);
   const [submission, setSubmission] = useState(null);
+  const [academicCalendar, setAcademicCalendar] = useState(DEFAULT_ACADEMIC_CALENDAR);
   const [isLoading, setIsLoading] = useState(true);
   const [studentAnswers, setStudentAnswers] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [alreadySubmitted, setAlreadySubmitted] = useState(false);
   const [isExpired, setIsExpired] = useState(false);
+
+  useEffect(() => {
+    loadAcademicCalendar().then(setAcademicCalendar);
+  }, []);
 
   // Load Task Data & Check Previous Submission
   useEffect(() => {
@@ -128,6 +137,8 @@ export default function StudentTaskSession() {
 
         if (q.type === "checkboxes") {
           if (!Array.isArray(ans) || ans.length === 0) isMissing = true;
+        } else if (q.type === "matching") {
+          if (!isMatchingAnswerComplete(q, ans)) isMissing = true;
         } else if (q.type === "vocabulary") {
           if (!ans || typeof ans !== "object") {
             isMissing = true;
@@ -135,6 +146,8 @@ export default function StudentTaskSession() {
             const filled = Object.values(ans).filter((v) => v && v.toString().trim().length > 0);
             if (filled.length === 0) isMissing = true;
           }
+        } else if (q.type === "fileUpload") {
+          if (!hasFileUploadAnswerContent(ans)) isMissing = true;
         } else {
           if (ans === undefined || ans === null || ans.toString().trim() === "") {
             isMissing = true;
@@ -160,6 +173,7 @@ export default function StudentTaskSession() {
 
     try {
       let objScore = 0;
+      const objScoresDetail = {};
       let totalTaskPoints = 0;
       let hasSubjective = false;
 
@@ -171,21 +185,28 @@ export default function StudentTaskSession() {
 
         if (q.type === "multipleChoice") {
           const studentChoice = studentAnswers[q.id];
-          if (studentChoice !== undefined && Number(studentChoice) === Number(q.correctOptionIndex)) {
-            objScore += pts;
-          }
+          const earned =
+            studentChoice !== undefined && Number(studentChoice) === Number(q.correctOptionIndex)
+              ? pts
+              : 0;
+          objScore += earned;
+          objScoresDetail[q.id] = earned;
         } else if (q.type === "checkboxes") {
           const studentIndices = Array.isArray(studentAnswers[q.id]) ? [...studentAnswers[q.id]].sort((a, b) => a - b) : [];
           const teacherIndices = Array.isArray(q.correctOptionIndices) ? [...q.correctOptionIndices].sort((a, b) => a - b) : [Number(q.correctOptionIndex) || 0];
-          if (JSON.stringify(studentIndices) === JSON.stringify(teacherIndices)) {
-            objScore += pts;
-          }
+          const earned = JSON.stringify(studentIndices) === JSON.stringify(teacherIndices) ? pts : 0;
+          objScore += earned;
+          objScoresDetail[q.id] = earned;
         } else if (q.type === "identification") {
           const studentText = (studentAnswers[q.id] || "").toString().trim().toLowerCase();
           const correctText = (q.correctAnswer || "").toString().trim().toLowerCase();
-          if (studentText && studentText === correctText) {
-            objScore += pts;
-          }
+          const earned = studentText && studentText === correctText ? pts : 0;
+          objScore += earned;
+          objScoresDetail[q.id] = earned;
+        } else if (q.type === "matching") {
+          const matchResult = gradeMatchingQuestion(q, studentAnswers[q.id]);
+          objScore += matchResult.earnedPoints;
+          objScoresDetail[q.id] = matchResult.earnedPoints;
         } else if (q.type === "essay" || q.type === "fileUpload") {
           hasSubjective = true;
         } else if (q.type === "vocabulary") {
@@ -215,6 +236,7 @@ export default function StudentTaskSession() {
         studentName: formatStudentName(user),
         answers: studentAnswers,
         objScore: objScore,
+        objScoresDetail: objScoresDetail,
         subjScore: 0,
         score: objScore,
         maxScore: totalTaskPoints || task.totalPoints || 50,
@@ -416,6 +438,8 @@ export default function StudentTaskSession() {
       onSubmit={handleSubmitTask}
       isSubmitting={isSubmitting}
       isPreview={isTeacherPreview}
+      academicCalendar={academicCalendar}
+      taskTerm={task?.term || task?.quarter || ""}
       onReturn={() => navigate(isTeacherPreview ? `/class/${encodeURIComponent(classId)}?tab=tasks` : `/student/class/${encodeURIComponent(classId)}?tab=tasks`)}
     />
   );

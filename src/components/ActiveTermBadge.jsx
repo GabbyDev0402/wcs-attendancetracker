@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Calendar } from "lucide-react";
+import { Calendar, Pencil } from "lucide-react";
 import {
   DEFAULT_ACADEMIC_CALENDAR,
   normalizeCalendar,
@@ -99,6 +99,12 @@ export default function ActiveTermBadge({
           )}
         </div>
       </div>
+      {typeof onClick === "function" && (
+        <span className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg bg-white/80 dark:bg-slate-900/70 border border-brand-200/80 dark:border-brand-700/70 text-[10px] font-bold text-brand-700 dark:text-brand-300 shrink-0 ml-1">
+          <Pencil className="h-3 w-3" />
+          <span>Edit</span>
+        </span>
+      )}
     </WrapperTag>
   );
 }
